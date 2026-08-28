@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #050914;
+    color: #e2e8f0;
+  }
+}
+
+.font-tech {
+  font-family: 'Chakra Petch', sans-serif;
+}
+
+.font-mono-code {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Custom industrial scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d1a;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Animated flow lines for SCADA mimic */
+@keyframes flowDash {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+.pipe-flow {
+  stroke-dasharray: 8 4;
+  animation: flowDash 1.2s linear infinite;
+}
+
+.pipe-flow-fast {
+  stroke-dasharray: 6 3;
+  animation: flowDash 0.7s linear infinite;
+}
+
+.pipe-flow-steam {
+  stroke-dasharray: 10 5;
+  animation: flowDash 0.9s linear infinite;
+}
+
+/* Radar ping & pulse animations */
+@keyframes industrialPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(1.04);
+  }
+}
+
+.animate-industrial-pulse {
+  animation: industrialPulse 2s ease-in-out infinite;
+}
+
+/* Subtle grid background */
+.bg-industrial-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
