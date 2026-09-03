@@ -1,0 +1,252 @@
+{
+  "entities": {
+    "tenants": {
+      "title": "Industrial Enterprise Tenant",
+      "description": "Multi-tenant company/plant configuration with mill capacity, energy specs and location",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Company / Sugar Mill Name" },
+        "code": { "type": "string", "description": "Enterprise code (e.g. INGENIO-SAN-MARTIN)" },
+        "country": { "type": "string", "description": "Country / Jurisdiction" },
+        "location": { "type": "string", "description": "Geographical location / City / State" },
+        "taxId": { "type": "string", "description": "Tax Identification / RIF / RFC" },
+        "nominalTch": { "type": "number", "description": "Nominal Milling Capacity TCH" },
+        "powerCapacityMW": { "type": "number", "description": "Installed Turbogenerator capacity MW" },
+        "boilerPressureBar": { "type": "number", "description": "Nominal HP Steam Pressure Bar" },
+        "industrySector": { "type": "string", "description": "Sugar & Bioenergy / Distillation / Biomass" },
+        "status": { "type": "string", "description": "ACTIVE, MAINTENANCE, OFFSEASON, SUSPENDED" },
+        "primaryAdminEmail": { "type": "string", "description": "Contact / Main admin email" },
+        "primaryContactPhone": { "type": "string", "description": "Contact phone" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" },
+        "logoUrl": { "type": "string", "description": "Logo URL" },
+        "themeColor": { "type": "string", "description": "Brand hex color" }
+      },
+      "required": ["name", "code", "nominalTch", "powerCapacityMW"]
+    },
+    "users": {
+      "title": "Industrial User Account",
+      "description": "User account with role, security clearance, tenant membership and permissions",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Corporate email address" },
+        "name": { "type": "string", "description": "Full name" },
+        "role": { "type": "string", "description": "Role key" },
+        "tenantId": { "type": "string", "description": "Assigned Tenant ID or ALL for superadmin" },
+        "department": { "type": "string", "description": "Plant department" },
+        "badgeCode": { "type": "string", "description": "Operator badge ID" },
+        "isSuperAdmin": { "type": "boolean", "description": "Global superadmin privilege" },
+        "securityLevel": { "type": "number", "description": "Clearance Level 1 to 5" },
+        "phone": { "type": "string", "description": "Contact phone" },
+        "avatar": { "type": "string", "description": "Avatar image URL" },
+        "isActive": { "type": "boolean", "description": "Account status" },
+        "lastLogin": { "type": "string", "description": "Timestamp" }
+      },
+      "required": ["email", "name", "role", "tenantId"]
+    },
+    "roles": {
+      "title": "RBAC Role Definition",
+      "description": "Customizable user role and granular operational permissions",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "description": "Role identifier" },
+        "title": { "type": "string", "description": "Role display title" },
+        "description": { "type": "string", "description": "Description of responsibilities" },
+        "badgeColor": { "type": "string", "description": "Tailwind badge color classes" },
+        "securityClearanceLevel": { "type": "number", "description": "Clearance level 1-5" },
+        "canWriteSetpoints": { "type": "boolean" },
+        "canAcknowledgeAlarms": { "type": "boolean" },
+        "canShelveAlarms": { "type": "boolean" },
+        "canCreateWorkOrders": { "type": "boolean" },
+        "canApproveWorkOrders": { "type": "boolean" },
+        "canChangeDispatchMW": { "type": "boolean" },
+        "canExportHistorian": { "type": "boolean" },
+        "canAddCaneBatches": { "type": "boolean" },
+        "canModifyPlantParams": { "type": "boolean" },
+        "canAccessAiCenter": { "type": "boolean" },
+        "canManageTenants": { "type": "boolean" },
+        "canManageUsers": { "type": "boolean" },
+        "tenantId": { "type": "string", "description": "Tenant ID or GLOBAL" }
+      },
+      "required": ["role", "title", "securityClearanceLevel"]
+    },
+    "system_configs": {
+      "title": "System Operational Configuration Parameter",
+      "description": "ISA-95 & IEC 62443 process parameter or system setting",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "description": "PLC_SCADA, IIOT_GATEWAYS, FIRESTORE_DB, SECURITY_RBAC, STEAM_ENERGY, QUALITY_LIMS, ENTERPRISE" },
+        "name": { "type": "string", "description": "Parameter human name" },
+        "key": { "type": "string", "description": "Unique parameter key" },
+        "currentValue": { "type": "string", "description": "Current active value" },
+        "defaultValue": { "type": "string", "description": "Default factory value" },
+        "unit": { "type": "string", "description": "Engineering unit (TCH, Bar, °C, MW, etc.)" },
+        "description": { "type": "string", "description": "Technical description" },
+        "minLimit": { "type": "number", "description": "Lower safe boundary" },
+        "maxLimit": { "type": "number", "description": "Upper safe boundary" },
+        "status": { "type": "string", "description": "OPTIMAL, ATTENTION, VERIFIED, LOCKED" },
+        "lastVerified": { "type": "string", "description": "Timestamp" },
+        "verifiedBy": { "type": "string", "description": "Auditor / User who verified" },
+        "tenantId": { "type": "string", "description": "Tenant ID or GLOBAL" }
+      },
+      "required": ["name", "key", "category", "currentValue"]
+    },
+    "telemetry": {
+      "title": "Live Industrial Telemetry Snapshot",
+      "description": "Real-time operating telemetry, TCH, steam pressure, power generation and OEE",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "tch": { "type": "number", "description": "Tons of cane per hour" },
+        "brixJuice": { "type": "number", "description": "Raw juice Brix" },
+        "polJuice": { "type": "number", "description": "Raw juice Pol %" },
+        "boilerPressureHP": { "type": "number", "description": "High pressure boiler steam bar" },
+        "boilerTempHP": { "type": "number", "description": "Superheated steam temperature °C" },
+        "powerGeneratedMW": { "type": "number", "description": "Gross electric power generated MW" },
+        "powerExportGridMW": { "type": "number", "description": "Power exported to National Grid MW" },
+        "powerInternalMW": { "type": "number", "description": "Internal mill consumption MW" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["tch", "boilerPressureHP", "powerGeneratedMW"]
+    },
+    "cane_batches": {
+      "title": "Cane Reception Batch (LIMS)",
+      "description": "Cane truck reception records with Core Sampler lab analysis and ARE calculations",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "batchCode": { "type": "string", "description": "Lot identifier" },
+        "truckPlate": { "type": "string", "description": "Truck plate" },
+        "farmOrigin": { "type": "string", "description": "Farm or cane supplier origin" },
+        "growerName": { "type": "string", "description": "Grower or producer name" },
+        "caneVariety": { "type": "string", "description": "Sugar cane variety" },
+        "grossWeightTons": { "type": "number", "description": "Gross weight tons" },
+        "tareWeightTons": { "type": "number", "description": "Tare weight tons" },
+        "netWeightTons": { "type": "number", "description": "Net weight tons" },
+        "brixPercent": { "type": "number", "description": "Brix refractometer percentage" },
+        "polPercent": { "type": "number", "description": "Pol polarimeter percentage" },
+        "purityPercent": { "type": "number", "description": "Calculated purity percentage" },
+        "fiberPercent": { "type": "number", "description": "Fiber percentage" },
+        "areKgPerTon": { "type": "number", "description": "Equivalent Recoverable Sugar kg/t" },
+        "trashPercent": { "type": "number", "description": "Extraneous matter / Trash percentage" },
+        "status": { "type": "string", "description": "EN_PATIO, EN_MUESTREO, EN_MOLIENDA, PROCESADO, RECHAZADO" },
+        "arrivalDateTime": { "type": "string", "description": "Timestamp of weighbridge entry" }
+      },
+      "required": ["batchCode", "truckPlate", "netWeightTons"]
+    },
+    "work_orders": {
+      "title": "CMMS Maintenance Work Orders",
+      "description": "Equipment work orders, condition-based maintenance tasks, and technician logs",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "code": { "type": "string", "description": "Work order code e.g. OT-2026-089" },
+        "equipmentId": { "type": "string", "description": "Related equipment ID" },
+        "equipmentName": { "type": "string", "description": "Equipment name" },
+        "type": { "type": "string", "description": "PREVENTIVO, CORRECTIVO, PREDICTIVO, LUBRICACION" },
+        "priority": { "type": "string", "description": "BAJA, MEDIA, ALTA, URGENTE" },
+        "status": { "type": "string", "description": "PENDIENTE, EN_PROCESO, COMPLETADA, CANCELADA" },
+        "assignedTo": { "type": "string", "description": "Assigned technician" },
+        "description": { "type": "string", "description": "Maintenance task description" },
+        "estimatedHours": { "type": "number", "description": "Estimated hours" },
+        "createdDate": { "type": "string", "description": "Creation date" }
+      },
+      "required": ["code", "equipmentId", "title", "status"]
+    },
+    "equipment": {
+      "title": "Industrial Equipment Asset Registry",
+      "description": "Equipment status, ISO 10816 vibration baseline, temperature, and maintenance history",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "name": { "type": "string", "description": "Equipment name" },
+        "code": { "type": "string", "description": "Tag code e.g. EQ-MOLINO-03" },
+        "area": { "type": "string", "description": "MOLIENDA, CALDERA, COGENERACION, EVAPORACION" },
+        "status": { "type": "string", "description": "RUNNING, WARNING, CRITICAL, STANDBY, MAINTENANCE" },
+        "healthIndex": { "type": "number", "description": "Health index percentage 0-100" },
+        "vibrationRMS": { "type": "number", "description": "Vibration RMS mm/s" },
+        "vibrationThreshold": { "type": "number", "description": "ISO 10816 alarm threshold mm/s" },
+        "temperatureC": { "type": "number", "description": "Bearing temperature °C" },
+        "loadPercentage": { "type": "number", "description": "Motor load percentage" }
+      },
+      "required": ["name", "code", "status"]
+    },
+    "alarms": {
+      "title": "ISA-18.2 Plant Alarms",
+      "description": "Real-time and historic industrial alarms and Sequence of Events (SOE)",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "timestamp": { "type": "string", "description": "Alarm trigger timestamp" },
+        "equipmentId": { "type": "string", "description": "Equipment Tag" },
+        "equipmentName": { "type": "string", "description": "Equipment name" },
+        "message": { "type": "string", "description": "Alarm text description" },
+        "severity": { "type": "string", "description": "CRITICAL, WARNING, INFO, CRITICA, ALTA, MEDIA, BAJA" },
+        "status": { "type": "string", "description": "ACTIVE, ACKNOWLEDGED, CLEARED" },
+        "acknowledged": { "type": "boolean", "description": "Whether operator has acknowledged" }
+      },
+      "required": ["timestamp", "equipmentId", "message", "acknowledged"]
+    },
+    "audit_logs": {
+      "title": "IEC 62443 Security & OT Audit Trail",
+      "description": "Immutable security logs of setpoint modifications, approvals and command execution",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "description": "Tenant ID" },
+        "timestamp": { "type": "string", "description": "Log timestamp" },
+        "userRole": { "type": "string", "description": "Role of user who performed action" },
+        "userName": { "type": "string", "description": "Name of user" },
+        "action": { "type": "string", "description": "Action performed" },
+        "module": { "type": "string", "description": "Affected module" },
+        "targetId": { "type": "string", "description": "Target ID or parameter name" },
+        "previousValue": { "type": "string", "description": "Previous parameter value" },
+        "newValue": { "type": "string", "description": "New parameter value" },
+        "status": { "type": "string", "description": "AUTHORIZED, DENIED, EXECUTED" },
+        "ipAddress": { "type": "string", "description": "Source IP address" }
+      },
+      "required": ["timestamp", "userRole", "action", "module", "status"]
+    }
+  },
+  "firestore": {
+    "/tenants/{tenantId}": {
+      "schema": { "$ref": "#/entities/tenants" },
+      "description": "Multi-tenant enterprise directory"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/users" },
+      "description": "User accounts and access control"
+    },
+    "/roles/{roleId}": {
+      "schema": { "$ref": "#/entities/roles" },
+      "description": "Customizable RBAC roles and permissions"
+    },
+    "/system_configs/{configId}": {
+      "schema": { "$ref": "#/entities/system_configs" },
+      "description": "Operational parameters and plant settings CRUD"
+    },
+    "/telemetry/{docId}": {
+      "schema": { "$ref": "#/entities/telemetry" },
+      "description": "Real-time process telemetry and KPIs"
+    },
+    "/cane_batches/{batchId}": {
+      "schema": { "$ref": "#/entities/cane_batches" },
+      "description": "Cane reception batches and LIMS core sampling"
+    },
+    "/work_orders/{woId}": {
+      "schema": { "$ref": "#/entities/work_orders" },
+      "description": "CMMS Maintenance work orders and technician tasks"
+    },
+    "/equipment/{eqId}": {
+      "schema": { "$ref": "#/entities/equipment" },
+      "description": "Industrial asset registry and ISO 10816 vibration health"
+    },
+    "/alarms/{alarmId}": {
+      "schema": { "$ref": "#/entities/alarms" },
+      "description": "ISA-18.2 Sequence of Events alarms"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/audit_logs" },
+      "description": "IEC 62443 Security and SCADA audit logs"
+    }
+  }
+}
+

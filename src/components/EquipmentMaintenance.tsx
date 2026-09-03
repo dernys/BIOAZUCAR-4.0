@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Wrench,
   Activity,
@@ -11,9 +11,17 @@ import {
   CheckCircle2,
   Calendar,
   Layers,
-  Thermometer
+  Thermometer,
+  ShieldCheck,
+  Lock,
+  Trash2,
+  UserCheck,
+  Sparkles,
+  FileText,
+  Zap,
 } from "lucide-react";
 import { EquipmentItem, WorkOrder, UserRole } from "../types";
+import { checkRbacPermission, getRoleBadgeInfo } from "../services/rbacService";
 
 interface EquipmentMaintenanceProps {
   equipmentList: EquipmentItem[];
@@ -37,14 +45,37 @@ export const EquipmentMaintenance: React.FC<EquipmentMaintenanceProps> = ({
   );
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [showAddWOModal, setShowAddWOModal] = useState<boolean>(false);
+  const [selectedWO, setSelectedWO] = useState<WorkOrder | null>(null);
+  const [woFilter, setWoFilter] = useState<string>("ALL");
 
   // New WO form state
   const [newTitle, setNewTitle] = useState("");
-  const [newType, setNewType] = useState<"PREVENTIVO" | "CORRECTIVO" | "PREDICTIVO" | "LUBRICACION">("PREVENTIVO");
+  const [newType, setNewType] = useState<"PREVENTIVO" | "CORRECTIVO" | "PREDICTIVO" | "LUBRICACION">("PREDICTIVO");
   const [newPriority, setNewPriority] = useState<"URGENTE" | "ALTA" | "MEDIA" | "BAJA">("ALTA");
-  const [newAssigned, setNewAssigned] = useState("Ing. Roberto Salazar");
-  const [newHours, setNewHours] = useState("2.0");
+  const [newAssigned, setNewAssigned] = useState("Ing. Roberto Salazar (Especialista CBM)");
+  const [newHours, setNewHours] = useState("3.5");
   const [newDesc, setNewDesc] = useState("");
+  const [customTasks, setCustomTasks] = useState<string[]>([
+    "Inspección visual y termográfica de chumacera lado acople",
+    "Comprobación de nivel y retorno de aceite ISO VG 460",
+    "Adquisición de espectro FFT de aceleración y envolvente demodulada",
+  ]);
+  const [newTaskInput, setNewTaskInput] = useState("");
+
+  // RBAC Checks
+  const rbacAddWO = useMemo(
+    () => checkRbacPermission(currentRole, "ADD_WORK_ORDER"),
+    [currentRole]
+  );
+  const rbacUpdateWO = useMemo(
+    () => checkRbacPermission(currentRole, "UPDATE_WORK_ORDER"),
+    [currentRole]
+  );
+  const rbacApproveWO = useMemo(
+    () => checkRbacPermission(currentRole, "APPROVE_WORK_ORDER"),
+    [currentRole]
+  );
+  const roleBadge = getRoleBadgeInfo(currentRole);
 
   const filteredEquipments = safeEquipmentList.filter(
     (e) =>
@@ -53,7 +84,16 @@ export const EquipmentMaintenance: React.FC<EquipmentMaintenanceProps> = ({
       (e.area || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const filteredWorkOrders = safeWorkOrders.filter((wo) => {
+    if (woFilter === "ALL") return true;
+    return wo.status === woFilter;
+  });
+
   const handleToggleTask = (wo: WorkOrder, taskId: string) => {
+    if (!rbacUpdateWO.allowed) {
+      alert(rbacUpdateWO.reason);
+      return;
+    }
     const updatedTasks = wo.tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t));
     const allDone = updatedTasks.every((t) => t.done);
     onUpdateWorkOrder({
@@ -63,27 +103,41 @@ export const EquipmentMaintenance: React.FC<EquipmentMaintenanceProps> = ({
     });
   };
 
+  const handleAddCustomTask = () => {
+    if (!newTaskInput.trim()) return;
+    setCustomTasks([...customTasks, newTaskInput.trim()]);
+    setNewTaskInput("");
+  };
+
+  const handleRemoveCustomTask = (index: number) => {
+    setCustomTasks(customTasks.filter((_, i) => i !== index));
+  };
+
   const handleCreateWO = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!rbacAddWO.allowed) return;
+
     const newWO: WorkOrder = {
       id: "wo-" + Date.now(),
       code: "OT-2026-" + Math.floor(100 + Math.random() * 900),
-      equipmentId: selectedEquipment.id,
-      equipmentName: selectedEquipment.name,
-      title: newTitle || `Mantenimiento en ${selectedEquipment.code}`,
+      equipmentId: selectedEquipment.id || "eq-molino-01",
+      equipmentName: selectedEquipment.name || "Equipo Industrial",
+      title: newTitle || `Intervención CBM en ${selectedEquipment.code || "Equipo"}`,
       type: newType,
       priority: newPriority,
       status: "PENDIENTE",
       assignedTo: newAssigned,
       createdDate: new Date().toISOString().slice(0, 10),
       dueDate: new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10),
-      estimatedHours: parseFloat(newHours) || 2.0,
-      description: newDesc || "Inspección técnica programada por CMMS.",
-      tasks: [
-        { id: "t1", text: "Inspección visual y termográfica", done: false },
-        { id: "t2", text: "Comprobación de nivel y retorno de aceite", done: false },
-        { id: "t3", text: "Prueba de giro y verificación de vibración", done: false },
-      ],
+      estimatedHours: parseFloat(newHours) || 2.5,
+      description:
+        newDesc ||
+        `Mantenimiento por condición activado por sensor de vibración (${selectedEquipment.vibrationRMS || 4.2} mm/s).`,
+      tasks: customTasks.map((t, idx) => ({
+        id: `t-${idx + 1}`,
+        text: t,
+        done: false,
+      })),
     };
 
     onAddWorkOrder(newWO);
@@ -95,7 +149,7 @@ export const EquipmentMaintenance: React.FC<EquipmentMaintenanceProps> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg">
         <div>
           <h2 className="text-base font-bold text-white font-tech tracking-wider flex items-center gap-2">
             <Wrench className="w-5 h-5 text-emerald-400" />
@@ -120,9 +174,18 @@ export const EquipmentMaintenance: React.FC<EquipmentMaintenanceProps> = ({
 
           <button
             onClick={() => setShowAddWOModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition shadow-lg shadow-emerald-500/20"
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-lg ${
+              rbacAddWO.allowed
+                ? "bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20"
+                : "bg-slate-800 text-slate-400 border border-slate-700 hover:border-amber-500/40"
+            }`}
+            title={rbacAddWO.allowed ? "Generar OT" : rbacAddWO.reason}
           >
-            <Plus className="w-3.5 h-3.5" />
+            {rbacAddWO.allowed ? (
+              <Plus className="w-3.5 h-3.5" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+            )}
             <span>Generar Orden de Trabajo (OT)</span>
           </button>
         </div>
@@ -142,7 +205,9 @@ export const EquipmentMaintenance: React.FC<EquipmentMaintenanceProps> = ({
 
           <div className="divide-y divide-slate-800/80 max-h-[580px] overflow-y-auto">
             {filteredEquipments.map((eq) => {
-              const isSelected = selectedEquipment.id === eq.id;
+              const isSelected = selectedEquipment?.id === eq.id;
+              const isHighVibe = (eq.vibrationRMS || 0) > (eq.vibrationThreshold || 4.5);
+
               return (
                 <div
                   key={eq.id}
@@ -153,34 +218,43 @@ export const EquipmentMaintenance: React.FC<EquipmentMaintenanceProps> = ({
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-white font-tech">{eq.name}</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
-                        {eq.code}
+                      <span className="font-mono font-bold text-xs text-white">{eq.code}</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        {eq.area}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-400 flex items-center gap-3">
-                      <span>Área: <strong className="text-slate-300">{eq.area}</strong></span>
-                      <span>Horas: <strong className="text-slate-300 font-mono">{eq.hoursRun} h</strong></span>
+                    <div className="text-xs text-slate-300 font-medium">{eq.name}</div>
+                    <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
+                      <span>Temp: <strong className="text-slate-200">{eq.temperatureC || 62}°C</strong></span>
+                      <span>Carga: <strong className="text-slate-200">{eq.loadPercentage || 82}%</strong></span>
                     </div>
                   </div>
 
                   <div className="text-right space-y-1">
-                    <div className="flex items-center gap-2 justify-end">
-                      <span className="text-[10px] text-slate-400">Salud:</span>
-                      <span className="text-xs font-bold font-mono text-emerald-400">
-                        {eq.healthIndex}%
-                      </span>
-                    </div>
-                    <div className="text-[11px] font-mono">
-                      Vib:{" "}
+                    <div className="flex items-center justify-end gap-1.5">
                       <span
-                        className={`font-bold ${
-                          eq.vibrationRMS > eq.vibrationThreshold
-                            ? "text-amber-400"
-                            : "text-slate-300"
+                        className={`text-xs font-mono font-bold ${
+                          isHighVibe ? "text-rose-400 animate-pulse" : "text-emerald-400"
                         }`}
                       >
-                        {eq.vibrationRMS} mm/s
+                        {eq.vibrationRMS || 2.4} mm/s
+                      </span>
+                      {isHighVibe && <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono">
+                      Umbral: {eq.vibrationThreshold || 4.5} mm/s
+                    </div>
+                    <div>
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                          eq.status === "RUNNING"
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                            : eq.status === "WARNING"
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                            : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                        }`}
+                      >
+                        {eq.status}
                       </span>
                     </div>
                   </div>
@@ -190,247 +264,370 @@ export const EquipmentMaintenance: React.FC<EquipmentMaintenanceProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Vibration Spectrum & Work Orders for Selected Equipment (6 cols) */}
+        {/* Right Column: Asset Condition & Work Orders CMMS (6 cols) */}
         <div className="lg:col-span-6 space-y-6">
-          {/* Box 1: Real-time Vibration & Health Diagnostics */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
-              <div>
-                <span className="text-[10px] font-mono text-cyan-400 block">
-                  Análisis Espectral de Vibración (FFT)
-                </span>
-                <h3 className="text-sm font-bold text-white font-tech">{selectedEquipment.name}</h3>
-              </div>
-              <span
-                className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
-                  selectedEquipment.status === "WARNING"
-                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                    : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                }`}
-              >
-                {selectedEquipment.status}
-              </span>
-            </div>
-
-            {/* Vibration KPIs */}
-            <div className="grid grid-cols-3 gap-2 mb-4 text-xs font-mono">
-              <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
-                <span className="text-slate-500 text-[10px] block">Vibración Global</span>
-                <span
-                  className={`text-base font-bold ${
-                    selectedEquipment.vibrationRMS > selectedEquipment.vibrationThreshold
-                      ? "text-amber-400"
-                      : "text-white"
-                  }`}
-                >
-                  {selectedEquipment.vibrationRMS} mm/s
-                </span>
+          {/* Asset Health Card */}
+          {selectedEquipment && (
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-xl space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div>
+                  <span className="text-[10px] font-mono text-emerald-400 block">Diagnóstico de Condición CBM</span>
+                  <h3 className="text-sm font-bold text-white font-tech">{selectedEquipment.name} ({selectedEquipment.code})</h3>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 block font-mono">Índice de Salud</span>
+                  <span className="text-sm font-mono font-bold text-emerald-400">{selectedEquipment.healthIndex || 92}%</span>
+                </div>
               </div>
 
-              <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
-                <span className="text-slate-500 text-[10px] block">Umbral Alarma</span>
-                <span className="text-base font-bold text-slate-300 font-tech">
-                  {selectedEquipment.vibrationThreshold} mm/s
-                </span>
-              </div>
-
-              <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
-                <span className="text-slate-500 text-[10px] block">Temperatura</span>
-                <span className="text-base font-bold text-cyan-400 font-tech">
-                  {selectedEquipment.temperatureC} °C
-                </span>
+              <div className="grid grid-cols-3 gap-2 text-center font-mono text-xs">
+                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Vibración RMS:</span>
+                  <span className="text-sm font-bold text-cyan-300">{selectedEquipment.vibrationRMS || 2.1} mm/s</span>
+                </div>
+                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Temperatura Rod.:</span>
+                  <span className="text-sm font-bold text-amber-300">{selectedEquipment.temperatureC || 58} °C</span>
+                </div>
+                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Horas Operación:</span>
+                  <span className="text-sm font-bold text-slate-200">4,280 h</span>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* Simulated Spectral FFT Chart Bars */}
-            <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block mb-2">
-                Espectro de Frecuencia (1X Desbalance vs 2X Desalineación vs Armónicos)
+          {/* Work Orders List for CMMS */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+            <div className="p-3.5 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between flex-wrap gap-2">
+              <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-400" />
+                Órdenes de Trabajo Activas ({filteredWorkOrders.length})
               </span>
-              <div className="h-28 flex items-end justify-between gap-1.5 px-2 pt-4 pb-1 border-b border-slate-800 font-mono text-[9px] text-slate-500">
-                {[
-                  { freq: "1X (12Hz)", val: 45, label: "Giro" },
-                  { freq: "2X (24Hz)", val: selectedEquipment.id === "eq-molino-3" ? 82 : 28, label: "Desal." },
-                  { freq: "3X (36Hz)", val: 22, label: "Holgura" },
-                  { freq: "4X (48Hz)", val: 15, label: "Armón." },
-                  { freq: "BPFO (95Hz)", val: 32, label: "Pista Ext." },
-                  { freq: "BPFI (140Hz)", val: 18, label: "Pista Int." },
-                  { freq: "GMF (280Hz)", val: 40, label: "Engrane" },
-                ].map((bar, idx) => (
-                  <div key={idx} className="flex-1 flex flex-col items-center gap-1">
-                    <div
-                      className={`w-full rounded-t transition-all duration-500 ${
-                        bar.val > 60
-                          ? "bg-amber-400 shadow-lg shadow-amber-400/30"
-                          : "bg-emerald-500/80"
-                      }`}
-                      style={{ height: `${bar.val}%` }}
-                    ></div>
-                    <span className="text-[8px] text-slate-400">{bar.freq.split(" ")[0]}</span>
-                  </div>
+
+              <div className="flex items-center gap-1 font-mono text-[10px]">
+                {(["ALL", "PENDIENTE", "EN_PROCESO", "COMPLETADA"] as const).map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setWoFilter(st)}
+                    className={`px-2 py-0.5 rounded transition ${
+                      woFilter === st
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {st === "ALL" ? "Todas" : st}
+                  </button>
                 ))}
               </div>
             </div>
-          </div>
 
-          {/* Box 2: Work Orders for This Machinery */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
-              <h3 className="text-sm font-bold text-white font-tech uppercase tracking-wider flex items-center gap-2">
-                <CheckSquare className="w-4 h-4 text-emerald-400" />
-                Órdenes de Trabajo Activas ({workOrders.length})
-              </h3>
-              <span className="text-[11px] text-slate-400 font-mono">CMMS / RCM</span>
-            </div>
+            <div className="divide-y divide-slate-800/80 max-h-[380px] overflow-y-auto p-2 space-y-2">
+              {filteredWorkOrders.map((wo) => {
+                const completedTasks = wo.tasks?.filter((t) => t.done).length || 0;
+                const totalTasks = wo.tasks?.length || 1;
+                const progressPct = Math.round((completedTasks / totalTasks) * 100);
 
-            <div className="space-y-3">
-              {workOrders.map((wo) => (
-                <div
-                  key={wo.id}
-                  className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-2 text-xs"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-mono text-emerald-400 font-bold mr-2">{wo.code}</span>
-                      <span className="text-white font-semibold">{wo.title}</span>
-                    </div>
-                    <span
-                      className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold ${
-                        wo.status === "COMPLETADA"
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : wo.status === "EN_PROCESO"
-                          ? "bg-cyan-500/20 text-cyan-300"
-                          : "bg-amber-500/20 text-amber-300"
-                      }`}
-                    >
-                      {wo.status}
-                    </span>
-                  </div>
+                return (
+                  <div
+                    key={wo.id}
+                    className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2 font-mono text-xs"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{wo.code}</span>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${
+                              wo.priority === "URGENTE"
+                                ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                : wo.priority === "ALTA"
+                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                : "bg-slate-800 text-slate-300"
+                            }`}
+                          >
+                            {wo.priority}
+                          </span>
+                          <span className="text-[10px] text-cyan-400 font-sans">{wo.type}</span>
+                        </div>
+                        <h4 className="text-xs font-sans text-slate-200 font-medium mt-0.5">{wo.title}</h4>
+                      </div>
 
-                  <p className="text-slate-400 text-[11px] leading-relaxed">{wo.description}</p>
-
-                  <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
-                      Lista de Verificación de Campo:
-                    </span>
-                    {wo.tasks.map((task) => (
-                      <label
-                        key={task.id}
-                        className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white"
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                          wo.status === "COMPLETADA"
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                            : wo.status === "EN_PROCESO"
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                            : "bg-slate-800 text-slate-400 border border-slate-700"
+                        }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={task.done}
-                          onChange={() => handleToggleTask(wo, task.id)}
-                          className="rounded text-emerald-500 focus:ring-0 cursor-pointer"
-                        />
-                        <span className={task.done ? "line-through text-slate-500" : ""}>
-                          {task.text}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+                        {wo.status}
+                      </span>
+                    </div>
 
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
-                    <span>Asignado a: <strong className="text-slate-200">{wo.assignedTo}</strong></span>
-                    <span>Vencimiento: <strong className="text-slate-200 font-mono">{wo.dueDate}</strong></span>
+                    <div className="text-[11px] text-slate-400 font-sans">
+                      Asignado a: <strong className="text-slate-300">{wo.assignedTo}</strong> • Est: {wo.estimatedHours}h
+                    </div>
+
+                    {/* Task checklist */}
+                    <div className="space-y-1 pt-1 border-t border-slate-900">
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>Checklist de Intervención:</span>
+                        <span>{completedTasks}/{totalTasks} ({progressPct}%)</span>
+                      </div>
+                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-emerald-400 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                      <div className="space-y-1 pt-1">
+                        {wo.tasks?.map((t) => (
+                          <label
+                            key={t.id}
+                            className="flex items-center gap-2 cursor-pointer text-[11px] text-slate-300 hover:text-white"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={t.done}
+                              onChange={() => handleToggleTask(wo, t.id)}
+                              className="rounded bg-slate-900 border-slate-700 text-emerald-500 focus:ring-0"
+                            />
+                            <span className={t.done ? "line-through text-slate-500" : ""}>{t.text}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Add Work Order Modal */}
+      {/* OPTIMIZED CONTEXT-AWARE MODAL: Generar Orden de Trabajo */}
       {showAddWOModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h3 className="text-base font-bold text-white font-tech mb-1">
-              Nueva Orden de Trabajo (CMMS)
-            </h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Equipo destino: <strong className="text-white">{selectedEquipment.name}</strong> ({selectedEquipment.code})
-            </p>
-
-            <form onSubmit={handleCreateWO} className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-300 block mb-1">Título de la Actividad</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej. Revisión y reapriete de chumaceras"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full bg-slate-950 text-white rounded-lg p-2 border border-slate-700"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-slate-300 block mb-1">Tipo de Mantenimiento</label>
-                  <select
-                    value={newType}
-                    onChange={(e) => setNewType(e.target.value as any)}
-                    className="w-full bg-slate-950 text-white rounded-lg p-2 border border-slate-700 font-mono"
-                  >
-                    <option value="PREVENTIVO">Preventivo</option>
-                    <option value="PREDICTIVO">Predictivo (Vibración)</option>
-                    <option value="CORRECTIVO">Correctivo</option>
-                    <option value="LUBRICACION">Lubricación</option>
-                  </select>
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+                  <Wrench className="w-5 h-5" />
                 </div>
-
                 <div>
-                  <label className="text-slate-300 block mb-1">Prioridad</label>
-                  <select
-                    value={newPriority}
-                    onChange={(e) => setNewPriority(e.target.value as any)}
-                    className="w-full bg-slate-950 text-white rounded-lg p-2 border border-slate-700 font-mono"
-                  >
-                    <option value="URGENTE">Urgente</option>
-                    <option value="ALTA">Alta</option>
-                    <option value="MEDIA">Media</option>
-                    <option value="BAJA">Baja</option>
-                  </select>
+                  <h3 className="text-sm font-bold text-white uppercase font-tech">
+                    Generar Orden de Trabajo Digital (CMMS)
+                  </h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${roleBadge.color}`}>
+                      Operador Activo: {roleBadge.label} ({roleBadge.clearance})
+                    </span>
+                    {rbacAddWO.allowed ? (
+                      <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
+                        <ShieldCheck className="w-3 h-3" /> Autorizado para emisión
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-rose-400 flex items-center gap-1 font-mono">
+                        <Lock className="w-3 h-3" /> Requiere elevación
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
+              <button
+                onClick={() => setShowAddWOModal(false)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs font-mono transition"
+              >
+                ✕
+              </button>
+            </div>
 
-              <div>
-                <label className="text-slate-300 block mb-1">Responsable / Especialista</label>
-                <input
-                  type="text"
-                  required
-                  value={newAssigned}
-                  onChange={(e) => setNewAssigned(e.target.value)}
-                  className="w-full bg-slate-950 text-white rounded-lg p-2 border border-slate-700"
-                />
+            <form onSubmit={handleCreateWO} className="space-y-4 text-xs font-mono">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Equipment Target Card */}
+                <div className="space-y-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                  <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider block border-b border-slate-800 pb-1">
+                    1. Activo Objetivo
+                  </span>
+                  <div>
+                    <label className="text-slate-400 block mb-1 text-[10px]">Equipo Seleccionado:</label>
+                    <select
+                      value={selectedEquipment?.id}
+                      onChange={(e) => {
+                        const found = safeEquipmentList.find((x) => x.id === e.target.value);
+                        if (found) setSelectedEquipment(found);
+                      }}
+                      className="w-full bg-slate-900 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-emerald-500 font-bold"
+                    >
+                      {safeEquipmentList.map((eq) => (
+                        <option key={eq.id} value={eq.id}>
+                          {eq.code} - {eq.name} ({eq.area})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                    <div>
+                      <span className="text-slate-500 block">Vibración Actual:</span>
+                      <span className="text-cyan-300 font-bold">{selectedEquipment?.vibrationRMS || 2.4} mm/s</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Temperatura:</span>
+                      <span className="text-amber-300 font-bold">{selectedEquipment?.temperatureC || 60} °C</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 block mb-1 text-[10px]">Título de la Intervención:</label>
+                    <input
+                      type="text"
+                      placeholder={`Ej: Inspección predictiva ${selectedEquipment?.code}`}
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      className="w-full bg-slate-900 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-emerald-500"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-slate-400 block mb-1 text-[10px]">Tipo de Mantenimiento:</label>
+                      <select
+                        value={newType}
+                        onChange={(e) => setNewType(e.target.value as any)}
+                        className="w-full bg-slate-900 text-slate-200 px-2 py-1.5 rounded-lg border border-slate-700"
+                      >
+                        <option value="PREDICTIVO">Predictivo (CBM)</option>
+                        <option value="PREVENTIVO">Preventivo</option>
+                        <option value="CORRECTIVO">Correctivo</option>
+                        <option value="LUBRICACION">Lubricación</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1 text-[10px]">Nivel de Prioridad:</label>
+                      <select
+                        value={newPriority}
+                        onChange={(e) => setNewPriority(e.target.value as any)}
+                        className="w-full bg-slate-900 text-slate-200 px-2 py-1.5 rounded-lg border border-slate-700 font-bold"
+                      >
+                        <option value="URGENTE">Urgente</option>
+                        <option value="ALTA">Alta</option>
+                        <option value="MEDIA">Media</option>
+                        <option value="BAJA">Baja</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tasks & Technicians */}
+                <div className="space-y-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                  <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block border-b border-slate-800 pb-1">
+                    2. Asignación & Tareas CMMS
+                  </span>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-slate-400 block mb-1 text-[10px]">Técnico / Responsable:</label>
+                      <input
+                        type="text"
+                        value={newAssigned}
+                        onChange={(e) => setNewAssigned(e.target.value)}
+                        className="w-full bg-slate-900 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 font-sans"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1 text-[10px]">Horas Estimadas (HH):</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={newHours}
+                        onChange={(e) => setNewHours(e.target.value)}
+                        className="w-full bg-slate-900 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Task list builder */}
+                  <div>
+                    <label className="text-slate-400 block mb-1 text-[10px]">Checklist de Actividades:</label>
+                    <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                      {customTasks.map((t, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between gap-2 bg-slate-900 px-2 py-1 rounded border border-slate-800 text-[11px] text-slate-300"
+                        >
+                          <span className="truncate">{t}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCustomTask(idx)}
+                            className="text-slate-500 hover:text-rose-400 font-bold text-xs"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-1.5 mt-2">
+                      <input
+                        type="text"
+                        placeholder="Nueva tarea técnica..."
+                        value={newTaskInput}
+                        onChange={(e) => setNewTaskInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddCustomTask();
+                          }
+                        }}
+                        className="flex-1 bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 text-[11px]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomTask}
+                        className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold"
+                      >
+                        + Agregar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 block mb-1 text-[10px]">Descripción / Repuestos Requeridos:</label>
+                    <textarea
+                      rows={2}
+                      value={newDesc}
+                      onChange={(e) => setNewDesc(e.target.value)}
+                      placeholder="Protocolos de seguridad LOTO, permisos de trabajo en caliente y herramientas..."
+                      className="w-full bg-slate-900 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 font-sans text-xs"
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="text-slate-300 block mb-1">Descripción de las Tareas</label>
-                <textarea
-                  rows={3}
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="Detalles sobre herramientas, repuestos y protocolos de seguridad..."
-                  className="w-full bg-slate-950 text-white rounded-lg p-2 border border-slate-700"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800">
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowAddWOModal(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 font-medium"
+                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400 shadow-lg shadow-emerald-500/20"
+                  disabled={!rbacAddWO.allowed}
+                  className={`px-5 py-2 rounded-lg font-bold text-xs font-mono transition shadow-lg ${
+                    rbacAddWO.allowed
+                      ? "bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20"
+                      : "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
+                  }`}
                 >
-                  Crear OT en CMMS
+                  Registrar OT en Cloud Firestore
                 </button>
               </div>
             </form>

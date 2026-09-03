@@ -291,7 +291,7 @@ export const ProcessFlowSCADA: React.FC<ProcessFlowSCADAProps> = ({
             <span className="text-[11px] font-bold text-white block">Ensacado</span>
             <span className="text-[9px] text-slate-400 font-mono">Sacos 50kg</span>
             <div className="mt-2 text-[10px] font-mono text-emerald-300 font-bold">
-              {telemetry.sugarBagsToday.toLocaleString()}
+              {(telemetry.sugarBagsToday ?? 0).toLocaleString()}
             </div>
           </div>
 

@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check valid string
+    function isNonEmptyString(val) {
+      return val is string && val.size() > 0;
+    }
+
+    // Multi-tenant Enterprise Directory
+    match /tenants/{tenantId} {
+      allow read: if true;
+      allow write: if isNonEmptyString(tenantId);
+    }
+
+    // User Accounts & Authentication Registry
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isNonEmptyString(userId);
+    }
+
+    // RBAC Custom Roles & Capabilities
+    match /roles/{roleId} {
+      allow read: if true;
+      allow write: if isNonEmptyString(roleId);
+    }
+
+    // Granular RBAC Permission Rules
+    match /rbac_rules/{ruleId} {
+      allow read: if true;
+      allow write: if isNonEmptyString(ruleId);
+    }
+
+    // System Configurations & Operational Parameters CRUD
+    match /system_configs/{configId} {
+      allow read: if true;
+      allow write: if isNonEmptyString(configId);
+    }
+    
+    // Telemetry Real-time snapshots
+    match /telemetry/{docId} {
+      allow read: if true;
+      allow write: if isNonEmptyString(docId);
+    }
+    
+    // LIMS Cane Reception Batches
+    match /cane_batches/{batchId} {
+      allow read: if true;
+      allow create, update: if isNonEmptyString(batchId);
+      allow delete: if true;
+    }
+    
+    // CMMS Work Orders
+    match /work_orders/{woId} {
+      allow read: if true;
+      allow create, update: if isNonEmptyString(woId);
+      allow delete: if true;
+    }
+    
+    // Industrial Assets Registry
+    match /equipment/{eqId} {
+      allow read: if true;
+      allow write, delete: if isNonEmptyString(eqId);
+    }
+    
+    // ISA-18.2 Plant Alarms
+    match /alarms/{alarmId} {
+      allow read: if true;
+      allow write, delete: if isNonEmptyString(alarmId);
+    }
+    
+    // IEC 62443 Audit Logs: Append-only strictly enforced (NO updates, NO deletions)
+    match /audit_logs/{logId} {
+      allow read: if true;
+      allow create: if isNonEmptyString(logId);
+      allow update, delete: if false; // Inviolable append-only audit trail
+    }
+    
+    // Plant SCADA Global Settings
+    match /plant_settings/{settingId} {
+      allow read: if true;
+      allow write: if isNonEmptyString(settingId);
+    }
+
+    // AI Anomalies & Recommendations
+    match /ai_anomalies/{anomalyId} {
+      allow read: if true;
+      allow write: if isNonEmptyString(anomalyId);
+    }
+
+    // Historian Samples & Aggregates
+    match /historian_records/{recId} {
+      allow read: if true;
+      allow create: if isNonEmptyString(recId);
+      allow update, delete: if false; // Inviolable time series history
+    }
+  }
+}
+
+

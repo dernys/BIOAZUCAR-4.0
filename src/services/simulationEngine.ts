@@ -4,9 +4,12 @@ export type SimulationScenario =
   | "NORMAL"
   | "VIBRACION_MOLINO3"
   | "ALERTA_CALDERA"
+  | "CAIDA_PRESION_CALDERA"
   | "BAGAZO_HUMEDO"
   | "PICO_EXPORTACION"
-  | "PARADA_DESFIBRADORA";
+  | "PARADA_DESFIBRADORA"
+  | "ALTO_BRIX_JUGOS"
+  | "SOBRECARGA_RED_MW";
 
 export const INITIAL_TELEMETRY: TelemetryData = {
   timestamp: new Date().toISOString(),
@@ -50,6 +53,8 @@ export const INITIAL_TELEMETRY: TelemetryData = {
   oeeAvailability: 93.4,
   oeePerformance: 96.8,
   oeeQuality: 99.1,
+  mill3Vibration: 2.4,
+  simulationScenario: "NORMAL",
 };
 
 export function updateTelemetry(
@@ -66,7 +71,7 @@ export function updateTelemetry(
   let boilerO2 = 3.6;
   let extraction = 96.5;
   let boilerEff = 85.2;
-  let vibMill3 = 2.8;
+  let vibMill3 = 2.4;
 
   switch (scenario) {
     case "VIBRACION_MOLINO3":
@@ -74,6 +79,7 @@ export function updateTelemetry(
       vibMill3 = 5.4 + jitter(0.4);
       break;
     case "ALERTA_CALDERA":
+    case "CAIDA_PRESION_CALDERA":
       boilerPress = 54.2 + jitter(1.5);
       boilerO2 = 5.2 + jitter(0.3);
       boilerEff = 78.5;
@@ -84,12 +90,16 @@ export function updateTelemetry(
       boilerPress = 59.8;
       break;
     case "PICO_EXPORTACION":
+    case "SOBRECARGA_RED_MW":
       baseTCH = 480;
       boilerPress = 66.0;
       break;
     case "PARADA_DESFIBRADORA":
       baseTCH = 0;
       extraction = 0;
+      break;
+    case "ALTO_BRIX_JUGOS":
+      baseTCH = 440;
       break;
     case "NORMAL":
     default:
@@ -99,7 +109,7 @@ export function updateTelemetry(
 
   const tch = baseTCH > 0 ? Math.max(0, baseTCH + jitter(6)) : 0;
   const dtHours = (1.5 / 3600) * speedMultiplier;
-  const caneAccumToday = prev.caneAccumToday + (tch * dtHours);
+  const caneAccumToday = (prev.caneAccumToday || 8420) + (tch * dtHours);
 
   // Mass balance formulas:
   // Bagasse is roughly 29.5% of cane weight
@@ -109,7 +119,7 @@ export function updateTelemetry(
   ).toFixed(1);
   const bagasseYardStorageRate = +(bagasseProductionRate - bagasseBoilerConsumption).toFixed(1);
   const bagasseStockTotal = +(
-    prev.bagasseStockTotal + (bagasseYardStorageRate * dtHours)
+    (prev.bagasseStockTotal || 24500) + (bagasseYardStorageRate * dtHours)
   ).toFixed(1);
 
   // Steam generation from bagasse burnt
@@ -137,11 +147,11 @@ export function updateTelemetry(
   const canePurity = +((canePol / caneBrix) * 100).toFixed(1);
   const factoryRecoveryYield = +(11.4 + jitter(0.1)).toFixed(2);
   const sugarProductionTonsToday = +(
-    prev.sugarProductionTonsToday + (tch * (factoryRecoveryYield / 100) * dtHours)
+    (prev.sugarProductionTonsToday || 860) + (tch * (factoryRecoveryYield / 100) * dtHours)
   ).toFixed(2);
   const sugarBagsToday = Math.floor(sugarProductionTonsToday * 20); // 50kg bags
   const molassesProductionTons = +(
-    prev.molassesProductionTons + (tch * 0.033 * dtHours)
+    (prev.molassesProductionTons || 280) + (tch * 0.033 * dtHours)
   ).toFixed(2);
 
   // OEE
@@ -194,5 +204,9 @@ export function updateTelemetry(
     oeeAvailability,
     oeePerformance,
     oeeQuality,
+    mill3Vibration: +vibMill3.toFixed(2),
+    boiler1Pressure: boilerPressureHP,
+    simulationScenario: scenario,
   };
 }
+

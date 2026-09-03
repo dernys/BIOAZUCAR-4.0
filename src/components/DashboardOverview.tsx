@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   TrendingUp,
   Zap,
@@ -15,9 +15,13 @@ import {
   Sparkles,
   RefreshCw,
   Cpu,
-  BarChart3
+  BarChart3,
+  Info,
+  Radio,
 } from "lucide-react";
-import { TelemetryData, UserRole } from "../types";
+import { TelemetryData, UserRole, DataLineageInfo } from "../types";
+import { kpiEngine } from "../services/kpiEngine";
+import { DataLineageModal } from "./DataLineageModal";
 
 interface DashboardOverviewProps {
   telemetry: TelemetryData;
@@ -30,130 +34,192 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   currentRole,
   onNavigateToTab,
 }) => {
+  const [selectedLineage, setSelectedLineage] = useState<DataLineageInfo | null>(null);
+
+  const handleOpenLineage = (kpiId: string) => {
+    const lineage = kpiEngine.calculateDataLineage(kpiId, new Map(), telemetry);
+    setSelectedLineage(lineage);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Provenance & Environment Notice Banner */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <Radio className="w-4 h-4 animate-pulse" />
+          </div>
+          <div>
+            <span className="font-bold text-slate-200">ORIGEN DE DATOS INDUSTRIALES:</span>{" "}
+            <span className="font-mono text-amber-400 font-semibold">SIMULACIÓN DETERMINISTA (IEC 62443 / ISA-95)</span>
+            <p className="text-[11px] text-slate-400">
+              Desarrollo activo en Google AI Studio sin enlace OT directo. Haz clic en "Linaje" en cualquier tarjeta para auditar fórmulas y tags.
+            </p>
+          </div>
+        </div>
+        <button
+          id="btn-inspect-global-lineage"
+          onClick={() => handleOpenLineage("kpi-tch")}
+          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold flex items-center gap-1.5 self-start sm:self-auto transition shrink-0"
+        >
+          <Info className="w-3.5 h-3.5 text-cyan-400" />
+          Auditar Linaje de Proceso
+        </button>
+      </div>
+
       {/* Top Banner: Shift Summary & Key Operational Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1: Molienda */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden group hover:border-emerald-500/50 transition">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Recepción & Molienda
-            </span>
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-              <Wheat className="w-4 h-4" />
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden group hover:border-emerald-500/50 transition flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Recepción & Molienda
+              </span>
+              <button
+                onClick={() => handleOpenLineage("kpi-tch")}
+                className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition"
+                title="Ver fórmula y tags de linaje"
+              >
+                <Info className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-tech text-white">
+                {telemetry.tch}
+              </span>
+              <span className="text-xs font-mono text-emerald-400 font-semibold">TCH</span>
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-tech text-white">
-              {telemetry.tch}
-            </span>
-            <span className="text-xs font-mono text-emerald-400 font-semibold">TCH</span>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-            <span>Acumulado hoy:</span>
-            <span className="font-mono text-slate-200 font-semibold">
-              {telemetry.caneAccumToday.toLocaleString()} t
-            </span>
-          </div>
-          <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-            <span>Extracción Tándem:</span>
-            <span className="font-mono text-emerald-400 font-semibold">
-              {telemetry.millingExtraction}%
-            </span>
+          <div>
+            <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Acumulado hoy:</span>
+              <span className="font-mono text-slate-200 font-semibold">
+                {(telemetry.caneAccumToday ?? 0).toLocaleString()} t
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+              <span>Extracción Tándem:</span>
+              <button
+                onClick={() => handleOpenLineage("kpi-extraction")}
+                className="font-mono text-emerald-400 font-semibold hover:underline"
+              >
+                {telemetry.millingExtraction}%
+              </button>
+            </div>
           </div>
         </div>
 
         {/* KPI 2: Bagazo & Biomasa */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden group hover:border-amber-500/50 transition">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Bagazo Disponible
-            </span>
-            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
-              <Layers className="w-4 h-4" />
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden group hover:border-amber-500/50 transition flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Bagazo Disponible
+              </span>
+              <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400">
+                <Layers className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-tech text-white">
+                {telemetry.bagasseProductionRate}
+              </span>
+              <span className="text-xs font-mono text-amber-400 font-semibold">t/h prod</span>
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-tech text-white">
-              {telemetry.bagasseProductionRate}
-            </span>
-            <span className="text-xs font-mono text-amber-400 font-semibold">t/h prod</span>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-            <span>Quemado Calderas:</span>
-            <span className="font-mono text-slate-200 font-semibold">
-              {telemetry.bagasseBoilerConsumption} t/h
-            </span>
-          </div>
-          <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-            <span>Excedente a Patio:</span>
-            <span className="font-mono text-emerald-400 font-semibold">
-              +{telemetry.bagasseYardStorageRate} t/h (Hum: {telemetry.bagasseMoisture}%)
-            </span>
+          <div>
+            <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Quemado Calderas:</span>
+              <span className="font-mono text-slate-200 font-semibold">
+                {telemetry.bagasseBoilerConsumption} t/h
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+              <span>Excedente a Patio:</span>
+              <span className="font-mono text-emerald-400 font-semibold">
+                +{telemetry.bagasseYardStorageRate} t/h (Hum: {telemetry.bagasseMoisture}%)
+              </span>
+            </div>
           </div>
         </div>
 
         {/* KPI 3: Vapor Calderas */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden group hover:border-cyan-500/50 transition">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Generación Vapor HP
-            </span>
-            <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
-              <Flame className="w-4 h-4" />
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden group hover:border-cyan-500/50 transition flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Generación Vapor HP
+              </span>
+              <button
+                onClick={() => handleOpenLineage("kpi-steam-hp")}
+                className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition"
+                title="Ver fórmula y tags de linaje"
+              >
+                <Info className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-tech text-white">
+                {telemetry.boilerPressureHP}
+              </span>
+              <span className="text-xs font-mono text-cyan-400 font-semibold">bar</span>
+              <span className="text-sm text-slate-400 font-mono">({telemetry.steamFlowHP} t/h)</span>
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-tech text-white">
-              {telemetry.boilerPressureHP}
-            </span>
-            <span className="text-xs font-mono text-cyan-400 font-semibold">bar</span>
-            <span className="text-sm text-slate-400 font-mono">({telemetry.steamFlowHP} t/h)</span>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-            <span>Temperatura Vapor:</span>
-            <span className="font-mono text-slate-200 font-semibold">
-              {telemetry.boilerTempHP} °C
-            </span>
-          </div>
-          <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-            <span>Eficiencia Caldera:</span>
-            <span className="font-mono text-cyan-300 font-semibold">
-              {telemetry.boilerEfficiency}% (O2: {telemetry.flueGasO2}%)
-            </span>
+          <div>
+            <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Temperatura Vapor:</span>
+              <span className="font-mono text-slate-200 font-semibold">
+                {telemetry.boilerTempHP} °C
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+              <span>Eficiencia Caldera:</span>
+              <span className="font-mono text-cyan-300 font-semibold">
+                {telemetry.boilerEfficiency}% (O2: {telemetry.flueGasO2}%)
+              </span>
+            </div>
           </div>
         </div>
 
         {/* KPI 4: Cogeneración Eléctrica */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden group hover:border-yellow-500/50 transition">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Cogeneración & Red
-            </span>
-            <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-400">
-              <Zap className="w-4 h-4" />
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden group hover:border-yellow-500/50 transition flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                Cogeneración & Red
+              </span>
+              <button
+                onClick={() => handleOpenLineage("kpi-power-export")}
+                className="p-1.5 rounded-lg bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition"
+                title="Ver fórmula y tags de linaje"
+              >
+                <Info className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-tech text-white">
+                {telemetry.powerGeneratedMW}
+              </span>
+              <span className="text-xs font-mono text-yellow-400 font-semibold">MW Gen</span>
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-tech text-white">
-              {telemetry.powerGeneratedMW}
-            </span>
-            <span className="text-xs font-mono text-yellow-400 font-semibold">MW Gen</span>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-            <span>Consumo Ingenio:</span>
-            <span className="font-mono text-slate-300 font-semibold">
-              {telemetry.powerInternalMW} MW
-            </span>
-          </div>
-          <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-            <span className="text-emerald-400 font-medium flex items-center gap-1">
-              <ArrowUpRight className="w-3.5 h-3.5" /> Excedente Red:
-            </span>
-            <span className="font-mono text-emerald-400 font-bold">
-              {telemetry.powerExportGridMW} MW ({telemetry.gridVoltageKV} kV)
-            </span>
+          <div>
+            <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Consumo Ingenio:</span>
+              <span className="font-mono text-slate-300 font-semibold">
+                {telemetry.powerInternalMW} MW
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+              <span className="text-emerald-400 font-medium flex items-center gap-1">
+                <ArrowUpRight className="w-3.5 h-3.5" /> Excedente Red:
+              </span>
+              <span className="font-mono text-emerald-400 font-bold">
+                {telemetry.powerExportGridMW} MW ({telemetry.gridVoltageKV} kV)
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -175,26 +241,26 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
               <span className="text-[11px] text-slate-400">Azúcar Hoy</span>
               <div className="text-lg font-bold font-tech text-white mt-0.5">
-                {telemetry.sugarProductionTonsToday.toLocaleString()} <span className="text-xs font-normal text-slate-400">t</span>
+                {(telemetry.sugarProductionTonsToday ?? 0).toLocaleString()} <span className="text-xs font-normal text-slate-400">t</span>
               </div>
               <span className="text-[10px] text-emerald-400 font-mono">
-                {telemetry.sugarBagsToday.toLocaleString()} sacos (50kg)
+                {(telemetry.sugarBagsToday ?? 0).toLocaleString()} sacos (50kg)
               </span>
             </div>
             <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
               <span className="text-[11px] text-slate-400">Melaza / Miel B</span>
               <div className="text-lg font-bold font-tech text-white mt-0.5">
-                {telemetry.molassesProductionTons.toLocaleString()} <span className="text-xs font-normal text-slate-400">t</span>
+                {(telemetry.molassesProductionTons ?? 0).toLocaleString()} <span className="text-xs font-normal text-slate-400">t</span>
               </div>
               <span className="text-[10px] text-amber-400 font-mono">
-                Brix Meladura: {telemetry.evaporatorSyrupBrix}°Bx
+                Brix Meladura: {telemetry.evaporatorSyrupBrix ?? 0}°Bx
               </span>
             </div>
           </div>
           <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden mt-1">
             <div
               className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(100, (telemetry.sugarProductionTonsToday / 1000) * 100)}%` }}
+              style={{ width: `${Math.min(100, (((telemetry.sugarProductionTonsToday ?? 0) / 1000) * 100))}%` }}
             ></div>
           </div>
           <span className="text-[10px] text-slate-400 mt-1.5 flex justify-between">
@@ -367,10 +433,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </div>
               <div className="text-right font-mono">
                 <span className="text-xs font-bold text-emerald-400 block">
-                  {telemetry.sugarBagsToday.toLocaleString()} sacos
+                  {(telemetry.sugarBagsToday ?? 0).toLocaleString()} sacos
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  {telemetry.sugarProductionTonsToday.toFixed(1)} t Azúcar
+                  {(telemetry.sugarProductionTonsToday ?? 0).toFixed(1)} t Azúcar
                 </span>
               </div>
             </div>
@@ -426,6 +492,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Data Lineage Modal */}
+      <DataLineageModal lineage={selectedLineage} onClose={() => setSelectedLineage(null)} />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   AlertTriangle,
   Bell,
@@ -10,9 +10,17 @@ import {
   ShieldAlert,
   Search,
   Check,
-  RotateCcw
+  RotateCcw,
+  ShieldCheck,
+  Lock,
+  Layers,
+  Activity,
+  Zap,
+  Info,
+  CheckCheck,
 } from "lucide-react";
 import { AlarmEvent, UserRole } from "../types";
+import { checkRbacPermission, getRoleBadgeInfo } from "../services/rbacService";
 
 interface AlarmCenterProps {
   alarms: AlarmEvent[];
@@ -30,15 +38,31 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
   const [severityFilter, setSeverityFilter] = useState<string>("ALL");
   const [isAudible, setIsAudible] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [selectedAlarm, setSelectedAlarm] = useState<AlarmEvent | null>(null);
 
   const safeAlarms = Array.isArray(alarms) ? alarms : [];
+
+  // RBAC Checks
+  const rbacAck = useMemo(
+    () => checkRbacPermission(currentRole, "ACKNOWLEDGE_ALARM"),
+    [currentRole]
+  );
+  const rbacClear = useMemo(
+    () => checkRbacPermission(currentRole, "CLEAR_ALARM"),
+    [currentRole]
+  );
+  const rbacShelve = useMemo(
+    () => checkRbacPermission(currentRole, "SHELVE_ALARM"),
+    [currentRole]
+  );
+  const roleBadge = getRoleBadgeInfo(currentRole);
 
   const filteredAlarms = safeAlarms.filter((a) => {
     const matchesSeverity =
       severityFilter === "ALL" ||
       a.severity === severityFilter ||
-      (severityFilter === "CRITICAL" && a.severity === "CRITICA") ||
-      (severityFilter === "WARNING" && (a.severity === "ALTA" || a.severity === "MEDIA"));
+      (severityFilter === "CRITICAL" && (a.severity === "CRITICAL" || a.severity === "CRITICA")) ||
+      (severityFilter === "WARNING" && (a.severity === "WARNING" || a.severity === "ALTA" || a.severity === "MEDIA"));
     const matchesSearch =
       (a.message || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (a.equipmentName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -55,10 +79,19 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
       (a.status === "ACTIVE" || !a.acknowledged)
   ).length;
 
+  const handleAcknowledgeAll = () => {
+    if (!rbacAck.allowed) {
+      alert(rbacAck.reason);
+      return;
+    }
+    const unacknowledged = safeAlarms.filter((a) => !a.acknowledged && a.status !== "CLEARED");
+    unacknowledged.forEach((a) => onAcknowledgeAlarm(a.id));
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg">
         <div>
           <h2 className="text-base font-bold text-white font-tech tracking-wider flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-rose-400" />
@@ -82,6 +115,16 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
             {isAudible ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             <span>{isAudible ? "Buzzer Activado" : "Buzzer Silenciado"}</span>
           </button>
+
+          {activeCount > 0 && rbacAck.allowed && (
+            <button
+              onClick={handleAcknowledgeAll}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 text-xs font-mono transition font-bold"
+            >
+              <CheckCheck className="w-3.5 h-3.5" />
+              <span>ACK Global ({activeCount})</span>
+            </button>
+          )}
 
           <div className="flex items-center gap-2 font-mono text-xs">
             <span className="px-2.5 py-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
@@ -136,7 +179,7 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
                 <th className="p-3">Descripción de la Alarma</th>
                 <th className="p-3 text-center">Valor / Límite</th>
                 <th className="p-3 text-center">Estado</th>
-                <th className="p-3 text-right">Acción</th>
+                <th className="p-3 text-right">Acción (RBAC)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
@@ -150,11 +193,12 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
                 return (
                   <tr
                     key={alarm.id}
-                    className={`transition ${
+                    onClick={() => setSelectedAlarm(alarm)}
+                    className={`cursor-pointer transition ${
                       isActive
                         ? isCritical
-                          ? "bg-rose-950/20 text-rose-200"
-                          : "bg-amber-950/20 text-amber-200"
+                          ? "bg-rose-950/20 text-rose-200 hover:bg-rose-950/30"
+                          : "bg-amber-950/20 text-amber-200 hover:bg-amber-950/30"
                         : "hover:bg-slate-800/30 text-slate-400"
                     }`}
                   >
@@ -205,7 +249,7 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
                       </span>
                     </td>
 
-                    <td className="p-3 text-right">
+                    <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
                       {isActive ? (
                         <button
                           onClick={() => onAcknowledgeAlarm(alarm.id)}
@@ -215,8 +259,19 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
                         </button>
                       ) : alarm.status === "ACKNOWLEDGED" || alarm.acknowledged ? (
                         <button
-                          onClick={() => onClearAlarm(alarm.id)}
-                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition"
+                          onClick={() => {
+                            if (!rbacClear.allowed) {
+                              alert(rbacClear.reason);
+                              return;
+                            }
+                            onClearAlarm(alarm.id);
+                          }}
+                          className={`px-2.5 py-1 rounded text-xs font-mono transition ${
+                            rbacClear.allowed
+                              ? "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                              : "bg-slate-900 text-slate-600 cursor-not-allowed border border-slate-800"
+                          }`}
+                          title={rbacClear.allowed ? "Normalizar alarma" : rbacClear.reason}
                         >
                           Normalizar (RST)
                         </button>
@@ -233,6 +288,92 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
           </table>
         </div>
       </div>
+
+      {/* OPTIMIZED ISA-18.2 ALARM DETAIL & ROOT CAUSE MODAL */}
+      {selectedAlarm && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 font-mono text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-rose-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-white uppercase font-tech">
+                    Diagnóstico de Evento ISA-18.2
+                  </h3>
+                  <span className="text-[10px] text-slate-400">
+                    Tag: {selectedAlarm.code || selectedAlarm.tag || "PLC_ALM"}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedAlarm(null)}
+                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+              <div className="flex justify-between items-center text-slate-300">
+                <span>Equipo:</span>
+                <strong className="text-white font-sans">{selectedAlarm.equipmentName}</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-300">
+                <span>Severidad:</span>
+                <span className="text-rose-400 font-bold uppercase">{selectedAlarm.severity}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-300">
+                <span>Estampa Temporal SOE:</span>
+                <span className="text-slate-200">{selectedAlarm.timestamp}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-300">
+                <span>Valor Medido vs Consigna:</span>
+                <span className="text-amber-300 font-bold">
+                  {selectedAlarm.value ?? selectedAlarm.currentValue} {selectedAlarm.unit} (Límite: {selectedAlarm.threshold} {selectedAlarm.unit})
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 font-sans">
+              <span className="text-[11px] text-slate-400 font-mono font-bold block">Mensaje de Proceso:</span>
+              <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+                {selectedAlarm.message}
+              </p>
+            </div>
+
+            <div className="space-y-1.5 font-sans">
+              <span className="text-[11px] text-emerald-400 font-mono font-bold block">Protocolo de Respuesta Inmediata:</span>
+              <ul className="text-[11px] text-slate-300 list-disc list-inside space-y-1 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+                <li>Verificar flujo enclavado en lazo de control SCADA.</li>
+                <li>Verificar estado térmico y vibratorio en panel CBM.</li>
+                <li>Registrar evento en bitácora de turno DCS.</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setSelectedAlarm(null)}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
+              >
+                Cerrar
+              </button>
+              {!selectedAlarm.acknowledged && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onAcknowledgeAlarm(selectedAlarm.id);
+                    setSelectedAlarm(null);
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs"
+                >
+                  Reconocer Alarma (ACK)
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
