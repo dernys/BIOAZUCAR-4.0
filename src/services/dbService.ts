@@ -13,7 +13,7 @@ import {
   limit,
   writeBatch,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import firebaseConfigJson from "../../firebase-applet-config.json";
 import {
   TelemetryData,
@@ -127,9 +127,19 @@ export const INITIAL_TENANTS: TenantEnterprise[] = [
   },
 ];
 
-// Helper: Seed initial real data into Firestore if empty
+// Helper: Seed initial real data into Firestore if empty (SEC-6: Server privileged or authenticated admin only)
 export async function initializeDatabaseIfEmpty(): Promise<boolean> {
   try {
+    // SEC-6: Browser client must never attempt unauthenticated administrative seeding
+    if (!auth.currentUser) {
+      try {
+        await fetch("/api/admin/bootstrap", { method: "POST" });
+      } catch {
+        // Backend offline or running in test/sandbox
+      }
+      return false;
+    }
+
     const tenantsSnap = await getDocs(collection(db, COLLECTIONS.TENANTS));
     if (tenantsSnap.empty) {
       console.log("⚡ Seeding initial real industrial data to Cloud Firestore...");
@@ -259,6 +269,10 @@ export function subscribeToTenants(
   onUpdate: (tenants: TenantEnterprise[]) => void,
   onError?: (err: Error) => void
 ) {
+  if (!auth.currentUser) {
+    onUpdate(INITIAL_TENANTS);
+    return () => {};
+  }
   const colRef = collection(db, COLLECTIONS.TENANTS);
   return onSnapshot(
     colRef,
@@ -271,7 +285,8 @@ export function subscribeToTenants(
       onUpdate(list.length > 0 ? list : INITIAL_TENANTS);
     },
     (err) => {
-      console.warn("Firestore tenants subscription error:", err);
+      console.warn("Firestore tenants subscription fallback:", err.message);
+      onUpdate(INITIAL_TENANTS);
       if (onError) onError(err);
     }
   );
@@ -779,6 +794,10 @@ export function subscribeToUsers(
   onUpdate: (users: UserAccount[]) => void,
   onError?: (err: Error) => void
 ) {
+  if (!auth.currentUser) {
+    onUpdate(PREDEFINED_USERS as UserAccount[]);
+    return () => {};
+  }
   const colRef = collection(db, COLLECTIONS.USERS);
   return onSnapshot(
     colRef,
@@ -790,7 +809,8 @@ export function subscribeToUsers(
       onUpdate(list.length > 0 ? list : (PREDEFINED_USERS as UserAccount[]));
     },
     (err) => {
-      console.warn("Firestore users subscription error:", err);
+      console.warn("Firestore users subscription fallback:", err.message);
+      onUpdate(PREDEFINED_USERS as UserAccount[]);
       if (onError) onError(err);
     }
   );
@@ -893,6 +913,10 @@ export function subscribeToRoles(
   onUpdate: (roles: RbacRoleDefinition[]) => void,
   onError?: (err: Error) => void
 ) {
+  if (!auth.currentUser) {
+    onUpdate(DEFAULT_ROLES);
+    return () => {};
+  }
   const colRef = collection(db, COLLECTIONS.ROLES);
   return onSnapshot(
     colRef,
@@ -905,7 +929,8 @@ export function subscribeToRoles(
       onUpdate(list.length > 0 ? list : DEFAULT_ROLES);
     },
     (err) => {
-      console.warn("Firestore roles subscription error:", err);
+      console.warn("Firestore roles subscription fallback:", err.message);
+      onUpdate(DEFAULT_ROLES);
       if (onError) onError(err);
     }
   );
@@ -1131,6 +1156,10 @@ export function subscribeToTelemetry(
   onUpdate: (data: TelemetryData) => void,
   onError?: (err: Error) => void
 ) {
+  if (!auth.currentUser) {
+    onUpdate(initialTelemetry);
+    return () => {};
+  }
   const docId = tenantId ? `snapshot_${tenantId}` : "current_snapshot";
   const docRef = doc(db, COLLECTIONS.TELEMETRY, docId);
   return onSnapshot(
@@ -1140,16 +1169,12 @@ export function subscribeToTelemetry(
         const data = docSnap.data() as TelemetryData;
         onUpdate(data);
       } else {
-        // Fallback to current snapshot
-        const fallbackRef = doc(db, COLLECTIONS.TELEMETRY, "current_snapshot");
-        getDoc(fallbackRef).then((snap) => {
-          if (snap.exists()) onUpdate(snap.data() as TelemetryData);
-          else onUpdate(initialTelemetry);
-        });
+        onUpdate(initialTelemetry);
       }
     },
     (err) => {
-      console.warn("Firestore telemetry subscription error:", err);
+      console.warn("Firestore telemetry subscription fallback:", err.message);
+      onUpdate(initialTelemetry);
       if (onError) onError(err);
     }
   );
@@ -1183,6 +1208,10 @@ export function subscribeToCaneBatches(
   onUpdate: (batches: CaneBatch[]) => void,
   onError?: (err: Error) => void
 ) {
+  if (!auth.currentUser) {
+    onUpdate(INITIAL_BATCHES);
+    return () => {};
+  }
   const colRef = collection(db, COLLECTIONS.CANE_BATCHES);
   return onSnapshot(
     colRef,
@@ -1198,7 +1227,8 @@ export function subscribeToCaneBatches(
       onUpdate(list.length > 0 ? list : INITIAL_BATCHES);
     },
     (err) => {
-      console.warn("Firestore batches subscription error:", err);
+      console.warn("Firestore batches subscription fallback:", err.message);
+      onUpdate(INITIAL_BATCHES);
       if (onError) onError(err);
     }
   );
@@ -1299,6 +1329,10 @@ export function subscribeToWorkOrders(
   onUpdate: (orders: WorkOrder[]) => void,
   onError?: (err: Error) => void
 ) {
+  if (!auth.currentUser) {
+    onUpdate(INITIAL_WORK_ORDERS);
+    return () => {};
+  }
   const colRef = collection(db, COLLECTIONS.WORK_ORDERS);
   return onSnapshot(
     colRef,
@@ -1314,7 +1348,8 @@ export function subscribeToWorkOrders(
       onUpdate(list.length > 0 ? list : INITIAL_WORK_ORDERS);
     },
     (err) => {
-      console.warn("Firestore work orders subscription error:", err);
+      console.warn("Firestore work orders subscription fallback:", err.message);
+      onUpdate(INITIAL_WORK_ORDERS);
       if (onError) onError(err);
     }
   );
@@ -1415,6 +1450,10 @@ export function subscribeToEquipment(
   onUpdate: (equipment: EquipmentItem[]) => void,
   onError?: (err: Error) => void
 ) {
+  if (!auth.currentUser) {
+    onUpdate(INITIAL_EQUIPMENT);
+    return () => {};
+  }
   const colRef = collection(db, COLLECTIONS.EQUIPMENT);
   return onSnapshot(
     colRef,
@@ -1429,7 +1468,8 @@ export function subscribeToEquipment(
       onUpdate(list.length > 0 ? list : INITIAL_EQUIPMENT);
     },
     (err) => {
-      console.warn("Firestore equipment subscription error:", err);
+      console.warn("Firestore equipment subscription fallback:", err.message);
+      onUpdate(INITIAL_EQUIPMENT);
       if (onError) onError(err);
     }
   );
@@ -1485,6 +1525,10 @@ export function subscribeToAlarms(
   onUpdate: (alarms: AlarmEvent[]) => void,
   onError?: (err: Error) => void
 ) {
+  if (!auth.currentUser) {
+    onUpdate(INITIAL_ALARMS);
+    return () => {};
+  }
   const colRef = collection(db, COLLECTIONS.ALARMS);
   return onSnapshot(
     colRef,
@@ -1500,7 +1544,8 @@ export function subscribeToAlarms(
       onUpdate(list.length > 0 ? list : INITIAL_ALARMS);
     },
     (err) => {
-      console.warn("Firestore alarms subscription error:", err);
+      console.warn("Firestore alarms subscription fallback:", err.message);
+      onUpdate(INITIAL_ALARMS);
       if (onError) onError(err);
     }
   );
@@ -1576,6 +1621,11 @@ export function subscribeToAuditLogs(
     }
   }
 
+  if (!auth.currentUser) {
+    onUpdate(INITIAL_AUDIT_LOGS);
+    return () => {};
+  }
+
   const colRef = collection(db, COLLECTIONS.AUDIT_LOGS);
   return onSnapshot(
     colRef,
@@ -1591,7 +1641,8 @@ export function subscribeToAuditLogs(
       onUpdate(list.length > 0 ? list : INITIAL_AUDIT_LOGS);
     },
     (err) => {
-      console.warn("Firestore audit logs subscription error:", err);
+      console.warn("Firestore audit logs subscription fallback:", err.message);
+      onUpdate(INITIAL_AUDIT_LOGS);
       if (onErr) onErr(err);
     }
   );

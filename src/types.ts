@@ -63,6 +63,18 @@ export interface UserAccount {
   passwordHash?: string;
 }
 
+export interface TenantMembership {
+  id: string;
+  userId: string;
+  tenantId: string;
+  role: UserRole;
+  permissions: string[];
+  securityLevel: number;
+  status: "ACTIVE" | "SUSPENDED" | "INVITED";
+  createdAt: string;
+  assignedBy?: string;
+}
+
 export interface SystemParameterConfig {
   id: string;
   category: "PLC_SCADA" | "IIOT_GATEWAYS" | "FIRESTORE_DB" | "SECURITY_RBAC" | "STEAM_ENERGY" | "QUALITY_LIMS" | "ENTERPRISE";
@@ -429,6 +441,7 @@ export interface IndustrialDataPoint {
   sequenceNumber?: number;
   isHistorical: boolean;
   isSimulated: boolean;
+  provenance?: "SIMULATED_PROCESS_MODEL" | "OBSERVED_OT" | string;
   securityClearanceLevel?: number;
   engMin?: number;
   engMax?: number;

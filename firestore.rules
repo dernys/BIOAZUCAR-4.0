@@ -2,109 +2,173 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // ========================================================================
+    // IEC 62443 / BIOAZÚCAR 4.0 SECURITY FUNCTIONS (SEC-3)
+    // ========================================================================
     function isAuthenticated() {
-      return request.auth != null;
+      return request.auth != null && request.auth.uid != null;
     }
 
-    function isNonEmptyString(val) {
-      return val is string && val.size() > 0;
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.keys().hasAll(['role']) && request.auth.token.role == 'superadmin') ||
+        (request.auth.token.keys().hasAll(['isSuperAdmin']) && request.auth.token.isSuperAdmin == true) ||
+        (request.auth.token.keys().hasAll(['tenantId']) && request.auth.token.tenantId == 'GLOBAL')
+      );
     }
 
-    // Default deny for unmapped paths
+    function userTenant() {
+      return request.auth.token.keys().hasAll(['tenantId']) ? request.auth.token.tenantId : '';
+    }
+
+    function belongsToTenant(tId) {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        userTenant() == 'GLOBAL' ||
+        (tId != null && userTenant() == tId)
+      );
+    }
+
+    function isResourceTenantMatch(res) {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        userTenant() == 'GLOBAL' ||
+        (res.data.keys().hasAll(['tenantId']) && res.data.tenantId == userTenant())
+      );
+    }
+
+    function isNewResourceTenantMatch() {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        userTenant() == 'GLOBAL' ||
+        (request.resource.data.keys().hasAll(['tenantId']) && request.resource.data.tenantId == userTenant())
+      );
+    }
+
+    // Default Deny All: Any unmapped collection or root path is strictly forbidden
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Multi-tenant Enterprise Directory (read for mill selection & operations, write for bootstrap & management)
+    // 1. Tenants Directory: Authenticated tenants read their own tenant or Superadmin reads all
     match /tenants/{tenantId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated() && belongsToTenant(tenantId);
+      allow write: if isSuperAdmin();
     }
 
-    // User Accounts & Authentication Registry
+    // 2. User Accounts: Read by self, tenant peers, or superadmin. No privilege escalation.
     match /users/{userId} {
-      allow read: if true;
-      allow create, update: if true;
-      allow delete: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isSuperAdmin() ||
+        (resource != null && belongsToTenant(resource.data.tenantId))
+      );
+      allow create: if isSuperAdmin() || (
+        isAuthenticated() && 
+        request.auth.uid == userId && 
+        request.resource.data.role != 'superadmin' && 
+        isNewResourceTenantMatch()
+      );
+      allow update: if isSuperAdmin() || (
+        isAuthenticated() && 
+        request.auth.uid == userId && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isSuperAdmin', 'securityLevel', 'tenantId'])
+      );
+      allow delete: if isSuperAdmin();
     }
 
-    // RBAC Custom Roles & Capabilities
+    // 3. Tenant Memberships: Read by member or tenant administrator; write by Superadmin
+    match /tenant_memberships/{membershipId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        belongsToTenant(resource.data.tenantId)
+      );
+      allow write: if isSuperAdmin();
+    }
+
+    // 4. Roles & RBAC Rules: Read by authenticated users; write restricted to Superadmin
     match /roles/{roleId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
     }
 
-    // Granular RBAC Permission Rules
     match /rbac_rules/{ruleId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
     }
 
-    // System Configurations & Operational Parameters CRUD
+    // 5. System Configs: Read by tenant; write by authorized supervisors/admins of that tenant
     match /system_configs/{configId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && (
+        isSuperAdmin() || 
+        (isNewResourceTenantMatch() && (request.auth.token.role == 'administrador' || request.auth.token.role == 'supervisor'))
+      );
     }
-    
-    // Telemetry Real-time snapshots (Tenant isolated)
+
+    // 6. Telemetry Snapshots: Read and write strictly isolated by tenant
     match /telemetry/{docId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
     }
-    
-    // LIMS Cane Reception Batches (Tenant isolated)
+
+    // 7. LIMS Cane Reception Batches: Tenant isolated
     match /cane_batches/{batchId} {
-      allow read: if true;
-      allow create, update: if true;
-      allow delete: if isAuthenticated();
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isSuperAdmin();
     }
-    
-    // CMMS Work Orders (Tenant isolated)
+
+    // 8. CMMS Work Orders: Tenant isolated
     match /work_orders/{woId} {
-      allow read: if true;
-      allow create, update: if true;
-      allow delete: if isAuthenticated();
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isSuperAdmin();
     }
-    
-    // Industrial Assets Registry (Tenant isolated)
+
+    // 9. Industrial Equipment Registry: Tenant isolated
     match /equipment/{eqId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
     }
-    
-    // ISA-18.2 Plant Alarms (Tenant isolated)
+
+    // 10. ISA-18.2 Plant Alarms: Tenant isolated
     match /alarms/{alarmId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
     }
-    
-    // IEC 62443 Audit Logs: Append-only strictly enforced (NO updates, NO deletions)
+
+    // 11. IEC 62443 Audit Logs: Append-only strictly enforced (NO updates, NO deletions)
     match /audit_logs/{logId} {
-      allow read: if true;
-      allow create: if true;
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create: if isAuthenticated() && isNewResourceTenantMatch() && (
+        !request.resource.data.keys().hasAll(['actorUid']) || 
+        request.resource.data.actorUid == request.auth.uid || 
+        isSuperAdmin()
+      );
       allow update, delete: if false; // Inviolable append-only audit trail
     }
-    
-    // Plant SCADA Global Settings
-    match /plant_settings/{settingId} {
-      allow read: if true;
-      allow write: if true;
-    }
 
-    // AI Anomalies & Recommendations
-    match /ai_anomalies/{anomalyId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Historian Samples & Aggregates
-    match /historian_records/{recId} {
-      allow read: if true;
-      allow create: if true;
+    // 12. Plant SCADA Historian Records: Append-only time series
+    match /historian_records/{recordId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create: if isAuthenticated() && isNewResourceTenantMatch();
       allow update, delete: if false; // Inviolable time series history
+    }
+
+    // 13. Plant Settings: Tenant isolated
+    match /plant_settings/{settingId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && (
+        isSuperAdmin() || 
+        (isNewResourceTenantMatch() && request.auth.token.role == 'administrador')
+      );
+    }
+
+    // 14. AI Anomalies & Recommendations: Tenant isolated
+    match /ai_anomalies/{anomalyId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
     }
   }
 }
-
-

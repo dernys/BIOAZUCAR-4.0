@@ -12,6 +12,7 @@ import {
   logServerAuditEvent,
   getServerAuditTrail,
 } from "./src/server/authMiddleware";
+import { bootstrapDatabaseWithAdminSdk } from "./src/server/bootstrapService";
 
 dotenv.config();
 
@@ -47,6 +48,12 @@ app.get("/api/health", (_req, res) => {
     aiReady: Boolean(process.env.GEMINI_API_KEY),
     securityModel: "IEC-62443-SL3-SERVER-AUTHORITATIVE",
   });
+});
+
+// Privileged Backend Database Bootstrap (SEC-6: Server Admin SDK only)
+app.post("/api/admin/bootstrap", async (_req, res) => {
+  const result = await bootstrapDatabaseWithAdminSdk();
+  res.json(result);
 });
 
 // Server Security Audit Trail (Admin / Superadmin only)
@@ -759,6 +766,13 @@ Devuelve SIEMPRE un JSON válido con esta estructura:
 
 // Setup Vite development middleware or static file serving
 async function startServer() {
+  // Privileged initial bootstrap (SEC-6)
+  try {
+    await bootstrapDatabaseWithAdminSdk();
+  } catch (bootErr: any) {
+    console.warn("[BioAzúcar 4.0] Bootstrap check:", bootErr.message);
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

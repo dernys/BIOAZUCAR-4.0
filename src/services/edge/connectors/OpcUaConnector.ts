@@ -130,7 +130,7 @@ export class OpcUaConnector {
   public async getEndpoints(): Promise<OpcUaEndpointInfo[]> {
     this.packetsSent++;
     this.packetsReceived++;
-    return [
+    const endpoints: OpcUaEndpointInfo[] = [
       {
         endpointUrl: this.options.endpointUrl,
         serverName: "KEPServerEX / BioAzúcar DCS Gateway",
@@ -139,14 +139,20 @@ export class OpcUaConnector {
         transportProfileUri: "http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary",
         certificateThumbprint: "7A4F903B1E62C8F3341850AA62E4091C9A0F612B",
       },
-      {
+    ];
+
+    // SEC-9: Insecure endpoints (SecurityPolicy=None, SecurityMode=None) strictly limited to dev/test environments
+    if (process.env.NODE_ENV !== "production") {
+      endpoints.push({
         endpointUrl: `${this.options.endpointUrl}/None`,
-        serverName: "KEPServerEX / BioAzúcar DCS Gateway (Insecure Test)",
+        serverName: "KEPServerEX / BioAzúcar DCS Gateway (Insecure Test Only - DEV/TEST)",
         securityPolicy: "None",
         securityMode: "None",
         transportProfileUri: "http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary",
-      },
-    ];
+      });
+    }
+
+    return endpoints;
   }
 
   /**
@@ -235,7 +241,8 @@ export class OpcUaConnector {
         ingestionTimestamp,
         sequence: ++this.packetsReceived,
         isHistorical: false,
-        isSimulated: false,
+        isSimulated: true, // SEC-10: Simulated connector
+        provenance: "SIMULATED_PROCESS_MODEL",
       };
     }
 
@@ -256,12 +263,13 @@ export class OpcUaConnector {
       dataType: "FLOAT",
       source: "OPC_UA",
       protocol: "OPC-UA",
-      quality: "GOOD",
+      quality: "SIMULATED", // SEC-10: Must reflect simulated nature
+      provenance: "SIMULATED_PROCESS_MODEL",
       deviceTimestamp: sourceTimestamp,
       ingestionTimestamp,
       sequence: this.packetsReceived,
       isHistorical: false,
-      isSimulated: false,
+      isSimulated: true, // SEC-10: Simulated connector
       description: nodeDef?.description,
     };
   }
@@ -366,12 +374,13 @@ export class OpcUaConnector {
         dataType: "FLOAT",
         source: "OPC_UA",
         protocol: "OPC-UA",
-        quality: "GOOD",
+        quality: "SIMULATED",
+        provenance: "SIMULATED_PROCESS_MODEL",
         deviceTimestamp: ts,
         ingestionTimestamp: ts,
         sequence: i,
         isHistorical: true,
-        isSimulated: false,
+        isSimulated: true,
       });
     }
 

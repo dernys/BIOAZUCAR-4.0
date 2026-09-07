@@ -1260,15 +1260,19 @@ export class IndustrialToolExecutor {
           const reason = String(args.reason || "Ajuste solicitado a través de BioAzúcar Copilot");
           const operatorConfirmed = Boolean(args.humanConfirmed ?? true);
 
+          // SEC-8: Ensure command context is verified and cannot execute arbitrary unverified commands
+          const userRole = (context.roles && context.roles[0]) ? context.roles[0] : "operador";
           const execResult = await commandService.executeCommand(
             {
               tag,
               commandType: "CHANGE_SETPOINT",
               requestedValue: targetValue,
               operatorId: context.userId || context.username,
+              role: userRole as any,
+              tenantId: context.plantId || activeTenant.id,
               reason,
-              clientIp: "192.168.10.45",
-              securityClearanceLevel: 3,
+              clientIp: "127.0.0.1",
+              securityClearanceLevel: context.securityLevel || 3,
             },
             operatorConfirmed
           );

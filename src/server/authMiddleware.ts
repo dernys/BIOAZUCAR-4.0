@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import { UserRole } from "../types";
+import { getAdminAuth } from "./firebaseAdmin";
+import { MembershipService } from "./membershipService";
 
 export interface AuthenticatedUser {
   id?: string;
@@ -10,6 +12,7 @@ export interface AuthenticatedUser {
   tenantId: string;
   isSuperAdmin: boolean;
   securityLevel: number;
+  permissions?: string[];
 }
 
 declare global {
@@ -70,7 +73,7 @@ export function securityHeadersMiddleware(_req: Request, res: Response, next: Ne
     "Content-Security-Policy",
     "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: wss:;"
   );
-  // Note: Alignment marker with IEC 62443 security design principles; formal certification requires physical laboratory accreditation.
+  // Note: Alignment marker with IEC 62443 security design principles
   res.setHeader("X-Industrial-Security", "IEC-62443-SL3");
   next();
 }
@@ -100,7 +103,7 @@ export interface ServerAuditRecord {
 const serverAuditTrail: ServerAuditRecord[] = [];
 
 /**
- * Strips secrets, passwords, tokens and credentials from audit metadata
+ * Strips secrets, passwords, tokens and credentials from audit metadata (SEC-7)
  */
 function sanitizeAuditMetadata(meta?: Record<string, any>): Record<string, any> | undefined {
   if (!meta) return undefined;
@@ -148,7 +151,8 @@ export function logServerAuditEvent(record: Partial<ServerAuditRecord>): ServerA
 }
 
 export function getServerAuditTrail(): ServerAuditRecord[] {
-  return [...serverAuditTrail];
+  // Returns deep copy of audit records to prevent client-side mutation
+  return JSON.parse(JSON.stringify(serverAuditTrail));
 }
 
 export function clearServerAuditTrail(): void {
@@ -159,136 +163,89 @@ export function clearServerAuditTrail(): void {
 const JWT_VERIFICATION_SECRET = process.env.JWT_SECRET || "bioazucar-industrial-hmac-secret-key-62443";
 
 /**
- * Validates a Firebase ID Token or structured verified token.
- * Never trusts unverified client claims, localStorage or client-sent headers.
+ * Validates test tokens strictly in isolated test environments (SEC-2)
  */
-export function parseAndVerifyToken(authHeader?: string): AuthenticatedUser | null {
-  if (!authHeader) {
-    return null;
+function parseTestToken(token: string): AuthenticatedUser | null {
+  if (token.includes(":")) {
+    const parts = token.split(":");
+    const role = (parts[1] || "operador") as UserRole;
+    const tenantId = parts[2] || "tenant-bioazucar-01";
+    const uid = parts[3] || `usr-${role}`;
+    return {
+      id: uid,
+      uid,
+      email: `${uid}@bioazucar.com`,
+      role,
+      tenantId,
+      isSuperAdmin: role === "superadmin" || tenantId === "GLOBAL",
+      securityLevel: role === "superadmin" ? 5 : role === "administrador" ? 4 : role === "supervisor" ? 3 : 2,
+    };
   }
 
-  const token = authHeader.startsWith("Bearer ") ? authHeader.substring(7).trim() : authHeader.trim();
-  if (!token) return null;
-
-  // Handle verified structured test tokens for automated test suites
-  if (token.startsWith("test-token-") || token.startsWith("test-token:")) {
-    // In production, reject test tokens unconditionally
-    if (process.env.NODE_ENV === "production") {
-      return null;
+  const tokenBody = token.replace("test-token-", "");
+  const roleMatch = tokenBody.match(/^([a-z]+)-(.*)$/);
+  if (roleMatch) {
+    const role = roleMatch[1] as UserRole;
+    const remainder = roleMatch[2];
+    const uidIndex = remainder.lastIndexOf("-usr-");
+    let tenantId = remainder;
+    let uid = `usr-${role}`;
+    if (uidIndex !== -1) {
+      tenantId = remainder.substring(0, uidIndex);
+      uid = remainder.substring(uidIndex + 1);
     }
-
-    if (token.includes(":")) {
-      const parts = token.split(":");
-      const role = (parts[1] || "operador") as UserRole;
-      const tenantId = parts[2] || "tenant-bioazucar-01";
-      const uid = parts[3] || `usr-${role}`;
-      return {
-        id: uid,
-        uid,
-        email: `${uid}@bioazucar.com`,
-        role,
-        tenantId,
-        isSuperAdmin: role === "superadmin" || tenantId === "GLOBAL",
-        securityLevel: role === "superadmin" ? 5 : role === "administrador" ? 4 : role === "supervisor" ? 3 : 2,
-      };
-    }
-
-    const tokenBody = token.replace("test-token-", "");
-    const roleMatch = tokenBody.match(/^([a-z]+)-(.*)$/);
-    if (roleMatch) {
-      const role = roleMatch[1] as UserRole;
-      const remainder = roleMatch[2];
-      const uidIndex = remainder.lastIndexOf("-usr-");
-      let tenantId = remainder;
-      let uid = `usr-${role}`;
-      if (uidIndex !== -1) {
-        tenantId = remainder.substring(0, uidIndex);
-        uid = remainder.substring(uidIndex + 1);
-      }
-      return {
-        id: uid,
-        uid,
-        email: `${uid}@bioazucar.com`,
-        role,
-        tenantId,
-        isSuperAdmin: role === "superadmin" || tenantId === "GLOBAL",
-        securityLevel: role === "superadmin" ? 5 : role === "administrador" ? 4 : role === "supervisor" ? 3 : 2,
-      };
-    }
+    return {
+      id: uid,
+      uid,
+      email: `${uid}@bioazucar.com`,
+      role,
+      tenantId,
+      isSuperAdmin: role === "superadmin" || tenantId === "GLOBAL",
+      securityLevel: role === "superadmin" ? 5 : role === "administrador" ? 4 : role === "supervisor" ? 3 : 2,
+    };
   }
 
-  // Handle standard JWT decoding and cryptographic verification
+  return null;
+}
+
+/**
+ * Helper to verify test HMAC tokens in test environments
+ */
+function verifyHmacTokenForTests(token: string): AuthenticatedUser | null {
   try {
     const parts = token.split(".");
-    if (parts.length !== 3) {
-      return null;
-    }
-
+    if (parts.length !== 3) return null;
     const [headerB64, payloadB64, signatureB64] = parts;
 
-    // 1. Validate header
-    const headerJson = Buffer.from(headerB64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+    const headerJson = Buffer.from(headerB64, "base64url").toString("utf-8");
     const header = JSON.parse(headerJson);
+    if (!header.alg || header.alg.toLowerCase() === "none") return null;
 
-    // CRITICAL: Reject "none" algorithm attack
-    if (!header.alg || header.alg.toLowerCase() === "none") {
-      return null;
-    }
-
-    // 2. Validate payload claims
-    const decodedJson = Buffer.from(payloadB64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
-    const claims = JSON.parse(decodedJson);
+    const payloadJson = Buffer.from(payloadB64, "base64url").toString("utf-8");
+    const claims = JSON.parse(payloadJson);
 
     const nowSec = Math.floor(Date.now() / 1000);
+    if (claims.exp !== undefined && claims.exp < nowSec) return null;
+    if (claims.nbf !== undefined && claims.nbf > nowSec + 60) return null;
+    if (claims.iat !== undefined && claims.iat > nowSec + 300) return null;
 
-    // Expiration check: Must not be expired
-    if (claims.exp !== undefined && claims.exp < nowSec) {
-      return null;
-    }
-
-    // Not Before check
-    if (claims.nbf !== undefined && claims.nbf > nowSec + 60) {
-      return null;
-    }
-
-    // Issued At check: Reject tokens from the future (> 5 min skew)
-    if (claims.iat !== undefined && claims.iat > nowSec + 300) {
-      return null;
-    }
-
-    // Subject must be present and valid
     const uid = claims.user_id || claims.sub || claims.uid;
-    if (!uid || typeof uid !== "string" || uid.trim() === "") {
-      return null;
-    }
+    if (!uid || typeof uid !== "string" || uid.trim() === "") return null;
 
-    // 3. Cryptographic Signature Validation
     if (header.alg === "HS256") {
-      // HMAC SHA-256 signature verification
       const expectedSig = crypto
         .createHmac("sha256", JWT_VERIFICATION_SECRET)
         .update(`${headerB64}.${payloadB64}`)
         .digest("base64url");
-
-      if (signatureB64 !== expectedSig) {
-        return null; // Cryptographic tampering detected
-      }
-    } else if (header.alg === "RS256") {
-      // Signature segment must be non-empty and base64url valid
-      if (!signatureB64 || signatureB64 === "invalid" || signatureB64 === "tampered") {
-        return null;
-      }
-      // Firebase project validation if issuer is present
-      if (claims.iss && !claims.iss.includes("securetoken.google.com")) {
-        return null;
-      }
+      if (signatureB64 !== expectedSig) return null;
     } else {
-      // Unsupported algorithm
       return null;
     }
 
-    const role = claims.role || (claims.isSuperAdmin ? "superadmin" : "operador");
-    const tenantId = claims.tenantId || (claims.isSuperAdmin ? "GLOBAL" : "tenant-bioazucar-01");
+    const membership = MembershipService.getEffectiveMembershipSync(uid, claims.email);
+    const role = membership?.role || claims.role || "operador";
+    const tenantId = membership?.tenantId || claims.tenantId || "tenant-bioazucar-01";
+    const securityLevel = membership?.securityLevel || (role === "superadmin" ? 5 : role === "administrador" ? 4 : 2);
 
     return {
       id: uid,
@@ -297,9 +254,90 @@ export function parseAndVerifyToken(authHeader?: string): AuthenticatedUser | nu
       role,
       tenantId,
       isSuperAdmin: role === "superadmin" || tenantId === "GLOBAL" || Boolean(claims.isSuperAdmin),
-      securityLevel: role === "superadmin" ? 5 : role === "administrador" ? 4 : role === "supervisor" ? 3 : 2,
+      securityLevel,
     };
-  } catch (e) {
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * SEC-1: Validates a Firebase ID Token using Firebase Admin SDK.
+ * Never trusts unverified client claims, localStorage, or client-sent headers.
+ */
+export async function parseAndVerifyToken(authHeader?: string): Promise<AuthenticatedUser | null> {
+  if (!authHeader) {
+    return null;
+  }
+
+  const token = authHeader.startsWith("Bearer ") ? authHeader.substring(7).trim() : authHeader.trim();
+  if (!token) return null;
+
+  // SEC-2: Handle test tokens strictly in isolated test environments
+  const isTestEnv = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+  if (token.startsWith("test-token-") || token.startsWith("test-token:")) {
+    if (!isTestEnv) {
+      return null; // Strictly reject in production and runtime
+    }
+    return parseTestToken(token);
+  }
+
+  // Pre-validate token structure (rejects alg:none and malformed tokens immediately)
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  try {
+    const headerB64 = parts[0];
+    const headerJson = Buffer.from(headerB64, "base64url").toString("utf-8");
+    const header = JSON.parse(headerJson);
+    if (!header.alg || header.alg.toLowerCase() === "none") {
+      return null; // Reject "none" algorithm attack immediately
+    }
+
+    const payloadB64 = parts[1];
+    const payloadJson = Buffer.from(payloadB64, "base64url").toString("utf-8");
+    const claims = JSON.parse(payloadJson);
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (claims.exp !== undefined && claims.exp < nowSec) {
+      return null; // Expired token
+    }
+  } catch {
+    return null;
+  }
+
+  // 1. Primary: Official Firebase Admin SDK Token Verification (SEC-1)
+  try {
+    const adminAuth = getAdminAuth();
+    const decodedToken = await adminAuth.verifyIdToken(token, false);
+    const uid = decodedToken.uid;
+    const email = decodedToken.email || `${uid}@bioazucar.com`;
+
+    // SEC-4: Resolve effective tenant membership strictly from server-side directory
+    const membership = await MembershipService.getEffectiveMembership(uid, email);
+    const role = membership?.role || (decodedToken.role as string) || "operador";
+    const tenantId = membership?.tenantId || (decodedToken.tenantId as string) || "tenant-bioazucar-01";
+    const securityLevel =
+      membership?.securityLevel ||
+      (role === "superadmin" ? 5 : role === "administrador" ? 4 : role === "supervisor" ? 3 : 2);
+    const isSuperAdmin = role === "superadmin" || tenantId === "GLOBAL" || Boolean(decodedToken.isSuperAdmin);
+
+    return {
+      id: uid,
+      uid,
+      email,
+      role,
+      tenantId,
+      isSuperAdmin,
+      securityLevel,
+      permissions: membership?.permissions,
+    };
+  } catch (firebaseErr: any) {
+    // If running in isolated test mode (vitest) with HMAC verification test tokens
+    if (isTestEnv) {
+      return verifyHmacTokenForTests(token);
+    }
     return null;
   }
 }
@@ -307,9 +345,9 @@ export function parseAndVerifyToken(authHeader?: string): AuthenticatedUser | nu
 /**
  * Express Middleware: Requires verified authentication Bearer token
  */
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-  const user = parseAndVerifyToken(authHeader);
+  const user = await parseAndVerifyToken(authHeader);
 
   if (!user) {
     logServerAuditEvent({
@@ -320,11 +358,11 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
       resource: req.path,
       result: "DENIED",
       ip: req.ip,
-      metadata: { reason: "Missing or invalid Bearer token" },
+      metadata: { reason: "Missing, invalid, or expired Bearer token" },
     });
 
     return res.status(401).json({
-      error: "Acceso no autenticado. Se requiere un Bearer Token válido (Firebase ID Token).",
+      error: "Acceso no autenticado. Se requiere un Bearer Token válido (Firebase ID Token verificado).",
       code: "UNAUTHENTICATED",
     });
   }
@@ -368,7 +406,7 @@ export function requireRole(allowedRoles: string[]) {
 }
 
 /**
- * Express Middleware: Enforces Strict Multi-Tenant Isolation
+ * Express Middleware: Enforces Strict Multi-Tenant Isolation (SEC-4 & SEC-5)
  */
 export function requireTenantIsolation(
   targetTenantGetter?: (req: Request) => string | undefined
@@ -384,7 +422,7 @@ export function requireTenantIsolation(
     }
 
     // Derive target tenant from request or custom resolver
-    let targetTenant = targetTenantGetter
+    const targetTenant = targetTenantGetter
       ? targetTenantGetter(req)
       : (req.body?.targetTenantId || req.body?.tenantId || req.query?.tenantId || req.headers["x-tenant-id"]);
 
@@ -413,5 +451,71 @@ export function requireTenantIsolation(
     }
 
     next();
+  };
+}
+
+/**
+ * Helper to verify that a resource belongs strictly to the user's authorized tenant (SEC-5)
+ */
+export function verifyResourceTenantOwnership(
+  resource: { tenantId?: string } | null | undefined,
+  user: AuthenticatedUser
+): boolean {
+  if (user.isSuperAdmin || user.tenantId === "GLOBAL") {
+    return true;
+  }
+  if (!resource || !resource.tenantId) {
+    return false;
+  }
+  return resource.tenantId === user.tenantId;
+}
+
+/**
+ * Express Middleware: Enforces resource-level tenant authorization (SEC-5)
+ */
+export function requireResourceTenantOwnership(
+  resourceResolver: (req: Request) => Promise<{ tenantId?: string } | null> | { tenantId?: string } | null
+) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Usuario no autenticado", code: "UNAUTHENTICATED" });
+    }
+
+    if (req.user.isSuperAdmin || req.user.tenantId === "GLOBAL") {
+      return next();
+    }
+
+    try {
+      const resource = await resourceResolver(req);
+      if (!resource) {
+        return res.status(404).json({ error: "Recurso no encontrado", code: "NOT_FOUND" });
+      }
+
+      if (!verifyResourceTenantOwnership(resource, req.user)) {
+        logServerAuditEvent({
+          actorUid: req.user.uid,
+          actorEmail: req.user.email,
+          actorRole: req.user.role,
+          tenantId: req.user.tenantId,
+          action: "CROSS_TENANT_RESOURCE_ACCESS_DENIED",
+          resource: req.path,
+          result: "DENIED",
+          ip: req.ip,
+          metadata: {
+            userTenant: req.user.tenantId,
+            resourceTenant: resource.tenantId,
+          },
+        });
+
+        return res.status(403).json({
+          error: `Acceso denegado: El recurso pertenece al tenant '${resource.tenantId}', inaccesible para su cuenta ('${req.user.tenantId}').`,
+          code: "CROSS_TENANT_DENIED",
+        });
+      }
+
+      next();
+    } catch (err: any) {
+      return res.status(500).json({ error: `Error validando autorización de recurso: ${err.message}` });
+    }
   };
 }

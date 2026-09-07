@@ -137,7 +137,7 @@ describe("BIOAZÚCAR 4.0 — FASE 1 SECURITY FOUNDATION TEST SUITE", () => {
       ).toString("base64url");
       const noneToken = `${header}.${payload}.`;
 
-      const result = parseAndVerifyToken(noneToken);
+      const result = await parseAndVerifyToken(noneToken);
       expect(result).toBeNull();
     });
 
@@ -152,7 +152,7 @@ describe("BIOAZÚCAR 4.0 — FASE 1 SECURITY FOUNDATION TEST SUITE", () => {
       ).toString("base64url");
       const expiredToken = `${header}.${payload}.mock-signature`;
 
-      const result = parseAndVerifyToken(expiredToken);
+      const result = await parseAndVerifyToken(expiredToken);
       expect(result).toBeNull();
     });
 
@@ -174,8 +174,8 @@ describe("BIOAZÚCAR 4.0 — FASE 1 SECURITY FOUNDATION TEST SUITE", () => {
       const validToken = `${header}.${payload}.${validSig}`;
       const tamperedToken = `${header}.${payload}.${tamperedSig}`;
 
-      expect(parseAndVerifyToken(validToken)).not.toBeNull();
-      expect(parseAndVerifyToken(tamperedToken)).toBeNull();
+      expect(await parseAndVerifyToken(validToken)).not.toBeNull();
+      expect(await parseAndVerifyToken(tamperedToken)).toBeNull();
     });
   });
 

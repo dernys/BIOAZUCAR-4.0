@@ -274,6 +274,7 @@ export class CommandService {
 
   /**
    * Convenience execution method for Edge console, Copilot tools, and DataProviders
+   * Enforces strict SEC-8 safety ranges and verified actor roles
    */
   public async executeCommand(
     params: {
@@ -281,9 +282,13 @@ export class CommandService {
       commandType?: string;
       requestedValue: any;
       operatorId?: string;
+      role?: UserRole;
+      tenantId?: string;
       reason?: string;
       clientIp?: string;
       securityClearanceLevel?: number;
+      engMin?: number;
+      engMax?: number;
     },
     operatorConfirmed: boolean = true
   ): Promise<{
@@ -293,12 +298,34 @@ export class CommandService {
     idempotencyKey: string;
     contract: CommandExecutionContract;
   }> {
-    const role: UserRole = "JEFE_PLANTA";
+    // Derive engineering limits if not explicitly provided
+    let engMin = params.engMin;
+    let engMax = params.engMax;
+    const tagUpper = params.tag.toUpperCase();
+    if (engMin === undefined && engMax === undefined) {
+      if (tagUpper.includes("TCH")) {
+        engMin = 0;
+        engMax = 600;
+      } else if (tagUpper.includes("PRESS") || tagUpper.includes("BAR")) {
+        engMin = 0;
+        engMax = 90;
+      } else if (tagUpper.includes("MW") || tagUpper.includes("POWER") || tagUpper.includes("DISPATCH")) {
+        engMin = 0;
+        engMax = 60;
+      } else if (tagUpper.includes("BRIX") || tagUpper.includes("EXTRACTION") || tagUpper.includes("PERCENT")) {
+        engMin = 0;
+        engMax = 100;
+      }
+    }
+
+    const role: UserRole = params.role || "operador";
+    const plantId = params.tenantId || "tenant-bioazucar-01";
+
     const submitRes = await this.submitCommand({
       userId: params.operatorId || "OP-SYS",
       userName: params.operatorId || "Operador Industrial",
       role,
-      plantId: "tenant-central-azucarero",
+      plantId,
       assetId: "eq-process",
       tag: params.tag,
       oldValue: 0,
@@ -306,6 +333,8 @@ export class CommandService {
       unit: "",
       reason: params.reason || "Ajuste operacional de consigna de proceso",
       accessMode: "CONTROL",
+      engMin,
+      engMax,
       requireConfirmation: !operatorConfirmed,
     });
 
