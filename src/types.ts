@@ -2,7 +2,16 @@ export type UserRole = "superadmin" | "administrador" | "supervisor" | "operador
 
 export type PlantStatus = "OPERACION_NORMAL" | "ALERTA_PARCIAL" | "MANTENIMIENTO" | "PARADA_EMERGENCIA";
 
-export type SimulationScenario = "NORMAL" | "VIBRACION_MOLINO3" | "CAIDA_PRESION_CALDERA" | "ALTO_BRIX_JUGOS" | "SOBRECARGA_RED_MW";
+export type SimulationScenario =
+  | "NORMAL"
+  | "VIBRACION_MOLINO3"
+  | "ALERTA_CALDERA"
+  | "CAIDA_PRESION_CALDERA"
+  | "BAGAZO_HUMEDO"
+  | "PICO_EXPORTACION"
+  | "PARADA_DESFIBRADORA"
+  | "ALTO_BRIX_JUGOS"
+  | "SOBRECARGA_RED_MW";
 
 export type AlarmSeverity = "CRITICA" | "ALTA" | "MEDIA" | "BAJA";
 
@@ -44,6 +53,10 @@ export interface TenantEnterprise {
   themeColor?: string;
   description?: string;
   sugarYieldTarget?: number; // % Rendimiento
+  runtimeMode?: "SIMULATION" | "LIVE_OT" | "HYBRID" | "HISTORICAL_REPLAY";
+  simulationEnabled?: boolean;
+  simulationScenario?: SimulationScenario;
+  otStatus?: "WAITING_FOR_COMMISSIONING" | "CONNECTED" | "DISCONNECTED" | "ERROR" | "RECONNECTING";
 }
 
 export interface UserAccount {
@@ -206,8 +219,11 @@ export interface AlarmEvent {
   acknowledgedBy?: string;
   acknowledgedAt?: string;
   shelved: boolean;
+  shelvedUntil?: string;
+  interlockActive?: boolean;
   possibleCause: string;
   recommendedAction: string;
+  suggestedAction?: string;
   status?: "ACTIVE" | "ACKNOWLEDGED" | "CLEARED";
 }
 
@@ -390,7 +406,8 @@ export type DataSourceType =
   | "MODBUS"
   | "EROS"
   | "REST"
-  | "EDGE";
+  | "EDGE"
+  | "LIVE_OT";
 
 export type ProtocolType =
   | "OPC-UA"
@@ -436,6 +453,7 @@ export interface IndustrialDataPoint {
   quality: DataQuality;
   qualityReason?: string;
   deviceTimestamp: string;
+  sourceTimestamp?: string;
   ingestionTimestamp: string;
   sequence: number;
   sequenceNumber?: number;

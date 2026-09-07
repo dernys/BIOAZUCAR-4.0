@@ -37,6 +37,7 @@ import {
 import { INITIAL_AUDIT_LOGS, INITIAL_TELEMETRY } from "./data/mockIndustrialData";
 import { updateTelemetry } from "./services/simulationEngine";
 import { dataProviderRegistry } from "./services/dataProviders/DataProviderRegistry";
+import { tenantRuntimeManager } from "./services/runtime/TenantRuntimeManager";
 import {
   INITIAL_TENANTS,
   initializeDatabaseIfEmpty,
@@ -245,16 +246,32 @@ export default function App() {
     };
   }, [activeTenant.id]);
 
-  // 3. Real-time industrial physics simulation loop via Canonical DataProvider
+  // 3. Real-time industrial physics simulation & OT orchestration via TenantRuntime
   useEffect(() => {
-    const simProvider = dataProviderRegistry.getSimulationProvider();
-    simProvider.setScenario(scenario);
-    simProvider.setSpeedMultiplier(isSimRunning ? speedMultiplier : 0);
+    const runtime = tenantRuntimeManager.getRuntime(activeTenant.id);
+    runtime.setScenario(scenario);
+    runtime.getSimulationRuntime().setSpeedMultiplier(isSimRunning ? speedMultiplier : 0);
+
+    if (runtime.getMode() === "LIVE_OT") {
+      const otConfig = runtime.getOTConfig();
+      if (!otConfig.connected && !otConfig.isLiveConnection && otConfig.status !== "CONNECTED") {
+        setTelemetry((prev) => ({
+          ...prev,
+          tenantId: activeTenant.id,
+          isSimulated: false,
+          provenance: "OBSERVED_OT",
+          source: "LIVE_OT",
+          quality: "BAD",
+          simulationScenario: "NORMAL",
+        }));
+        return;
+      }
+    }
 
     if (!isSimRunning || speedMultiplier === 0) return;
 
     const interval = setInterval(() => {
-      const snap = simProvider.getTelemetrySnapshot();
+      const snap = runtime.getTelemetrySnapshot();
       setTelemetry((prev) => ({
         ...prev,
         ...snap,

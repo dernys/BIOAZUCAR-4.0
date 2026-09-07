@@ -3,12 +3,15 @@ import { AlarmEvent, TenantEnterprise } from "../types";
 import { INITIAL_TENANTS, INITIAL_ALARMS } from "../services/dbService";
 
 describe("Multi-Tenancy & ISA-18.2 Alarm Lifecycle", () => {
-  it("should have valid initial industrial tenants with distinct capacities and configurations", () => {
-    expect(INITIAL_TENANTS.length).toBeGreaterThanOrEqual(3);
+  it("should have valid initial industrial tenant BIOAZUCAR-DEMO with simulation configuration", () => {
+    expect(INITIAL_TENANTS.length).toBeGreaterThanOrEqual(1);
     const tenant1 = INITIAL_TENANTS[0];
+    expect(tenant1.code).toBe("BIOAZUCAR-DEMO");
     expect(tenant1.nominalTch).toBeGreaterThan(300);
     expect(tenant1.powerCapacityMW).toBeGreaterThan(15);
     expect(tenant1.status).toBe("ACTIVE");
+    expect(tenant1.runtimeMode).toBe("SIMULATION");
+    expect(tenant1.simulationEnabled).toBe(true);
   });
 
   it("should correctly identify active vs acknowledged vs cleared alarms", () => {

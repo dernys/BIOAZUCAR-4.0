@@ -29,7 +29,7 @@ const INITIAL_MEMBERSHIPS: TenantMembership[] = [
   {
     id: "mem-admin-01",
     userId: "usr-admin-01",
-    tenantId: "tenant-bioazucar-01",
+    tenantId: "BIOAZUCAR-DEMO",
     role: "administrador",
     permissions: [
       "MANAGE_USERS",
@@ -51,7 +51,7 @@ const INITIAL_MEMBERSHIPS: TenantMembership[] = [
   {
     id: "mem-maint-01",
     userId: "usr-maint-01",
-    tenantId: "tenant-bioazucar-01",
+    tenantId: "BIOAZUCAR-DEMO",
     role: "mantenimiento",
     permissions: [
       "ADD_WORK_ORDER",
@@ -68,7 +68,7 @@ const INITIAL_MEMBERSHIPS: TenantMembership[] = [
   {
     id: "mem-op-01",
     userId: "usr-op-01",
-    tenantId: "tenant-bioazucar-01",
+    tenantId: "BIOAZUCAR-DEMO",
     role: "operador",
     permissions: [
       "ACKNOWLEDGE_ALARM",
@@ -83,7 +83,7 @@ const INITIAL_MEMBERSHIPS: TenantMembership[] = [
   {
     id: "mem-obs-01",
     userId: "usr-obs-01",
-    tenantId: "tenant-bioazucar-01",
+    tenantId: "BIOAZUCAR-DEMO",
     role: "observador",
     permissions: [
       "VIEW_TELEMETRY",

@@ -7,6 +7,7 @@ import {
   SimulationScenario,
   TelemetryData,
 } from "../../types";
+import { tenantRuntimeManager } from "../runtime/TenantRuntimeManager";
 import {
   IIndustrialDataProvider,
   DataSubscriptionCallback,
@@ -78,14 +79,16 @@ export class SimulationDataProvider implements IIndustrialDataProvider {
 
   public setScenario(scenario: SimulationScenario) {
     this.scenario = scenario;
+    tenantRuntimeManager.getRuntime("BIOAZUCAR-DEMO").setScenario(scenario);
   }
 
   public getScenario(): SimulationScenario {
-    return this.scenario;
+    return tenantRuntimeManager.getRuntime("BIOAZUCAR-DEMO").getSimulationConfig().scenario || this.scenario;
   }
 
   public setSpeedMultiplier(speed: number) {
     this.speedMultiplier = Math.max(0.1, Math.min(10, speed));
+    tenantRuntimeManager.getRuntime("BIOAZUCAR-DEMO").getSimulationRuntime().setSpeedMultiplier(speed);
   }
 
   public getSpeedMultiplier(): number {
@@ -242,44 +245,7 @@ export class SimulationDataProvider implements IIndustrialDataProvider {
 
   // Generate TelemetryData snapshot for backward compatibility with UI components
   public getTelemetrySnapshot(): TelemetryData {
-    return {
-      timestamp: new Date().toISOString(),
-      tch: +this.simState.tch.toFixed(1),
-      caneAccumToday: +this.simState.caneAccum.toFixed(1),
-      caneBrix: +this.simState.caneBrix.toFixed(1),
-      canePol: +this.simState.canePol.toFixed(1),
-      canePurity: +((this.simState.canePol / this.simState.caneBrix) * 100).toFixed(1),
-      millingExtraction: +this.simState.millingExtraction.toFixed(1),
-      imbibitionWaterFlow: +this.simState.imbibitionWaterFlow.toFixed(1),
-      bagasseProductionRate: +this.simState.bagasseProductionRate.toFixed(1),
-      bagasseBoilerConsumption: +this.simState.bagasseBoilerConsumption.toFixed(1),
-      bagasseYardStorageRate: +this.simState.bagasseYardStorageRate.toFixed(1),
-      bagasseMoisture: +this.simState.bagasseMoisture.toFixed(1),
-      bagasseStockTotal: +this.simState.bagasseStockTotal.toFixed(1),
-      boilerPressureHP: +this.simState.boilerPressureHP.toFixed(1),
-      boilerTempHP: +this.simState.boilerTempHP.toFixed(1),
-      steamFlowHP: +this.simState.steamFlowHP.toFixed(1),
-      steamPressureLP: +this.simState.steamPressureLP.toFixed(1),
-      boilerEfficiency: +this.simState.boilerEfficiency.toFixed(1),
-      flueGasO2: +this.simState.flueGasO2.toFixed(1),
-      powerGeneratedMW: +this.simState.powerGeneratedMW.toFixed(1),
-      powerInternalMW: +this.simState.powerInternalMW.toFixed(1),
-      powerExportGridMW: +this.simState.powerExportGridMW.toFixed(1),
-      gridFrequencyHz: +this.simState.gridFrequencyHz.toFixed(2),
-      gridVoltageKV: +this.simState.gridVoltageKV.toFixed(1),
-      clarifiedJuiceFlow: +this.simState.clarifiedJuiceFlow.toFixed(1),
-      evaporatorSyrupBrix: +this.simState.evaporatorSyrupBrix.toFixed(1),
-      sugarProductionTonsToday: +this.simState.sugarProductionTonsToday.toFixed(2),
-      sugarBagsToday: this.simState.sugarBagsToday,
-      factoryRecoveryYield: +this.simState.factoryRecoveryYield.toFixed(2),
-      molassesProductionTons: +this.simState.molassesProductionTons.toFixed(1),
-      oeeOverall: +this.simState.oeeOverall.toFixed(1),
-      oeeAvailability: +this.simState.oeeAvailability.toFixed(1),
-      oeePerformance: +this.simState.oeePerformance.toFixed(1),
-      oeeQuality: +this.simState.oeeQuality.toFixed(1),
-      mill3Vibration: +this.simState.mill3Vibration.toFixed(2),
-      simulationScenario: this.scenario,
-    };
+    return tenantRuntimeManager.getRuntime("BIOAZUCAR-DEMO").getTelemetrySnapshot();
   }
 
   private startSimulationLoop() {

@@ -1,4 +1,5 @@
 import { TelemetryData } from "../types";
+import { tenantRuntimeManager } from "./runtime/TenantRuntimeManager";
 
 export type SimulationScenario =
   | "NORMAL"
@@ -66,6 +67,16 @@ export function updateTelemetry(
   scenario: SimulationScenario,
   speedMultiplier: number = 1
 ): TelemetryData {
+  try {
+    const runtime = tenantRuntimeManager.getRuntime("BIOAZUCAR-DEMO");
+    if (runtime && runtime.getMode() === "SIMULATION") {
+      runtime.setScenario(scenario);
+      runtime.getSimulationRuntime().setSpeedMultiplier(speedMultiplier);
+    }
+  } catch (_err) {
+    // Non-blocking fallback
+  }
+
   // Stochastic noise function
   const jitter = (amount: number) => (Math.random() - 0.5) * 2 * amount;
 

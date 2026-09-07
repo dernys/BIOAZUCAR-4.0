@@ -14,6 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
+import { tenantRuntimeManager } from "./runtime/TenantRuntimeManager";
 import firebaseConfigJson from "../../firebase-applet-config.json";
 import {
   TelemetryData,
@@ -69,9 +70,9 @@ export const COLLECTIONS = {
 
 export const INITIAL_TENANTS: TenantEnterprise[] = [
   {
-    id: "tenant-bioazucar-01",
+    id: "BIOAZUCAR-DEMO",
     name: "BioAzúcar 4.0 Smart Mill (Site Central)",
-    code: "BIOAZUCAR-01",
+    code: "BIOAZUCAR-DEMO",
     country: "Venezuela",
     location: "Acarigua, Edo. Portuguesa",
     taxId: "J-40819283-0",
@@ -85,45 +86,11 @@ export const INITIAL_TENANTS: TenantEnterprise[] = [
     createdAt: "2026-01-15 08:00:00",
     themeColor: "#10b981",
     sugarYieldTarget: 11.8,
-    description: "Ingenio piloto de alta eficiencia con turbogeneración de 32.8 MW y sincronismo con el SEN.",
-  },
-  {
-    id: "tenant-central-caroni",
-    name: "Complejo Agroindustrial Central Caroní",
-    code: "CENTRAL-CARONI-02",
-    country: "Venezuela",
-    location: "Upata / Ciudad Guayana, Edo. Bolívar",
-    taxId: "J-30918274-1",
-    nominalTch: 380,
-    powerCapacityMW: 25.0,
-    boilerPressureBar: 60.0,
-    industrySector: "Azúcar Crudo, Melazas & Destilería de Alcohol",
-    status: "ACTIVE",
-    primaryAdminEmail: "operaciones@centralcaroni.com",
-    primaryContactPhone: "+58 286 923-1122",
-    createdAt: "2026-03-10 10:30:00",
-    themeColor: "#06b6d4",
-    sugarYieldTarget: 10.9,
-    description: "Unidad agroindustrial para molienda de caña del oriente del país y producción de etanol.",
-  },
-  {
-    id: "tenant-valle-verde",
-    name: "Ingenio Azucarero Valle Verde & Bioenergía",
-    code: "VALLE-VERDE-03",
-    country: "Colombia",
-    location: "Palmira, Valle del Cauca",
-    taxId: "NIT 900.281.442-8",
-    nominalTch: 600,
-    powerCapacityMW: 45.0,
-    boilerPressureBar: 82.0,
-    industrySector: "Azúcar Especial de Exportación & Cogeneración PPA",
-    status: "ACTIVE",
-    primaryAdminEmail: "gerencia@valleverde.com.co",
-    primaryContactPhone: "+57 2 285-9900",
-    createdAt: "2026-05-20 14:00:00",
-    themeColor: "#8b5cf6",
-    sugarYieldTarget: 12.4,
-    description: "Planta de gran escala con caldera de 82 bar, molienda continua 600 TCH y exportación a red.",
+    description: "Ingenio piloto de alta eficiencia con turbogeneración de 32.8 MW, caldera biomasa 65 bar y sincronismo con el SEN.",
+    runtimeMode: "SIMULATION",
+    simulationEnabled: true,
+    simulationScenario: "NORMAL",
+    otStatus: "WAITING_FOR_COMMISSIONING",
   },
 ];
 
@@ -524,11 +491,19 @@ export async function provisionEnterpriseWithAdminInDb(
 
   const { tenant, primaryAdmin, otConfig } = payload;
   const tenantId = `tenant-${tenant.code.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now().toString().slice(-4)}`;
+  const isSimulation = (otConfig?.initialMode || "SIMULATION") === "SIMULATION";
   const fullTenant: TenantEnterprise = {
     ...tenant,
     id: tenantId,
     createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+    runtimeMode: (otConfig?.initialMode as any) || "SIMULATION",
+    simulationEnabled: isSimulation,
+    simulationScenario: "NORMAL",
+    otStatus: isSimulation ? "CONNECTED" : "WAITING_FOR_COMMISSIONING",
   };
+
+  // Register in runtime manager
+  tenantRuntimeManager.registerTenant(fullTenant);
 
   const userId = `usr-${tenant.code.toLowerCase()}-admin`;
   const primaryUserAccount: UserAccount = {
@@ -562,9 +537,13 @@ export async function provisionEnterpriseWithAdminInDb(
   batch.set(telemetryDocRef, {
     ...initialTelemetry,
     tenantId,
-    tch: Number((tenant.nominalTch || 450).toFixed(1)),
-    powerGeneratedMW: Number((tenant.powerCapacityMW || 30.0).toFixed(1)),
-    boilerPressureHP: Number((tenant.boilerPressureBar || 65.0).toFixed(1)),
+    tch: isSimulation ? Number((tenant.nominalTch || 450).toFixed(1)) : 0,
+    powerGeneratedMW: isSimulation ? Number((tenant.powerCapacityMW || 30.0).toFixed(1)) : 0,
+    boilerPressureHP: isSimulation ? Number((tenant.boilerPressureBar || 65.0).toFixed(1)) : 0,
+    isSimulated: isSimulation,
+    provenance: isSimulation ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT",
+    source: isSimulation ? "SIMULATION" : "LIVE_OT",
+    quality: isSimulation ? "SIMULATED" : "BAD",
     lastUpdated: new Date().toISOString(),
   });
 
@@ -747,6 +726,12 @@ export async function updateTenantInDb(
   }
   const docRef = doc(db, COLLECTIONS.TENANTS, tenantId);
   await updateDoc(docRef, updates);
+
+  const runtime = tenantRuntimeManager.getRuntime(tenantId);
+  if (runtime) {
+    if (updates.runtimeMode) runtime.setMode(updates.runtimeMode);
+    if (updates.simulationScenario) runtime.setScenario(updates.simulationScenario);
+  }
 
   await logAuditEventToDb({
     tenantId,

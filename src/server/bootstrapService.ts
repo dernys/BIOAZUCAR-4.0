@@ -37,7 +37,7 @@ export async function bootstrapDatabaseWithAdminSdk(): Promise<{ success: boolea
       const docRef = firestore.collection("users").doc(u.id);
       batch.set(docRef, {
         ...u,
-        tenantId: u.isSuperAdmin ? "GLOBAL" : "tenant-bioazucar-01",
+        tenantId: u.isSuperAdmin ? "GLOBAL" : "BIOAZUCAR-DEMO",
         isActive: true,
       });
     });
