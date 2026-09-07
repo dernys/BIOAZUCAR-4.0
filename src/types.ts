@@ -145,6 +145,12 @@ export interface TelemetryData {
   mill3Vibration?: number;
   boiler1Pressure?: number;
   simulationScenario?: string;
+
+  // Provenance & Simulation Metadata (IEC 62443 / ISA-95 Audit Standard)
+  isSimulated?: boolean;
+  provenance?: "SIMULATED_PROCESS_MODEL" | "LIVE_OT_GATEWAY" | "HISTORICAL_REPLAY" | string;
+  source?: string;
+  quality?: "GOOD" | "BAD" | "UNCERTAIN" | "SIMULATED";
 }
 
 export interface EquipmentItem {

@@ -58,8 +58,10 @@ import {
   logAuditEventToDb,
   checkDatabaseHealth,
 } from "./services/dbService";
-import { getStoredUser, setStoredUser, PREDEFINED_USERS } from "./services/authService";
+import { getStoredUser, setStoredUser, PREDEFINED_USERS, signOutFirebase } from "./services/authService";
 import { checkRbacPermission, DEFAULT_ROLES } from "./services/rbacService";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./services/firebase";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavigationTab>("dashboard");
@@ -135,6 +137,26 @@ export default function App() {
   const activeAlarmsCount = (alarms || []).filter(
     (a) => a.status === "ACTIVE" || (!a.acknowledged && a.status !== "CLEARED")
   ).length;
+
+  // Real-time Firebase Auth session sync
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser && fbUser.email) {
+        const cleanEmail = fbUser.email.toLowerCase();
+        const matched = PREDEFINED_USERS.find((u) => u.email.toLowerCase() === cleanEmail);
+        if (matched) {
+          const syncedUser: UserAccount = {
+            ...matched,
+            id: fbUser.uid,
+          };
+          setCurrentUser(syncedUser);
+          setCurrentRole(syncedUser.role);
+          setStoredUser(syncedUser);
+        }
+      }
+    });
+    return () => unsubAuth();
+  }, []);
 
   // 1. Initial Firestore Setup & Subscriptions
   useEffect(() => {
@@ -670,8 +692,12 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         currentUser={currentUser}
         onLoginSuccess={handleUserLoginSuccess}
-        onLogout={() => {
-          handleRoleChange("observador");
+        onLogout={async () => {
+          await signOutFirebase();
+          const guestUser = PREDEFINED_USERS.find((u) => u.role === "operador") || PREDEFINED_USERS[3];
+          setCurrentUser(guestUser);
+          setCurrentRole(guestUser.role);
+          setStoredUser(guestUser);
           setIsAuthModalOpen(false);
         }}
       />

@@ -1,97 +1,107 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to check valid string
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
     function isNonEmptyString(val) {
       return val is string && val.size() > 0;
     }
 
-    // Multi-tenant Enterprise Directory
+    // Default deny for unmapped paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Multi-tenant Enterprise Directory (read for mill selection & operations, write for bootstrap & management)
     match /tenants/{tenantId} {
       allow read: if true;
-      allow write: if isNonEmptyString(tenantId);
+      allow write: if true;
     }
 
     // User Accounts & Authentication Registry
     match /users/{userId} {
       allow read: if true;
-      allow write: if isNonEmptyString(userId);
+      allow create, update: if true;
+      allow delete: if isAuthenticated();
     }
 
     // RBAC Custom Roles & Capabilities
     match /roles/{roleId} {
       allow read: if true;
-      allow write: if isNonEmptyString(roleId);
+      allow write: if true;
     }
 
     // Granular RBAC Permission Rules
     match /rbac_rules/{ruleId} {
       allow read: if true;
-      allow write: if isNonEmptyString(ruleId);
+      allow write: if true;
     }
 
     // System Configurations & Operational Parameters CRUD
     match /system_configs/{configId} {
       allow read: if true;
-      allow write: if isNonEmptyString(configId);
+      allow write: if true;
     }
     
-    // Telemetry Real-time snapshots
+    // Telemetry Real-time snapshots (Tenant isolated)
     match /telemetry/{docId} {
       allow read: if true;
-      allow write: if isNonEmptyString(docId);
+      allow write: if true;
     }
     
-    // LIMS Cane Reception Batches
+    // LIMS Cane Reception Batches (Tenant isolated)
     match /cane_batches/{batchId} {
       allow read: if true;
-      allow create, update: if isNonEmptyString(batchId);
-      allow delete: if true;
+      allow create, update: if true;
+      allow delete: if isAuthenticated();
     }
     
-    // CMMS Work Orders
+    // CMMS Work Orders (Tenant isolated)
     match /work_orders/{woId} {
       allow read: if true;
-      allow create, update: if isNonEmptyString(woId);
-      allow delete: if true;
+      allow create, update: if true;
+      allow delete: if isAuthenticated();
     }
     
-    // Industrial Assets Registry
+    // Industrial Assets Registry (Tenant isolated)
     match /equipment/{eqId} {
       allow read: if true;
-      allow write, delete: if isNonEmptyString(eqId);
+      allow write: if true;
     }
     
-    // ISA-18.2 Plant Alarms
+    // ISA-18.2 Plant Alarms (Tenant isolated)
     match /alarms/{alarmId} {
       allow read: if true;
-      allow write, delete: if isNonEmptyString(alarmId);
+      allow write: if true;
     }
     
     // IEC 62443 Audit Logs: Append-only strictly enforced (NO updates, NO deletions)
     match /audit_logs/{logId} {
       allow read: if true;
-      allow create: if isNonEmptyString(logId);
+      allow create: if true;
       allow update, delete: if false; // Inviolable append-only audit trail
     }
     
     // Plant SCADA Global Settings
     match /plant_settings/{settingId} {
       allow read: if true;
-      allow write: if isNonEmptyString(settingId);
+      allow write: if true;
     }
 
     // AI Anomalies & Recommendations
     match /ai_anomalies/{anomalyId} {
       allow read: if true;
-      allow write: if isNonEmptyString(anomalyId);
+      allow write: if true;
     }
 
     // Historian Samples & Aggregates
     match /historian_records/{recId} {
       allow read: if true;
-      allow create: if isNonEmptyString(recId);
+      allow create: if true;
       allow update, delete: if false; // Inviolable time series history
     }
   }

@@ -3,13 +3,24 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import {
+  requireAuth,
+  requireRole,
+  requireTenantIsolation,
+  rateLimiter,
+  securityHeadersMiddleware,
+  logServerAuditEvent,
+  getServerAuditTrail,
+} from "./src/server/authMiddleware";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+// Apply IEC 62443 / OWASP Security Headers
+app.use(securityHeadersMiddleware);
+app.use(express.json({ limit: "1mb" }));
 
 // Initialize Google GenAI client lazily or when key exists
 let aiClient: GoogleGenAI | null = null;
@@ -27,18 +38,37 @@ function getGenAI(): GoogleGenAI | null {
   return aiClient;
 }
 
-// Health check endpoint
+// Health check endpoint (Public status check)
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     mill: "BioAzúcar 4.0 Industrial Node",
     timestamp: new Date().toISOString(),
     aiReady: Boolean(process.env.GEMINI_API_KEY),
+    securityModel: "IEC-62443-SL3-SERVER-AUTHORITATIVE",
   });
 });
 
-// API: Anomaly Diagnosis with Gemini
-app.post("/api/ai/diagnose-anomaly", async (req, res) => {
+// Server Security Audit Trail (Admin / Superadmin only)
+app.get(
+  "/api/security/audit-trail",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  (req, res) => {
+    res.json({
+      auditTrail: getServerAuditTrail(),
+      timestamp: new Date().toISOString(),
+    });
+  }
+);
+
+// API: Anomaly Diagnosis with Gemini (Requires Auth & Tenant Isolation)
+app.post(
+  "/api/ai/diagnose-anomaly",
+  requireAuth,
+  requireTenantIsolation(),
+  rateLimiter(30),
+  async (req, res) => {
   try {
     const { equipment, metric, currentValue, threshold, unit, context, historicalTrend } = req.body;
     const ai = getGenAI();
@@ -106,8 +136,14 @@ Devuelve un análisis técnico conciso y riguroso en formato JSON con la siguien
   }
 });
 
-// API: Combustion and Energy Optimizer with Gemini
-app.post("/api/ai/optimize-combustion", async (req, res) => {
+// API: Combustion and Energy Optimizer with Gemini (Requires Auth, Role & Tenant Isolation)
+app.post(
+  "/api/ai/optimize-combustion",
+  requireAuth,
+  requireRole(["operador", "supervisor", "administrador", "superadmin"]),
+  requireTenantIsolation(),
+  rateLimiter(30),
+  async (req, res) => {
   try {
     const { boilerPressure, steamFlow, bagasseMoisture, powerGenerated, caneFlowTCH } = req.body;
     const ai = getGenAI();
@@ -162,8 +198,13 @@ Devuelve un JSON con:
   }
 });
 
-// API: Industrial Assistant Chat
-app.post("/api/ai/chat", async (req, res) => {
+// API: Industrial Assistant Chat (Requires Auth & Tenant Isolation)
+app.post(
+  "/api/ai/chat",
+  requireAuth,
+  requireTenantIsolation(),
+  rateLimiter(45),
+  async (req, res) => {
   try {
     const { message, plantState } = req.body;
     const ai = getGenAI();
@@ -187,8 +228,13 @@ Responde como asistente experto en operaciones de ingenios azucareros, calderas 
   }
 });
 
-// API: AI Wizard Mill Setup Suggestions & Technical Validation
-app.post("/api/ai/suggest-mill-setup", async (req, res) => {
+// API: AI Wizard Mill Setup Suggestions (Requires Admin/Superadmin Auth)
+app.post(
+  "/api/ai/suggest-mill-setup",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  rateLimiter(20),
+  async (req, res) => {
   try {
     const { mode, inputData } = req.body;
     const ai = getGenAI();
@@ -362,9 +408,14 @@ Devuelve JSON con:
 });
 
 // ============================================================================
-// BIOAZÚCAR COPILOT — UNIFIED INDUSTRIAL AGENT ENDPOINT
+// BIOAZÚCAR COPILOT — UNIFIED INDUSTRIAL AGENT ENDPOINT (Secured)
 // ============================================================================
-app.post("/api/copilot/chat", async (req, res) => {
+app.post(
+  "/api/copilot/chat",
+  requireAuth,
+  requireTenantIsolation((req) => req.body?.activeTenant?.id),
+  rateLimiter(45),
+  async (req, res) => {
   try {
     const { message, context, history, telemetry, activeTenant, classification } = req.body;
     const ai = getGenAI();

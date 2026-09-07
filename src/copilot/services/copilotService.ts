@@ -7,6 +7,7 @@ import { IndustrialToolExecutor } from "../tools/industrialToolExecutor";
 import { copilotAuditService } from "./copilotAuditService";
 import { CopilotIntentClassifier, IntentClassificationResult } from "../domain/CopilotIntentClassifier";
 import { KnowledgeRetrievalService } from "./knowledgeRetrievalService";
+import { getAuthHeader } from "../../services/authService";
 
 export class CopilotService {
   private static instance: CopilotService;
@@ -40,9 +41,13 @@ export class CopilotService {
     try {
       // 2. Attempt Server-side AI via Gemini API endpoint with pre-classified intent (if in browser or server configured)
       if (typeof window !== "undefined") {
+        const authHeaders = await getAuthHeader();
         const response = await fetch("/api/copilot/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+          },
           body: JSON.stringify({
             message,
             context,

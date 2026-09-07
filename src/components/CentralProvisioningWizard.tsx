@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { TenantEnterprise, UserAccount, UserRole } from "../types";
 import { provisionEnterpriseWithAdminInDb } from "../services/dbService";
+import { getAuthHeader } from "../services/authService";
 
 interface CentralProvisioningWizardProps {
   isOpen: boolean;
@@ -136,9 +137,13 @@ export const CentralProvisioningWizard: React.FC<CentralProvisioningWizardProps>
     setIsAiLoading(true);
     setErrorMessage(null);
     try {
+      const authHeaders = await getAuthHeader();
       const res = await fetch("/api/ai/suggest-mill-setup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({
           mode: "suggest_identity",
           inputData: {
@@ -190,9 +195,13 @@ export const CentralProvisioningWizard: React.FC<CentralProvisioningWizardProps>
     setIsAiLoading(true);
     setErrorMessage(null);
     try {
+      const authHeaders = await getAuthHeader();
       const res = await fetch("/api/ai/suggest-mill-setup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({
           mode: "calculate_balance",
           inputData: {
@@ -236,9 +245,13 @@ export const CentralProvisioningWizard: React.FC<CentralProvisioningWizardProps>
     setIsAiLoading(true);
     setErrorMessage(null);
     try {
+      const authHeaders = await getAuthHeader();
       const res = await fetch("/api/ai/suggest-mill-setup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({
           mode: "validate_full_setup",
           inputData: {

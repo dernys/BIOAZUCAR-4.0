@@ -245,8 +245,8 @@ export async function initializeDatabaseIfEmpty(): Promise<boolean> {
       return true;
     }
     return false;
-  } catch (error) {
-    console.error("Error during database initialization/seeding:", error);
+  } catch (error: any) {
+    console.warn("Aviso de sincronización de base de datos (operando con datos locales de contingencia):", error?.message || error);
     return false;
   }
 }

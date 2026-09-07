@@ -39,22 +39,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onLogout,
 }) => {
   const [activeTab, setActiveTab] = useState<"LOGIN" | "CURRENT_SESSION" | "USERS_DIRECTORY">("LOGIN");
-  const [emailInput, setEmailInput] = useState<string>("ing.dernys@gmail.com");
-  const [passwordInput, setPasswordInput] = useState<string>("D3rnys2026*");
+  const [emailInput, setEmailInput] = useState<string>("");
+  const [passwordInput, setPasswordInput] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleManualLogin = (e: React.FormEvent) => {
+  const handleManualLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const result = authenticateUser(emailInput, passwordInput);
+    try {
+      const result = await authenticateUser(emailInput, passwordInput);
       setIsSubmitting(false);
 
       if (result.success && result.user) {
@@ -62,24 +62,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onLoginSuccess(result.user);
         setTimeout(() => {
           onClose();
-        }, 1200);
+        }, 1000);
       } else {
         setErrorMessage(result.error || "Credenciales inválidas.");
       }
-    }, 400);
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setErrorMessage(err.message || "Error durante el proceso de autenticación.");
+    }
   };
 
-  const handleQuickLogin = (userWithPass: typeof PREDEFINED_USERS[0]) => {
-    setEmailInput(userWithPass.email);
-    setPasswordInput(userWithPass.passwordHash);
-    const result = authenticateUser(userWithPass.email, userWithPass.passwordHash);
-    if (result.success && result.user) {
-      setSuccessMessage(`Sesión iniciada como ${result.user.name}.`);
-      onLoginSuccess(result.user);
-      setTimeout(() => {
-        onClose();
-      }, 1000);
-    }
+  const handleSelectUser = (user: UserAccount) => {
+    setEmailInput(user.email);
+    setPasswordInput("");
+    setErrorMessage(null);
   };
 
   const roleInfo = getRoleBadgeInfo(currentUser.role);
@@ -225,8 +221,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Quick Persona Logins */}
               <div>
                 <span className="text-xs text-slate-400 block mb-2.5 font-bold flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  Acceso Rápido por Perfil (1-Click Switch):
+                  <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
+                  Seleccionar cuenta para iniciar sesión:
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {PREDEFINED_USERS.map((usr) => {
@@ -236,7 +232,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <button
                         key={usr.id}
                         type="button"
-                        onClick={() => handleQuickLogin(usr)}
+                        onClick={() => handleSelectUser(usr)}
                         className={`p-2.5 rounded-xl text-left border transition flex items-center justify-between gap-2.5 ${
                           isCurrent
                             ? "bg-emerald-500/15 border-emerald-500/50 ring-1 ring-emerald-500/30"

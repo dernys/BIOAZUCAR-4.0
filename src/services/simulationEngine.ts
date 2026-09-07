@@ -55,6 +55,10 @@ export const INITIAL_TELEMETRY: TelemetryData = {
   oeeQuality: 99.1,
   mill3Vibration: 2.4,
   simulationScenario: "NORMAL",
+  isSimulated: true,
+  provenance: "SIMULATED_PROCESS_MODEL",
+  source: "BioAzúcar Stochastic Plant Simulator",
+  quality: "SIMULATED",
 };
 
 export function updateTelemetry(
@@ -207,6 +211,10 @@ export function updateTelemetry(
     mill3Vibration: +vibMill3.toFixed(2),
     boiler1Pressure: boilerPressureHP,
     simulationScenario: scenario,
+    isSimulated: true,
+    provenance: "SIMULATED_PROCESS_MODEL",
+    source: "BioAzúcar Stochastic Plant Simulator",
+    quality: "SIMULATED",
   };
 }
 

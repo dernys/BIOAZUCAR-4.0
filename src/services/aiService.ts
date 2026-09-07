@@ -1,4 +1,5 @@
 import { AIDiagnosticResult, TelemetryData } from "../types";
+import { getAuthHeader } from "./authService";
 
 export interface OptimizeCombustionResult {
   optimalBagasseFeed: string;
@@ -19,9 +20,13 @@ export async function diagnoseAnomalyWithAI(
   context?: string
 ): Promise<AIDiagnosticResult> {
   try {
+    const authHeaders = await getAuthHeader();
     const response = await fetch("/api/ai/diagnose-anomaly", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
       body: JSON.stringify({
         equipment,
         metric,
@@ -78,9 +83,13 @@ export async function optimizeCombustionWithAI(
   telemetry: TelemetryData
 ): Promise<OptimizeCombustionResult> {
   try {
+    const authHeaders = await getAuthHeader();
     const response = await fetch("/api/ai/optimize-combustion", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
       body: JSON.stringify({
         boilerPressure: telemetry.boilerPressureHP,
         steamFlow: telemetry.steamFlowHP,
@@ -117,9 +126,13 @@ export async function sendChatToAI(
   plantState: any
 ): Promise<string> {
   try {
+    const authHeaders = await getAuthHeader();
     const response = await fetch("/api/ai/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
       body: JSON.stringify({ message, plantState }),
     });
 
