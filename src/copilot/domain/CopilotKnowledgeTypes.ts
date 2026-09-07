@@ -8,8 +8,12 @@ export type ExplanationStyle = "SIMPLE" | "TECHNICAL" | "AUTOMATION" | "LIVE_GRO
 
 export type EvidenceCategory =
   | "DOCUMENTATION"
+  | "CONFIGURATION"
+  | "CURRENT_CONNECTION_STATUS"
+  | "LIVE_TELEMETRY"
   | "LIVE_DATA"
   | "HISTORICAL_DATA"
+  | "DIAGNOSTIC"
   | "INFERENCE"
   | "SIMULATION"
   | "PRODUCTION_OT";

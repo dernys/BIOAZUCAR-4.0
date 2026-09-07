@@ -85,10 +85,19 @@ export const COPILOT_TOOL_POLICIES: Record<string, ToolSecurityPolicy> = {
   get_provider_status: {
     toolName: "get_provider_status",
     level: 1,
-    requiredPermissions: ["VIEW_OT_CONFIG"],
+    requiredPermissions: ["VIEW_TELEMETRY"],
     minimumClearanceLevel: 1,
     allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
     description: "Consulta estado de enlace del proveedor industrial activo",
+    auditRequired: false,
+  },
+  get_integration_status: {
+    toolName: "get_integration_status",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Consulta estado de conectividad, diagnósticos y latencia de integraciones industriales (EROS, OPC UA, Modbus, MQTT, Sparkplug, REST, Industrial Edge)",
     auditRequired: false,
   },
   get_data_lineage: {
@@ -227,6 +236,15 @@ export const COPILOT_TOOL_POLICIES: Record<string, ToolSecurityPolicy> = {
     minimumClearanceLevel: 2,
     allowedRoles: ["superadmin", "administrador", "supervisor", "operador"],
     description: "Solicita reconocimiento formal de alarma (requiere confirmación del usuario)",
+    auditRequired: true,
+  },
+  acknowledge_alarm: {
+    toolName: "acknowledge_alarm",
+    level: 2,
+    requiredPermissions: ["ACKNOWLEDGE_ALARM"],
+    minimumClearanceLevel: 2,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento"],
+    description: "Reconocimiento formal de alarma bajo estándar ISA-18.2",
     auditRequired: true,
   },
 

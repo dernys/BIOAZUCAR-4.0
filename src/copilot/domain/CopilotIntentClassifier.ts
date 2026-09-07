@@ -1,10 +1,14 @@
 import { NavigationTab } from "../../types";
-import { CopilotIntent, CopilotUserContext } from "./CopilotTypes";
+import { CopilotIntent, CopilotUserContext, IntegrationSubIntent } from "./CopilotTypes";
 
 export interface IntentClassificationResult {
   intent: CopilotIntent;
   confidence: number;
   reason: string;
+  subIntent?: IntegrationSubIntent;
+  integrationProvider?: string;
+  industrialEntities?: string[];
+  recognizedEntity?: string;
   targetModule?: NavigationTab;
   targetEquipment?: string;
   targetTag?: string;
@@ -222,6 +226,10 @@ export class CopilotIntentClassifier {
       /\bque es lims\b/,
       /\bque es ppa\b/,
       /\bque es fft\b/,
+      /\bque es eros\b/,
+      /\bque es el eros\b/,
+      /\bque significa eros\b/,
+      /\bque es industrial edge\b/,
       /\bglosario\b/,
       /\bdiccionario industrial\b/,
     ];
@@ -283,6 +291,367 @@ export class CopilotIntentClassifier {
           confidence: 0.95,
           reason: "Consulta relacional de entidades en el grafo de conocimiento industrial",
           recommendedTool: "query_knowledge_graph",
+        };
+      }
+    }
+
+    // ========================================================================
+    // 3.6 INDUSTRIAL INTEGRATION & OT CONNECTIVITY (EROS, OPC UA, MODBUS, MQTT, SPARKPLUG, PLC, DCS, RTU, EDGE, UNS)
+    // ========================================================================
+
+    // Recognize industrial entities
+    const detectedIndustrialEntities: string[] = [];
+    if (/\beros\b/.test(clean)) detectedIndustrialEntities.push("EROS");
+    if (/\b(opc ua|opcua|iec 62541)\b/.test(clean)) detectedIndustrialEntities.push("OPC UA");
+    if (/\bmodbus\b/.test(clean)) detectedIndustrialEntities.push("Modbus");
+    if (/\bmqtt\b/.test(clean)) detectedIndustrialEntities.push("MQTT");
+    if (/\b(sparkplug|sparkplug b)\b/.test(clean)) detectedIndustrialEntities.push("Sparkplug B");
+    if (/\brest\b/.test(clean)) detectedIndustrialEntities.push("REST");
+    if (/\b(industrial edge|nodo edge|edge)\b/.test(clean)) detectedIndustrialEntities.push("Industrial Edge");
+    if (/\buns\b|\bunified namespace\b/.test(clean)) detectedIndustrialEntities.push("UNS");
+    if (/\bplc\b|\bautomata\b/.test(clean)) detectedIndustrialEntities.push("PLC");
+    if (/\bdcs\b/.test(clean)) detectedIndustrialEntities.push("DCS");
+    if (/\brtu\b/.test(clean)) detectedIndustrialEntities.push("RTU");
+    if (/\bscada\b/.test(clean)) detectedIndustrialEntities.push("SCADA");
+    if (/\bhistoriador\b|\bhistorian\b/.test(clean)) detectedIndustrialEntities.push("Historian");
+    if (/\bgateway\b|\bpasarela\b/.test(clean)) detectedIndustrialEntities.push("Gateway");
+    if (/\bbroker\b/.test(clean)) detectedIndustrialEntities.push("Broker");
+
+    // 3.6.1 CONNECTIVITY DIAGNOSTICS ("¿Está conectado EROS?", "¿Por qué está desconectado?", "¿Por qué no llegan datos?", etc.)
+    const connectivityDiagPatterns = [
+      /\besta conectado (el )?eros\b/,
+      /\besta conectado eros ahora\b/,
+      /\besta conectado (el )?opc\b/,
+      /\besta conectado opcua\b/,
+      /\besta conectado (el )?modbus\b/,
+      /\besta conectado (el )?mqtt\b/,
+      /\besta conectado el sistema\b/,
+      /\besta conectado el edge\b/,
+      /\besta conectado el dcs\b/,
+      /\bpor que eros esta desconectado\b/,
+      /\bpor que esta desconectado eros\b/,
+      /\bpor que opc ua esta desconectado\b/,
+      /\bpor que modbus esta desconectado\b/,
+      /\bno recibo datos de eros\b/,
+      /\bno llegan datos de eros\b/,
+      /\bno recibo datos\b/,
+      /\bpor que no llegan datos\b/,
+      /\bpor que no recibo datos\b/,
+      /\bcomo compruebo la conexion\b/,
+      /\bcomo verifico la conexion\b/,
+      /\bcomo verificar la conexion\b/,
+      /\bverificar conexion con eros\b/,
+      /\bcomo verifico la conexion con eros\b/,
+      /\bestado de la conexion con eros\b/,
+      /\bestado de conexion\b/,
+      /\bestado de conectividad\b/,
+      /\bdiagnostico de conectividad\b/,
+      /\bdiagnostico ot\b/,
+      /\blatencia de enlaces\b/,
+      /\blatencia ot\b/,
+      /\bdiagnostico de paquetes\b/,
+      /\bping en edge\b/,
+      /\bestado de integracion\b/,
+      /\bestado de los conectores\b/,
+      /\bestado de enlaces\b/,
+      /\benlaces industriales\b/,
+      /\bdiagnostico de enlaces\b/,
+    ];
+
+    for (const pattern of connectivityDiagPatterns) {
+      if (pattern.test(clean) && !clean.includes("eros esta en linea")) {
+        const prov = clean.includes("eros") ? "eros" : clean.includes("opc") ? "opcua" : clean.includes("modbus") ? "modbus" : clean.includes("mqtt") ? "mqtt" : "all";
+        return {
+          intent: "INTEGRATION",
+          subIntent: "CONNECTIVITY_DIAGNOSTIC",
+          confidence: 0.98,
+          reason: "Consulta o diagnóstico de conectividad, enlaces o recepción de datos industriales",
+          integrationProvider: prov,
+          industrialEntities: detectedIndustrialEntities,
+          targetModule: "uns_hub",
+          recommendedTool: "get_integration_status",
+        };
+      }
+    }
+
+    // 3.6.2 EROS INTEGRATION (Architecture, how to connect, configuration, requirements, mappings, graph questions)
+    const erosIntegrationPatterns = [
+      /\bcomo conecto el sistema a eros\b/,
+      /\bcomo conecto bioazucar a eros\b/,
+      /\bcomo conecto eros con bioazucar\b/,
+      /\bcomo conecto eros\b/,
+      /\bcomo conectar eros\b/,
+      /\bcomo conectar el sistema a eros\b/,
+      /\bcomo conectar bioazucar a eros\b/,
+      /\bcomo conecto al eros\b/,
+      /\bcomo integro eros\b/,
+      /\bcomo integrar eros\b/,
+      /\bcomo configuro eros\b/,
+      /\bcomo configurar eros\b/,
+      /\bcomo configuro el eros connector\b/,
+      /\bcomo configurar el eros connector\b/,
+      /\bque necesito para conectar eros\b/,
+      /\bque se necesita para conectar eros\b/,
+      /\brequisitos para conectar eros\b/,
+      /\bque protocolo usa eros\b/,
+      /\bque protocolo utiliza eros\b/,
+      /\bprotocolo de eros\b/,
+      /\bcomo hago la comunicacion con eros\b/,
+      /\bcomunicacion con eros\b/,
+      /\bcomo leo datos del eros\b/,
+      /\bcomo leer datos del eros\b/,
+      /\bcomo leo datos de eros\b/,
+      /\bcomo llevar los datos del eros al uns\b/,
+      /\bcomo llevar datos del eros al uns\b/,
+      /\bcomo llevar datos de eros al uns\b/,
+      /\bcomo conectar el central\b/,
+      /\bcomo conectar el dcs\b/,
+      /\bcomo conectar el sistema al control de planta\b/,
+      /\bcomo conectar control de planta\b/,
+      /\bintegracion con eros\b/,
+      /\bintegracion eros\b/,
+      /\bconector eros\b/,
+      /\beros connector\b/,
+      /\barquitectura eros\b/,
+      /\bque kpis dependen de datos provenientes de eros\b/,
+      /\bque kpis dependen de eros\b/,
+      /\bque tags vienen de eros\b/,
+      /\bque variables vienen de eros\b/,
+      /\bque equipos estan asociados a eros\b/,
+      /\bque equipos dependen de eros\b/,
+      /\bque datos dejarian de estar disponibles si eros se desconecta\b/,
+      /\bque pasa si eros se desconecta\b/,
+      /\bque protocolo esta utilizando actualmente\b/,
+      /\bque protocolo esta usando eros\b/,
+      /\beros esta en linea\b/,
+      /\beros en linea\b/,
+      /\bdatos vienen de eros\b/,
+      /\bparametros para conectar eros\b/,
+      /\bintegrar dcs eros\b/,
+      /\bconectar dcs eros\b/,
+      /\bconfiguracion de eros\b/,
+      /\bconector eros dcs\b/,
+      /\bvincular tandem de molienda con eros\b/,
+      /\binterfaz opc_ua_bridge para eros\b/,
+      /\binterfaz opc ua bridge para eros\b/,
+    ];
+
+    for (const pattern of erosIntegrationPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "INTEGRATION",
+          subIntent: "EROS_INTEGRATION",
+          confidence: 0.99,
+          reason: "Consulta sobre arquitectura, configuración, requerimientos o integración con el sistema EROS DCS",
+          integrationProvider: "eros",
+          industrialEntities: detectedIndustrialEntities,
+          targetModule: "uns_hub",
+          recommendedTool: "get_integration_status",
+        };
+      }
+    }
+
+    // 3.6.3 OPC UA INTEGRATION
+    const isOpcUaQuery =
+      clean.includes("opc ua") ||
+      clean.includes("opcua") ||
+      clean.includes("kepserver") ||
+      clean.includes("62541") ||
+      clean.includes("conectar opc");
+
+    if (isOpcUaQuery) {
+      return {
+        intent: "INTEGRATION",
+        subIntent: "OPC_UA_INTEGRATION",
+        confidence: 0.98,
+        reason: "Consulta sobre integración o conectividad mediante estándar OPC UA (IEC 62541)",
+        integrationProvider: "opcua",
+        industrialEntities: detectedIndustrialEntities,
+        targetModule: "uns_hub",
+        recommendedTool: "get_integration_status",
+      };
+    }
+
+    // 3.6.4 MODBUS INTEGRATION
+    const isModbusQuery =
+      clean.includes("modbus") ||
+      clean.includes("moxa") ||
+      clean.includes("holding register") ||
+      clean.includes("conectar analizadores") ||
+      clean.includes("puerto 502");
+
+    if (isModbusQuery) {
+      return {
+        intent: "INTEGRATION",
+        subIntent: "MODBUS_INTEGRATION",
+        confidence: 0.98,
+        reason: "Consulta sobre integración o conectividad mediante protocolo industrial Modbus TCP/RTU",
+        integrationProvider: "modbus",
+        industrialEntities: detectedIndustrialEntities,
+        targetModule: "uns_hub",
+        recommendedTool: "get_integration_status",
+      };
+    }
+
+    // 3.6.5 MQTT & SPARKPLUG INTEGRATION
+    const isSparkplugQuery =
+      clean.includes("sparkplug") ||
+      clean.includes("spbv1") ||
+      clean.includes("metricas sparkplug");
+
+    if (isSparkplugQuery) {
+      return {
+        intent: "INTEGRATION",
+        subIntent: "SPARKPLUG_INTEGRATION",
+        confidence: 0.98,
+        reason: "Consulta sobre especificación MQTT Sparkplug B",
+        integrationProvider: "sparkplug",
+        industrialEntities: detectedIndustrialEntities,
+        targetModule: "uns_hub",
+        recommendedTool: "get_integration_status",
+      };
+    }
+
+    const isMqttQuery =
+      clean.includes("mqtt") ||
+      clean.includes("emqx") ||
+      clean.includes("broker uns") ||
+      clean.includes("conectar broker");
+
+    if (isMqttQuery) {
+      return {
+        intent: "INTEGRATION",
+        subIntent: "MQTT_INTEGRATION",
+        confidence: 0.98,
+        reason: "Consulta sobre integración o publicación mediante broker MQTT",
+        integrationProvider: "mqtt",
+        industrialEntities: detectedIndustrialEntities,
+        targetModule: "uns_hub",
+        recommendedTool: "get_integration_status",
+      };
+    }
+
+    // 3.6.6 PLC & DCS & RTU INTEGRATION
+    const plcPatterns = [
+      /\bcomo conecto un plc\b/,
+      /\bcomo conectar un plc\b/,
+      /\bcomo conecto el plc\b/,
+      /\bconectar plc\b/,
+      /\bintegrar plc\b/,
+      /\bconectar automata\b/,
+      /\bconectar siemens\b/,
+      /\bconectar rockwell\b/,
+    ];
+
+    for (const pattern of plcPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "INTEGRATION",
+          subIntent: "PLC_INTEGRATION",
+          confidence: 0.98,
+          reason: "Consulta sobre integración de controladores PLC a la arquitectura BioAzúcar",
+          industrialEntities: detectedIndustrialEntities,
+          targetModule: "uns_hub",
+          recommendedTool: "get_integration_status",
+        };
+      }
+    }
+
+    const rtuPatterns = [
+      /\bcomo conecto rtu\b/,
+      /\bcomo conectar rtu\b/,
+      /\bintegrar rtu\b/,
+      /\bconectar terminal remota\b/,
+    ];
+
+    for (const pattern of rtuPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "INTEGRATION",
+          subIntent: "RTU_INTEGRATION",
+          confidence: 0.98,
+          reason: "Consulta sobre integración de unidades terminales remotas (RTU)",
+          industrialEntities: detectedIndustrialEntities,
+          targetModule: "uns_hub",
+          recommendedTool: "get_integration_status",
+        };
+      }
+    }
+
+    // 3.6.7 REST INTEGRATION
+    const restPatterns = [
+      /\bcomo conecto rest\b/,
+      /\bcomo conectar rest\b/,
+      /\bintegracion rest\b/,
+      /\bapi rest industrial\b/,
+      /\bconectar api rest\b/,
+    ];
+
+    for (const pattern of restPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "INTEGRATION",
+          subIntent: "REST_INTEGRATION",
+          confidence: 0.98,
+          reason: "Consulta sobre integración mediante APIs REST industriales",
+          integrationProvider: "rest",
+          industrialEntities: detectedIndustrialEntities,
+          targetModule: "uns_hub",
+          recommendedTool: "get_integration_status",
+        };
+      }
+    }
+
+    // 3.6.8 INDUSTRIAL EDGE & UNS DATA INGESTION
+    const edgePatterns = [
+      /\bcomo funciona el edge\b/,
+      /\bque es el edge industrial\b/,
+      /\bcomo llegan los datos al uns\b/,
+      /\bcomo llegan datos al uns\b/,
+      /\bflujo de datos hacia el uns\b/,
+      /\bcomo funciona industrial edge\b/,
+      /\bstore and forward\b/,
+      /\bindustrial edge node\b/,
+      /\bestado del industrial edge\b/,
+      /\bnodo edge\b/,
+      /\bnodo edge industrial\b/,
+      /\bindustrial edge\b/,
+    ];
+
+    for (const pattern of edgePatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "INTEGRATION",
+          subIntent: "INDUSTRIAL_EDGE",
+          confidence: 0.98,
+          reason: "Consulta sobre arquitectura Industrial Edge, Store & Forward y normalización de datos hacia el UNS",
+          industrialEntities: detectedIndustrialEntities,
+          targetModule: "uns_hub",
+          recommendedTool: "get_integration_status",
+        };
+      }
+    }
+
+    // 3.6.9 GENERAL PROTOCOL QUERY ("¿Qué protocolo puedo utilizar?", "¿Qué protocolos soporta?")
+    const generalProtocolPatterns = [
+      /\bque protocolo puedo utilizar\b/,
+      /\bque protocolos puedo utilizar\b/,
+      /\bque protocolo puedo usar\b/,
+      /\bque protocolos soporta\b/,
+      /\bque protocolos estan disponibles\b/,
+      /\bque protocolos industriales\b/,
+      /\bcuales son los protocolos de integracion\b/,
+    ];
+
+    for (const pattern of generalProtocolPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "INTEGRATION",
+          confidence: 0.97,
+          reason: "Consulta sobre protocolos industriales y conectividad soportada en BioAzúcar 4.0",
+          industrialEntities: detectedIndustrialEntities,
+          targetModule: "uns_hub",
+          recommendedTool: "get_integration_status",
         };
       }
     }

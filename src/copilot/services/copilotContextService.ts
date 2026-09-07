@@ -36,8 +36,12 @@ export class CopilotContextService {
       "NAVIGATE_APP",
     ];
 
-    if (currentRole === "operador" || currentRole === "supervisor" || currentRole === "administrador" || isSuperAdmin) {
+    if (currentRole === "operador" || currentRole === "supervisor" || currentRole === "administrador" || currentRole === "mantenimiento" || isSuperAdmin) {
       permissions.push("ACKNOWLEDGE_ALARM");
+    }
+
+    if (currentRole === "mantenimiento" || currentRole === "supervisor" || currentRole === "administrador" || isSuperAdmin) {
+      permissions.push("MANAGE_CMMS");
     }
 
     if (currentRole === "supervisor" || currentRole === "administrador" || isSuperAdmin) {
@@ -52,13 +56,25 @@ export class CopilotContextService {
       permissions.push("MANAGE_TENANTS", "RESET_DATABASE", "CONFIGURE_OT_GATEWAYS", "ROOT_ACCESS");
     }
 
+    const defaultRoleLevel = isSuperAdmin
+      ? 5
+      : currentRole === "administrador"
+      ? 4
+      : currentRole === "supervisor"
+      ? 3
+      : currentRole === "mantenimiento" || currentRole === "operador"
+      ? 2
+      : 1;
+
+    const securityLevel = currentRole === "observador" ? 1 : (currentUser.securityLevel || defaultRoleLevel);
+
     return {
       userId: currentUser.id || "usr-anon",
       username: currentUser.email || "usuario@bioazucar.com",
       displayName: currentUser.name || "Operador Industrial",
       roles: [currentRole],
       permissions,
-      securityLevel: currentUser.securityLevel || (isSuperAdmin ? 5 : currentRole === "administrador" ? 4 : currentRole === "supervisor" ? 3 : currentRole === "mantenimiento" ? 2 : 1),
+      securityLevel,
       plantId: activeTenant.id || "TENANT_DEFAULT",
       plantName: activeTenant.name || "Central Azucarero Principal",
       plantCode: activeTenant.code || "CENTRAL-01",

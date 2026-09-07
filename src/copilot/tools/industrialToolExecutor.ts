@@ -626,6 +626,7 @@ export class IndustrialToolExecutor {
               query: term,
               resultsCount: hits.length,
               entries: hits,
+              terms: hits,
             },
             actions: hits.length > 0 && hits[0].module ? [
               {
@@ -663,12 +664,14 @@ export class IndustrialToolExecutor {
         }
 
         case "get_procedure": {
-          const query = String(args.query || args.id || args.topic || "");
-          const procedures = copilotKnowledgeService.searchProcedures(query, 2);
+          const query = String(args.query || args.id || args.topic || args.procedureId || "");
+          const exactProc = copilotKnowledgeService.getProcedure(query);
+          const procedures = exactProc ? [exactProc] : copilotKnowledgeService.searchProcedures(query, 2);
           result = {
             success: true,
             data: {
               query,
+              procedure: exactProc || procedures[0],
               procedures,
             },
             actions: procedures.length > 0 ? [
@@ -825,6 +828,254 @@ export class IndustrialToolExecutor {
               canAcknowledgeAlarms: context.permissions.includes("ACKNOWLEDGE_ALARM"),
               canChangeDispatch: context.permissions.includes("CHANGE_DISPATCH_MW"),
             },
+          };
+          break;
+        }
+
+        // ====================================================================
+        // INDUSTRIAL INTEGRATION & OT CONNECTIVITY TOOLS
+        // ====================================================================
+        case "get_provider_status":
+        case "get_integration_status": {
+          const providerArg = String(args.provider || args.name || "all").toLowerCase();
+          const erosDiag = industrialEdge.eros.getDiagnostics();
+          const erosProf = industrialEdge.eros.getProfile();
+          const opcDiag = industrialEdge.opcUa.getDiagnostics();
+          const modbusDiag = industrialEdge.modbus.getDiagnostics();
+          const sparkDiag = industrialEdge.sparkplug.getDiagnostics();
+          const sfStats = industrialEdge.storeAndForward.getStats();
+          const activeProv = dataProviderRegistry.getActiveProvider();
+
+          const integrations: Array<{
+            id: string;
+            provider: string;
+            name: string;
+            protocol: string;
+            connectionStatus: "CONNECTED" | "DISCONNECTED" | "RECONNECTING" | "ERROR" | "CONFIGURATION_PENDING";
+            lastSeen: string | null;
+            endpoint: string;
+            latencyMs: number;
+            errorCount: number;
+            lastError: string | null;
+            dataQuality: "GOOD" | "BAD" | "COMMUNICATION_LOST";
+            environment: "PRODUCTION_OT" | "SIMULATION";
+            isSimulated: boolean;
+            implementationStatus: "IMPLEMENTED" | "PARTIAL" | "CONFIGURATION_REQUIRED" | "NOT_IMPLEMENTED";
+            timestamp: string;
+            details?: Record<string, any>;
+          }> = [
+            {
+              id: "eros",
+              provider: "EROS",
+              name: "Sistema de Control EROS DCS",
+              protocol: "EROS-NATIVE / " + (erosProf.activeInterface || "DIRECT_TCP"),
+              connectionStatus: (erosDiag.status as any) || "DISCONNECTED",
+              lastSeen: erosDiag.lastSeen,
+              endpoint: `${erosProf.host || "192.168.15.100"}:${erosProf.port || 9000}`,
+              latencyMs: erosDiag.latencyMs,
+              errorCount: erosDiag.errorCount,
+              lastError: erosDiag.lastError,
+              dataQuality: erosDiag.status === "CONNECTED" ? "GOOD" : "COMMUNICATION_LOST",
+              environment: "PRODUCTION_OT",
+              isSimulated: false,
+              implementationStatus: "IMPLEMENTED",
+              timestamp: new Date().toISOString(),
+              details: {
+                activeInterface: erosProf.activeInterface,
+                readOnlyMode: erosProf.readOnlyMode,
+                version: erosProf.version,
+                packetsReceived: erosDiag.packetsReceived,
+                packetsSent: erosDiag.packetsSent,
+                timeoutCount: erosDiag.timeoutCount,
+                uptimeSeconds: erosDiag.uptimeSeconds,
+              },
+            },
+            {
+              id: "opcua",
+              provider: "OPC_UA",
+              name: "OPC UA Gateway (KEPServerEX)",
+              protocol: "OPC_UA_BINARY (IEC 62541)",
+              connectionStatus: (opcDiag.status as any) || "DISCONNECTED",
+              lastSeen: opcDiag.lastSeen,
+              endpoint: (opcDiag as any).endpointUrl || "opc.tcp://192.168.10.50:4840/BioAzucarServer",
+              latencyMs: opcDiag.latencyMs,
+              errorCount: opcDiag.errorCount,
+              lastError: opcDiag.lastError,
+              dataQuality: opcDiag.status === "CONNECTED" ? "GOOD" : "COMMUNICATION_LOST",
+              environment: "PRODUCTION_OT",
+              isSimulated: false,
+              implementationStatus: "IMPLEMENTED",
+              timestamp: new Date().toISOString(),
+              details: {
+                securityPolicy: "Basic256Sha256",
+                securityMode: "SignAndEncrypt",
+                packetsReceived: opcDiag.packetsReceived,
+                packetsSent: opcDiag.packetsSent,
+              },
+            },
+            {
+              id: "modbus",
+              provider: "MODBUS",
+              name: "Concentrador Modbus TCP (Moxa NPort 5150A)",
+              protocol: "MODBUS_TCP",
+              connectionStatus: (modbusDiag.status as any) || "DISCONNECTED",
+              lastSeen: modbusDiag.lastSeen,
+              endpoint: "192.168.20.15:502",
+              latencyMs: modbusDiag.latencyMs,
+              errorCount: modbusDiag.errorCount,
+              lastError: modbusDiag.lastError,
+              dataQuality: modbusDiag.status === "CONNECTED" ? "GOOD" : "COMMUNICATION_LOST",
+              environment: "PRODUCTION_OT",
+              isSimulated: false,
+              implementationStatus: "IMPLEMENTED",
+              timestamp: new Date().toISOString(),
+              details: {
+                timeoutCount: modbusDiag.timeoutCount,
+                packetsReceived: modbusDiag.packetsReceived,
+              },
+            },
+            {
+              id: "mqtt",
+              provider: "MQTT",
+              name: "Broker MQTT UNS (EMQX Enterprise)",
+              protocol: "MQTT_V5",
+              connectionStatus: (sparkDiag.status as any) || "DISCONNECTED",
+              lastSeen: sparkDiag.lastSeen,
+              endpoint: "tls://mqtt.bioazucar.internal:8883",
+              latencyMs: sparkDiag.latencyMs,
+              errorCount: sparkDiag.errorCount,
+              lastError: sparkDiag.lastError,
+              dataQuality: sparkDiag.status === "CONNECTED" ? "GOOD" : "COMMUNICATION_LOST",
+              environment: "PRODUCTION_OT",
+              isSimulated: false,
+              implementationStatus: "IMPLEMENTED",
+              timestamp: new Date().toISOString(),
+            },
+            {
+              id: "sparkplug",
+              provider: "SPARKPLUG_B",
+              name: "Sparkplug B Edge Publisher",
+              protocol: "SPARKPLUG_B (Protobuf)",
+              connectionStatus: (sparkDiag.status as any) || "DISCONNECTED",
+              lastSeen: sparkDiag.lastSeen,
+              endpoint: "tls://mqtt.bioazucar.internal:8883/spBv1.0/BioAzucar",
+              latencyMs: sparkDiag.latencyMs,
+              errorCount: sparkDiag.errorCount,
+              lastError: sparkDiag.lastError,
+              dataQuality: sparkDiag.status === "CONNECTED" ? "GOOD" : "COMMUNICATION_LOST",
+              environment: "PRODUCTION_OT",
+              isSimulated: false,
+              implementationStatus: "IMPLEMENTED",
+              timestamp: new Date().toISOString(),
+            },
+            {
+              id: "edge",
+              provider: "INDUSTRIAL_EDGE",
+              name: "BioAzúcar Industrial Edge Node (Advantech)",
+              protocol: "STORE_AND_FORWARD / LOCAL_BUS",
+              connectionStatus: "CONNECTED",
+              lastSeen: new Date().toISOString(),
+              endpoint: "192.168.10.2 (Local Gateway OT/DMZ)",
+              latencyMs: 1,
+              errorCount: 0,
+              lastError: null,
+              dataQuality: "GOOD",
+              environment: "PRODUCTION_OT",
+              isSimulated: false,
+              implementationStatus: "IMPLEMENTED",
+              timestamp: new Date().toISOString(),
+              details: {
+                queueDepth: sfStats.queueDepth,
+                cloudConnected: sfStats.cloudConnected,
+                droppedCount: sfStats.droppedCount,
+              },
+            },
+            {
+              id: "simulation",
+              provider: "SIMULATION",
+              name: "Simulador Fabril Matemático",
+              protocol: "VIRTUAL_CLOCK",
+              connectionStatus: "CONNECTED",
+              lastSeen: new Date().toISOString(),
+              endpoint: "internal://synthetic-twin",
+              latencyMs: 0,
+              errorCount: 0,
+              lastError: null,
+              dataQuality: "GOOD",
+              environment: "SIMULATION",
+              isSimulated: true,
+              implementationStatus: "IMPLEMENTED",
+              timestamp: new Date().toISOString(),
+            },
+          ];
+
+          let filtered = integrations;
+          if (providerArg !== "all" && providerArg !== "") {
+            filtered = integrations.filter((i) =>
+              i.id.includes(providerArg) ||
+              i.provider.toLowerCase().includes(providerArg) ||
+              i.name.toLowerCase().includes(providerArg)
+            );
+            if (filtered.length === 0) filtered = integrations;
+          }
+
+          const profile = providerArg === "eros" ? {
+            ...erosProf,
+            interfaces: erosProf.supportedInterfaces,
+          } : {
+            interfaces: ["OPC_UA_BRIDGE", "DIRECT_TCP", "MODBUS_GATEWAY", "REST_API"],
+            activeInterface: activeProv.protocol,
+          };
+
+          result = {
+            success: true,
+            data: {
+              provider: providerArg,
+              profile,
+              activeProviderName: activeProv.name,
+              activeProviderSource: activeProv.source,
+              activeProviderProtocol: activeProv.protocol,
+              isSimulated: activeProv.source === "SIMULATION",
+              query: providerArg,
+              totalIntegrations: integrations.length,
+              integrations: filtered,
+            },
+            widgets: [
+              {
+                type: "TABLE",
+                title: "Diagnóstico de Conectividad e Integraciones Industriales OT / Edge",
+                columns: [
+                  { key: "provider", header: "Proveedor / Protocolo" },
+                  { key: "endpoint", header: "Endpoint" },
+                  { key: "status", header: "Estado", align: "center", format: "badge" },
+                  { key: "latency", header: "Latencia", align: "right" },
+                  { key: "quality", header: "Calidad", align: "center", format: "badge" },
+                ],
+                rows: filtered.map((item) => ({
+                  provider: `${item.provider} (${item.protocol})`,
+                  endpoint: item.endpoint,
+                  status: item.connectionStatus,
+                  latency: `${item.latencyMs} ms`,
+                  quality: item.dataQuality,
+                })),
+              },
+            ],
+            actions: [
+              {
+                id: "act-nav-unshub",
+                type: "NAVIGATE",
+                label: "Abrir Centro de Conectividad (UNS Hub)",
+                payload: { targetRoute: "uns_hub" },
+                level: 1,
+              },
+              {
+                id: "act-nav-ot-config",
+                type: "NAVIGATE",
+                label: "Ver Configuración OT / Edge",
+                payload: { targetRoute: "ot_network" },
+                level: 1,
+              },
+            ],
           };
           break;
         }

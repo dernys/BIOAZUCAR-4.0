@@ -440,8 +440,29 @@ app.post("/api/copilot/chat", async (req, res) => {
       rawLower.includes("que tags alimentan") ||
       rawLower.includes("grafo");
 
+    const isIntegration =
+      classification?.intent === "INTEGRATION" ||
+      rawLower.includes("eros") ||
+      rawLower.includes("conectar") ||
+      rawLower.includes("conectividad") ||
+      rawLower.includes("opc ua") ||
+      rawLower.includes("modbus") ||
+      rawLower.includes("sparkplug") ||
+      rawLower.includes("conector") ||
+      rawLower.includes("industrial edge");
+
     if (!ai) {
       // Deterministic fallback if GEMINI_API_KEY is not set
+      if (isIntegration) {
+        return res.json({
+          message: `### 🏭 Integración de EROS DCS y Conectividad OT\n\n**Flujo Arquitectónico:**\n\`EROS/DCS ➔ EROS Connector ➔ Industrial Edge ➔ Normalización ➔ UNS/MQTT ➔ BioAzúcar\`\n\nEl sistema soporta interfaces \`OPC_UA_BRIDGE\`, \`DIRECT_TCP\`, \`MODBUS_GATEWAY\` y \`REST_API\` a través del nodo Edge industrial sin conexión directa del LLM a los controladores físicos.`,
+          intent: "INTEGRATION",
+          confidence: 0.98,
+          clientToolCalls: [{ toolName: "get_integration_status", args: { provider: rawLower.includes("eros") ? "eros" : "all" } }],
+          isAiGenerated: false,
+        });
+      }
+
       if (isCapabilities) {
         return res.json({
           message: "Soy **BioAzúcar Copilot**, el asistente inteligente de **BioAzúcar 4.0**. Puedo ayudarte a consultar y analizar el estado de la planta, KPIs, producción, molienda, extracción, cogeneración, energía, alarmas y equipos. También puedo consultar el origen de los datos, generar estadísticas, explicar indicadores, guiarte con tutoriales paso a paso, consultar el glosario industrial, navegar por el sistema y ejecutar acciones autorizadas. ¿Qué necesitas hacer?",
@@ -619,10 +640,16 @@ PRINCIPIOS FUNDAMENTALES:
 9. ACCIONES SENSIBLES:
    - Nivel 2 (alarm ACK) o Nivel 3 (cambio setpoint/despacho) siempre requieren autorización RBAC y confirmación explícita del operador.
 
+10. INTEGRACIÓN INDUSTRIAL / EROS / CONECTIVIDAD OT:
+   - Si preguntan sobre cómo conectar a EROS, protocolos industriales (OPC UA, Modbus, Sparkplug, MQTT), gateways o diagnóstico de enlaces OT: clasifica como "INTEGRATION" y llama a get_integration_status con provider ("eros", "opcua", "modbus", "mqtt" o "all").
+   - Explica el flujo: EROS/DCS -> EROS Connector -> Industrial Edge -> Normalización -> UNS/MQTT -> BioAzúcar.
+   - Resalta que la IA nunca se conecta directamente a los PLCs o DCS.
+
 INTENCIONES DISPONIBLES:
-"CAPABILITIES" | "HELP" | "GENERAL_QUESTION" | "SYSTEM_INFORMATION" | "PROCESS_STATE" | "KPI_ANALYSIS" | "STATISTICS" | "DIAGNOSTIC" | "ALARM" | "EQUIPMENT" | "DATA_LINEAGE" | "NAVIGATION" | "ACTION" | "CONFIGURATION" | "USER_PERMISSIONS" | "TUTORIAL" | "CONTEXTUAL_HELP" | "GLOSSARY_QUERY" | "PROCEDURE_QUERY" | "KNOWLEDGE_GRAPH_QUERY" | "UNKNOWN"
+"CAPABILITIES" | "HELP" | "GENERAL_QUESTION" | "SYSTEM_INFORMATION" | "PROCESS_STATE" | "KPI_ANALYSIS" | "STATISTICS" | "DIAGNOSTIC" | "ALARM" | "EQUIPMENT" | "DATA_LINEAGE" | "NAVIGATION" | "ACTION" | "CONFIGURATION" | "USER_PERMISSIONS" | "TUTORIAL" | "CONTEXTUAL_HELP" | "GLOSSARY_QUERY" | "PROCEDURE_QUERY" | "KNOWLEDGE_GRAPH_QUERY" | "INTEGRATION" | "UNKNOWN"
 
 HERRAMIENTAS CLIENTE DISPONIBLES EN clientToolCalls:
+- get_integration_status ({ provider?: string })
 - explain_capabilities ({})
 - get_system_info ({})
 - get_user_permissions ({})

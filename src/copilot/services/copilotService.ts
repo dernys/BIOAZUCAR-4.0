@@ -31,13 +31,9 @@ export class CopilotService {
     // 1. Robust Intent Classification BEFORE any response generation
     const classification: IntentClassificationResult = CopilotIntentClassifier.classify(message, context);
 
-    // Short-circuit pure capabilities and greeting queries to guarantee 100% adherence
+    // Short-circuit pure capabilities, unknown, and integration queries to guarantee 100% adherence
     // and prevent any random boiler / steam / Hugot explanations from interfering
-    if (classification.intent === "CAPABILITIES") {
-      return this.generateDeterministicResponse(options, startTime, classification);
-    }
-
-    if (classification.intent === "UNKNOWN") {
+    if (classification.intent === "CAPABILITIES" || classification.intent === "UNKNOWN" || classification.intent === "INTEGRATION") {
       return this.generateDeterministicResponse(options, startTime, classification);
     }
 
@@ -725,6 +721,151 @@ export class CopilotService {
           responseText += `*Relación gobernada bajo el árbol jerárquico ISA-95 del ingenio.*`;
         } else {
           responseText = `He consultado el Grafo de Conocimiento de **${activeTenant.name}**. Puedes consultar qué alarmas tiene asignadas un equipo (ej. *“Molino 3”*) o qué tags alimentan un KPI (ej. *“kpi-steam-hp”*).`;
+        }
+        break;
+      }
+
+      // ======================================================================
+      // 21. INDUSTRIAL INTEGRATION / EROS DCS / OT CONNECTIVITY
+      // ======================================================================
+      case "INTEGRATION": {
+        toolsExecuted.push("get_integration_status");
+        const provider = resolvedClassification.integrationProvider || "eros";
+        const subIntent = resolvedClassification.subIntent || "EROS_INTEGRATION";
+
+        const resInteg = await IndustrialToolExecutor.execute({
+          toolName: "get_integration_status",
+          args: { provider },
+          context,
+          liveTelemetry,
+          alarmsList,
+          equipmentList,
+          activeTenant,
+        });
+
+        if (resInteg.widgets) widgets.push(...resInteg.widgets);
+        if (resInteg.actions) actions.push(...resInteg.actions);
+
+        const integrations = resInteg.data?.integrations || [];
+        const erosInfo = integrations.find((i: any) => i.id === "eros") || integrations[0];
+
+        if (subIntent === "EROS_INTEGRATION" || provider === "eros") {
+          const statusBadge = erosInfo?.connectionStatus === "CONNECTED" ? "🟢 CONECTADO" : "🔴 DESCONECTADO";
+          responseText = `### 🏭 Integración de EROS DCS con BioAzúcar 4.0
+
+**¿Qué es EROS?**
+**EROS** es el Sistema de Control Distribuido (DCS) azucarero de planta responsable de la automatización de procesos críticos en el ingenio: tándem de molinos, difusores, maceración/imbibición, clarificación y control de tachos al vacío.
+
+---
+
+### 🌐 Flujo Arquitectónico de Conectividad
+\`\`\`text
+EROS/DCS ➔ EROS Connector ➔ Industrial Edge ➔ Normalización (IndustrialDataPoint) ➔ UNS/MQTT ➔ Plataforma BioAzúcar ➔ Copilot/SCADA/KPIs
+\`\`\`
+
+---
+
+### 🛠️ ¿Cómo conectar el sistema a EROS? (Procedimiento Técnico)
+
+1. **Definir la Interfaz de Comunicación en Industrial Edge**:
+   - **\`OPC_UA_BRIDGE\`** *(Recomendado para producción)*: Conecta la pasarela OPC UA (IEC 62541) del nodo Edge con el servidor EROS en puerto \`4840\` o \`9000\`.
+   - **\`DIRECT_TCP\`**: Conexión nativa por socket binario TCP/IP (puerto predeterminado \`9000\`).
+   - **\`MODBUS_GATEWAY\`**: Mapeo de Holding Registers de EROS vía pasarela Modbus TCP (puerto \`502\`).
+   - **\`REST_API\`**: Extracción periódica HTTP/JSON para datos históricos (modo solo lectura).
+
+2. **Configuración de Parámetros de Enlace**:
+   - **Host / IP**: \`${erosInfo?.endpoint || "192.168.15.100:9000"}\` (Red OT segmentada según IEC 62443).
+   - **Modo de Seguridad**: Certificados X.509 o credenciales almacenadas en Vault (\`vault://secrets/eros-creds\`).
+   - **Modo Operativo**: \`readOnlyMode: true\` (por defecto para protección de lazos de control físico).
+
+3. **Mapeo de Variables y Normalización ISA-95**:
+   - Asignar tags de EROS a objetos \`IndustrialDataPoint\` (ej. \`EROS.Tandem.Turbine_Speed_RPM\` ➔ \`Milling.Tandem.TCH_Actual\`).
+   - Configurar período de sondeo / publicación (estándar: 1000 ms).
+
+4. **Suscripción y Publicación en Unified Namespace (UNS)**:
+   - El conector publica los datos normalizados en el broker MQTT Sparkplug B (\`spBv1.0/BioAzucar/DDATA/Central-01/Molienda\`).
+
+---
+
+### 📊 Estado Actual del Enlace EROS:
+- **Estado de Conexión**: ${statusBadge} (\`${erosInfo?.connectionStatus || "DISCONNECTED"}\`)
+- **Interfaz Activa**: \`${erosInfo?.details?.activeInterface || "OPC_UA_BRIDGE"}\` | Versión: \`${erosInfo?.details?.version || "4.8"}\`
+- **Endpoint**: \`${erosInfo?.endpoint || "192.168.15.100:9000"}\`
+- **Latencia**: \`${erosInfo?.latencyMs ?? 0} ms\` | **Paquetes Transmitidos**: \`${erosInfo?.details?.packetsReceived ?? 0} rx / ${erosInfo?.details?.packetsSent ?? 0} tx\`
+- **Calidad de Datos**: \`${erosInfo?.dataQuality || "COMMUNICATION_LOST"}\` (\`${erosInfo?.environment || "PRODUCTION_OT"}\`)
+
+---
+
+### 🛡️ Política de Seguridad (IEC 62443):
+*El Copilot y los modelos de IA nunca interactúan directamente con los PLCs ni con el DCS EROS. Todas las operaciones siguen el flujo:*
+\`Copilot ➔ Control RBAC ➔ Motor de Políticas ➔ Servicio de Integración Industrial ➔ Industrial Edge ➔ EROS DCS\`.`;
+
+          actions.push(
+            {
+              id: "act-nav-unshub",
+              type: "NAVIGATE",
+              label: "Ver EROS en UNS Hub",
+              payload: { targetRoute: "uns_hub" },
+              level: 1,
+            },
+            {
+              id: "act-diag-eros",
+              type: "EXECUTE_TOOL",
+              label: "Ejecutar Diagnóstico OT",
+              payload: { tool: "get_integration_status", provider: "eros" },
+              level: 1,
+            }
+          );
+        } else if (subIntent === "CONNECTIVITY_DIAGNOSTIC") {
+          responseText = `### 🔍 Diagnóstico de Conectividad Industrial OT & Edge Node
+
+Se ha consultado el estado de todos los conectores industriales en el **BioAzúcar Industrial Edge Node** (\`192.168.10.2\`):
+
+- **EROS DCS**: \`${integrations.find((i: any) => i.id === "eros")?.connectionStatus || "DISCONNECTED"}\` (Latencia: ${integrations.find((i: any) => i.id === "eros")?.latencyMs || 0} ms)
+- **OPC UA Gateway**: \`${integrations.find((i: any) => i.id === "opcua")?.connectionStatus || "DISCONNECTED"}\` (Latencia: ${integrations.find((i: any) => i.id === "opcua")?.latencyMs || 0} ms)
+- **Modbus TCP**: \`${integrations.find((i: any) => i.id === "modbus")?.connectionStatus || "DISCONNECTED"}\` (Latencia: ${integrations.find((i: any) => i.id === "modbus")?.latencyMs || 0} ms)
+- **Broker MQTT UNS**: \`${integrations.find((i: any) => i.id === "mqtt")?.connectionStatus || "DISCONNECTED"}\` (Latencia: ${integrations.find((i: any) => i.id === "mqtt")?.latencyMs || 0} ms)
+- **Buffer Store & Forward**: Cola local activa con ${resInteg.data?.integrations?.find((i: any) => i.id === "edge")?.details?.queueDepth || 0} paquetes pendientes.
+
+*Consulta la tabla de diagnóstico a continuación para revisar endpoints y tasas de error.*`;
+        } else if (subIntent === "OPC_UA_INTEGRATION" || provider === "opcua") {
+          const opcInfo = integrations.find((i: any) => i.id === "opcua");
+          responseText = `### ⚡ Integración OPC UA (IEC 62541) con BioAzúcar 4.0
+
+**Arquitectura de Conexión**:
+\`PLCs (Siemens/Rockwell/Schneider) ➔ Servidor OPC UA (KEPServerEX) ➔ OpcUaConnector (Edge) ➔ UNS/MQTT ➔ BioAzúcar\`
+
+- **Endpoint de Conexión**: \`${opcInfo?.endpoint || "opc.tcp://192.168.10.50:4840/BioAzucarServer"}\`
+- **Políticas de Seguridad**: \`Basic256Sha256\` / \`SignAndEncrypt\` con certificados X.509.
+- **Estado Actual**: \`${opcInfo?.connectionStatus || "DISCONNECTED"}\` (Latencia: \`${opcInfo?.latencyMs || 0} ms\`).
+- **Mecanismo**: Suscripción determinística por excepción con deadband configurable.`;
+        } else if (subIntent === "MODBUS_INTEGRATION" || provider === "modbus") {
+          const modInfo = integrations.find((i: any) => i.id === "modbus");
+          responseText = `### 🔌 Integración Modbus TCP / RTU con BioAzúcar 4.0
+
+**Arquitectura de Conexión**:
+\`Analizadores de Potencia / Variadores ➔ Gateway Moxa NPort 5150A ➔ ModbusConnector (Edge) ➔ UNS/MQTT ➔ BioAzúcar\`
+
+- **Endpoint**: \`${modInfo?.endpoint || "192.168.20.15:502"}\` (Modbus TCP)
+- **Registros Mapeados**: Holding Registers 40001-40050 (Potencia activa MW, reactiva MVAr, factor de potencia).
+- **Estado Actual**: \`${modInfo?.connectionStatus || "DISCONNECTED"}\` (Latencia: \`${modInfo?.latencyMs || 0} ms\`).`;
+        } else if (subIntent === "MQTT_INTEGRATION" || subIntent === "SPARKPLUG_INTEGRATION") {
+          const mqttInfo = integrations.find((i: any) => i.id === "mqtt");
+          responseText = `### 📡 Unified Namespace & MQTT Sparkplug B
+
+**Arquitectura de Conexión**:
+\`Industrial Edge ➔ MqttSparkplugConnector ➔ Broker EMQX Enterprise ➔ Unified Namespace (UNS) ➔ BioAzúcar Platform\`
+
+- **Broker URL**: \`${mqttInfo?.endpoint || "tls://mqtt.bioazucar.internal:8883"}\`
+- **Espacio de Tópicos Sparkplug B**: \`spBv1.0/{GroupId}/{MessageType}/{EdgeNodeId}/[{DeviceId}]\`
+- **Estado Actual**: \`${mqttInfo?.connectionStatus || "DISCONNECTED"}\` (Calidad: \`${mqttInfo?.dataQuality || "GOOD"}\`).`;
+        } else {
+          responseText = `### 🌐 Conectividad e Integración Industrial OT (BioAzúcar 4.0)
+
+BioAzúcar soporta arquitectura híbrida OT/IT desacoplada mediante el **Industrial Edge Node**:
+- **Protocolos Soportados**: EROS DCS Native, OPC UA (IEC 62541), Modbus TCP/RTU, MQTT Sparkplug B y REST API.
+- **Flujo de Datos**: \`Fuentes OT ➔ Conectores Edge ➔ Normalización ISA-95 ➔ UNS Hub ➔ BioAzúcar ➔ Copilot\`.
+- **Aislamiento Ciberseguro**: Red OT (Nivel 2/3) aislada mediante doble tarjeta de red (Dual NIC) y colas Store & Forward.`;
         }
         break;
       }

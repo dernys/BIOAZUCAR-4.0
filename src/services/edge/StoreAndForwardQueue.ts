@@ -162,6 +162,17 @@ export class StoreAndForwardQueue {
     };
   }
 
+  public getStats() {
+    const s = this.getState();
+    return {
+      queueDepth: s.bufferedCount,
+      cloudConnected: s.isCloudConnected,
+      droppedCount: s.droppedPoints,
+      maxCapacity: s.maxBufferCapacity,
+      isSyncing: s.isSyncing,
+    };
+  }
+
   /**
    * Peek at pending points without modifying queue
    */

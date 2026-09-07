@@ -136,20 +136,32 @@ export class KnowledgeRetrievalService {
     const clean = query.toLowerCase().trim();
     if (!clean) return [];
 
-    return BIOAZUCAR_PROCEDURES.filter((proc) => {
-      const match =
-        clean.includes(proc.id.toLowerCase()) ||
-        clean.includes(proc.title.toLowerCase()) ||
-        (proc.relatedEquipment && proc.relatedEquipment.some((eq) => clean.includes(eq.toLowerCase()))) ||
-        clean.includes(proc.category.toLowerCase()) ||
-        (clean.includes("alarma") && proc.id.includes("alarm")) ||
-        (clean.includes("despacho") && proc.id.includes("dispatch")) ||
-        (clean.includes("lote") && proc.id.includes("batch")) ||
-        (clean.includes("vibracion") && proc.id.includes("vibration")) ||
-        (clean.includes("edge") && proc.id.includes("edge"));
+    const tokens = clean.split(/\s+/).filter((t) => t.length > 2);
 
-      return match;
-    }).slice(0, limit);
+    return BIOAZUCAR_PROCEDURES.map((proc) => {
+      let score = 0;
+      const titleLower = proc.title.toLowerCase();
+      const idLower = proc.id.toLowerCase();
+      const descLower = proc.description.toLowerCase();
+
+      if (idLower === clean || titleLower === clean) score += 100;
+      if (idLower.includes(clean) || titleLower.includes(clean) || clean.includes(idLower)) score += 50;
+
+      tokens.forEach((t) => {
+        if (titleLower.includes(t)) score += 15;
+        if (idLower.includes(t)) score += 15;
+        if (descLower.includes(t)) score += 5;
+        if (proc.relatedEquipment?.some((eq) => eq.toLowerCase().includes(t))) score += 10;
+        if (proc.relatedTags?.some((tag) => tag.toLowerCase().includes(t))) score += 8;
+        if (proc.steps.some((step) => step.toLowerCase().includes(t))) score += 4;
+      });
+
+      return { proc, score };
+    })
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((item) => item.proc);
   }
 
   /**
@@ -196,7 +208,11 @@ export class KnowledgeRetrievalService {
         queryLower.includes(n.name.toLowerCase()) ||
         (n.code && queryLower.includes(n.code.toLowerCase())) ||
         (n.type === "EQUIPMENT" && queryLower.includes("equipo")) ||
-        (n.type === "ALARM" && queryLower.includes("alarma"))
+        (n.type === "ALARM" && queryLower.includes("alarma")) ||
+        (queryLower.includes("eros") && n.id.includes("eros")) ||
+        (queryLower.includes("opc") && n.id.includes("opc")) ||
+        (queryLower.includes("modbus") && n.id.includes("modbus")) ||
+        (queryLower.includes("mqtt") && n.id.includes("sparkplug"))
       ) {
         relevantNodeIds.add(n.id);
       }
@@ -210,7 +226,31 @@ export class KnowledgeRetrievalService {
     // Evidence classification
     const isSimulated = liveTelemetry.simulationScenario !== undefined || !liveTelemetry.tenantId;
     let evidenceCategory: EvidenceCategory = "DOCUMENTATION";
-    if (queryLower.includes("actual") || queryLower.includes("ahora") || queryLower.includes("valor") || queryLower.includes("tch") || queryLower.includes("oee")) {
+    if (
+      queryLower.includes("diagnostico") ||
+      queryLower.includes("ping") ||
+      queryLower.includes("latencia") ||
+      queryLower.includes("paquetes") ||
+      queryLower.includes("comunicacion perdida")
+    ) {
+      evidenceCategory = "DIAGNOSTIC";
+    } else if (
+      queryLower.includes("estado conexion") ||
+      queryLower.includes("esta conectado") ||
+      queryLower.includes("enlace") ||
+      queryLower.includes("conectado a eros") ||
+      queryLower.includes("status")
+    ) {
+      evidenceCategory = "CURRENT_CONNECTION_STATUS";
+    } else if (
+      queryLower.includes("como conectar") ||
+      queryLower.includes("configurar") ||
+      queryLower.includes("endpoint") ||
+      queryLower.includes("puerto") ||
+      queryLower.includes("interfaz")
+    ) {
+      evidenceCategory = "CONFIGURATION";
+    } else if (queryLower.includes("actual") || queryLower.includes("ahora") || queryLower.includes("valor") || queryLower.includes("tch") || queryLower.includes("oee")) {
       evidenceCategory = isSimulated ? "SIMULATION" : "LIVE_DATA";
     }
 

@@ -272,6 +272,74 @@ $$OEE = \\text{Disponibilidad} \\times \\text{Rendimiento} \\times \\text{Calida
     relatedModule: "uns_hub",
     standards: ["IEC 62443-4-2", "NIST SP 800-82"],
   },
+  {
+    id: "kn-eros-integration",
+    category: "ARCHITECTURE",
+    title: "Integración de EROS DCS y BioAzúcar 4.0",
+    keywords: ["eros", "conectar eros", "integracion eros", "dcs", "molienda", "eros connector", "interfaz eros", "bridge", "pasos conectar"],
+    summary: "Arquitectura y procedimiento para conectar e integrar el sistema de control distribuido EROS DCS al nodo Industrial Edge y al Unified Namespace (UNS).",
+    detailedContent: `### Integración de EROS DCS con BioAzúcar 4.0
+- **¿Qué es EROS?**: Es un Sistema de Control Distribuido (DCS) azucarero especializado en la automatización del tándem de molinos, difusores, clarificación y tachos al vacío.
+- **Flujo Arquitectónico Real**:
+  \`EROS/DCS\` ➔ \`EROS Connector\` ➔ \`Industrial Edge\` ➔ \`Normalización de Datos\` ➔ \`IndustrialDataPoint\` ➔ \`UNS/MQTT Sparkplug B\` ➔ \`BioAzúcar Platform\` ➔ \`Copilot / SCADA / KPIs\`
+- **Interfaces Disponibles en ErosConnector**:
+  1. \`OPC_UA_BRIDGE\`: Conexión mediante pasarela OPC UA (IEC 62541) hacia el servidor EROS (Recomendado para producción).
+  2. \`DIRECT_TCP\`: Protocolo nativo TCP/IP sobre socket binario (puerto estándar 9000).
+  3. \`MODBUS_GATEWAY\`: Mapeo de Holding Registers de EROS a través de gateway Modbus TCP.
+  4. \`REST_API\`: Adquisición HTTP/JSON para exportación histórica (modo solo lectura).
+- **Parámetros Requeridos**:
+  * Host / IP del servidor EROS (ej. \`192.168.15.100\`).
+  * Puerto de enlace (ej. \`9000\` o \`4840\`).
+  * Interfaz activa (\`OPC_UA_BRIDGE\`, \`DIRECT_TCP\`, \`MODBUS_GATEWAY\` o \`REST_API\`).
+  * Credenciales protegidas en Vault (\`vault://secrets/eros-creds\`).
+  * Bandera \`readOnlyMode\` (por defecto \`true\` para seguridad física de planta).
+- **Aislamiento de Ciberseguridad (IEC 62443)**:
+  El Copilot o los modelos de IA **NUNCA** se conectan directamente a EROS ni a ningún PLC de campo. Toda consulta o acción viaja a través de:
+  \`Copilot\` ➔ \`Validación RBAC\` ➔ \`Motor de Políticas\` ➔ \`Servicio de Integración Industrial\` ➔ \`Industrial Edge Node\` ➔ \`EROS DCS\`.`,
+    relatedModule: "uns_hub",
+    standards: ["IEC 62443", "ISA-95 Level 2-3", "ISA-18.2"],
+  },
+  {
+    id: "kn-opcua-integration",
+    category: "ARCHITECTURE",
+    title: "Conectividad OPC UA (IEC 62541)",
+    keywords: ["opc ua", "opcua", "conectar opc", "kepserver", "iec 62541", "suscripciones", "monitored items"],
+    summary: "Integración segura cliente-servidor OPC UA con cifrado Basic256Sha256, certificados X.509 y suscripciones determinísticas.",
+    detailedContent: `### Conector OPC UA en BioAzúcar Industrial Edge
+- **Estándar**: IEC 62541.
+- **Endpoint por defecto**: \`opc.tcp://192.168.10.50:4840/BioAzucarServer\`.
+- **Modo de Seguridad**: \`SignAndEncrypt\` con política \`Basic256Sha256\` o \`Aes128_Sha256_RsaOaep\`.
+- **Autenticación**: Certificados X.509 (\`vault://certs/opcua-edge-client.der\`).
+- **Mecanismo de Adquisición**: Suscripción por excepción con deadband y buffer en edge para eliminar sondeo ineficiente.`,
+    relatedModule: "uns_hub",
+    standards: ["IEC 62541"],
+  },
+  {
+    id: "kn-modbus-integration",
+    category: "ARCHITECTURE",
+    title: "Conectividad Modbus TCP / RTU",
+    keywords: ["modbus", "modbus tcp", "moxa", "holding registers", "conectar modbus", "analizadores"],
+    summary: "Adquisición de registros Modbus para analizadores de redes eléctricas, variadores y balanzas con concentradores Moxa.",
+    detailedContent: `### Conector Modbus en BioAzúcar Industrial Edge
+- **Modo**: Modbus TCP (puerto 502) / Modbus RTU sobre pasarela serial Moxa NPort.
+- **Polling Determinístico**: Ciclo configurable de 500 ms a 2000 ms.
+- **Mapeo**: Registros de entrada (FC04) y Holding Registers (FC03) convertidos automáticamente a \`IndustrialDataPoint\` con metadatos de calidad.`,
+    relatedModule: "uns_hub",
+    standards: ["Modbus Application Protocol V1.1b"],
+  },
+  {
+    id: "kn-mqtt-sparkplug-integration",
+    category: "ARCHITECTURE",
+    title: "Unified Namespace (UNS) y MQTT Sparkplug B",
+    keywords: ["mqtt", "sparkplug", "sparkplug b", "uns", "broker", "emqx", "topicos", "payload protobuf"],
+    summary: "Transporte de telemetría hacia el Unified Namespace con especificación Sparkplug B sobre broker MQTT empresarial.",
+    detailedContent: `### Publicador Sparkplug B en BioAzúcar Industrial Edge
+- **Broker**: \`tls://mqtt.bioazucar.internal:8883\` (EMQX Enterprise con TLS v1.3).
+- **Estructura de Tópicos**: \`spBv1.0/{GroupId}/{MessageType}/{EdgeNodeId}/[{DeviceId}]\`.
+- **Ciclo de Vida**: Gestión automatizada de mensajes NBIRTH, NDATA, NDEATH, DBIRTH, DDATA, DDEATH con secuencia de paquetes bdSeq para detectar pérdida de enlace en tiempo real.`,
+    relatedModule: "uns_hub",
+    standards: ["Eclipse Sparkplug B 2.2 / 3.0", "ISO/IEC 20922"],
+  },
 ];
 
 export class CopilotKnowledgeService {

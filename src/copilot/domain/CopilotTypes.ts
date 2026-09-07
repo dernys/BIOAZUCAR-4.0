@@ -41,7 +41,20 @@ export type CopilotIntent =
   | "CONTEXTUAL_HELP"
   | "GLOSSARY_QUERY"
   | "PROCEDURE_QUERY"
-  | "KNOWLEDGE_GRAPH_QUERY";
+  | "KNOWLEDGE_GRAPH_QUERY"
+  | "INTEGRATION";
+
+export type IntegrationSubIntent =
+  | "EROS_INTEGRATION"
+  | "OPC_UA_INTEGRATION"
+  | "MODBUS_INTEGRATION"
+  | "MQTT_INTEGRATION"
+  | "SPARKPLUG_INTEGRATION"
+  | "REST_INTEGRATION"
+  | "PLC_INTEGRATION"
+  | "RTU_INTEGRATION"
+  | "INDUSTRIAL_EDGE"
+  | "CONNECTIVITY_DIAGNOSTIC";
 
 export type OperationSecurityLevel = 1 | 2 | 3; // 1: Read, 2: Low-Risk Write, 3: Critical
 

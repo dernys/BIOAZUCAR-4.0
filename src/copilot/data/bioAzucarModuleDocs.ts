@@ -85,7 +85,7 @@ export const BIOAZUCAR_MODULE_DOCS: Record<string, ModuleDocumentation> = {
 
   scada: {
     id: "scada",
-    name: "Control de Supervisión SCADA (Process Flow SCADA)",
+    name: "Control de Supervisión SCADA & Molienda (Process Flow SCADA)",
     purpose: "Supervisión del proceso de molienda y fabricación con sinóptico animado interactivo, visualización de lazos PID y monitoreo de equipos en piso de fábrica.",
     targetUsers: ["superadmin", "administrador", "supervisor", "operador"],
     requiredPermissions: ["VIEW_TELEMETRY", "VIEW_TAGS"],
@@ -287,7 +287,7 @@ export const BIOAZUCAR_MODULE_DOCS: Record<string, ModuleDocumentation> = {
       },
     ],
     relatedNavigation: ["system_config", "dashboard", "scada", "equipment"],
-    keyConcepts: ["UNS", "Industrial Edge", "OPC UA", "Modbus", "MQTT", "Sparkplug B", "Store & Forward", "Data Quality"],
+    keyConcepts: ["UNS", "Unified Namespace", "Industrial Edge", "OPC UA", "Modbus", "MQTT", "Sparkplug B", "Store & Forward", "Data Quality"],
     dataSources: ["EDGE", "OPC_UA", "MODBUS", "MQTT", "SPARKPLUG", "EROS", "SIMULATION"],
     limitations: [
       "La adición de nuevos conectores físicos requiere configuración en el archivo de configuración del Edge o parámetros del sistema.",
