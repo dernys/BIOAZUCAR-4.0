@@ -18,7 +18,8 @@ import {
   Settings,
   Building2,
   Users,
-  ShieldCheck
+  ShieldCheck,
+  Presentation
 } from "lucide-react";
 import { NavigationTab, UserRole, UserAccount } from "../types";
 
@@ -138,6 +139,15 @@ export const Navigation: React.FC<NavigationProps> = ({
       desc: "Diagnósticos & Copilot",
       category: "AI",
       highlight: true,
+    },
+    {
+      id: "presentation",
+      label: "Deck Ejecutivo",
+      icon: Presentation,
+      desc: "Inversionistas & Clientes",
+      category: "AI",
+      highlight: true,
+      tag: "Pitch",
     },
     {
       id: "enterprises",

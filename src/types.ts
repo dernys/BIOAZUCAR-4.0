@@ -30,7 +30,8 @@ export type NavigationTab =
   | "ai_center"
   | "system_config"
   | "enterprises"
-  | "users_roles";
+  | "users_roles"
+  | "presentation";
 
 export type NavTabId = NavigationTab;
 

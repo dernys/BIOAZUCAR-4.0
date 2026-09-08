@@ -22,7 +22,8 @@ import {
   ChevronDown,
   Users,
   Check,
-  Sparkles
+  Sparkles,
+  Presentation
 } from "lucide-react";
 import { UserRole, PlantStatus, AlarmEvent, SimulationScenario, UserAccount, TenantEnterprise } from "../types";
 import { getRoleBadgeInfo } from "../services/rbacService";
@@ -40,6 +41,7 @@ export interface HeaderProps {
   onOpenTenantsModal?: () => void;
   onOpenCreateTenantWizard?: () => void;
   onOpenCopilot?: () => void;
+  onOpenPresentation?: () => void;
   plantStatus?: PlantStatus;
   scenario: SimulationScenario;
   onScenarioChange: (scenario: SimulationScenario) => void;
@@ -65,6 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTenantsModal,
   onOpenCreateTenantWizard,
   onOpenCopilot,
+  onOpenPresentation,
   plantStatus = "OPERACION_NORMAL",
   scenario,
   onScenarioChange,
@@ -341,6 +344,18 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
               <span className="hidden sm:inline font-bold">Copilot</span>
+            </button>
+          )}
+
+          {/* Executive Presentation Deck Button */}
+          {onOpenPresentation && (
+            <button
+              onClick={onOpenPresentation}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-mono transition shadow-sm"
+              title="Abrir Presentación Ejecutiva / Pitch Deck 4.0 para Inversionistas y Clientes"
+            >
+              <Presentation className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline font-bold">Deck 4.0</span>
             </button>
           )}
 

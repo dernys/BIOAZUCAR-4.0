@@ -20,6 +20,7 @@ import { AuthModal } from "./components/AuthModal";
 import { CentralProvisioningWizard } from "./components/CentralProvisioningWizard";
 import { DataLineageModal } from "./components/DataLineageModal";
 import { BioAzucarCopilot } from "./copilot/components/BioAzucarCopilot";
+import { ExecutivePresentation } from "./components/ExecutivePresentation";
 import {
   TelemetryData,
   UserRole,
@@ -537,6 +538,7 @@ export default function App() {
         onOpenTenantsModal={() => setIsTenantsModalOpen(true)}
         onOpenCreateTenantWizard={() => setIsCreateWizardOpen(true)}
         onOpenCopilot={() => setIsCopilotOpen(true)}
+        onOpenPresentation={() => setActiveTab("presentation")}
         scenario={scenario}
         onScenarioChange={setScenario}
         speedMultiplier={speedMultiplier}
@@ -666,6 +668,17 @@ export default function App() {
             currentUser={currentUser}
             activeTenant={activeTenant}
             onNavigateToTab={setActiveTab}
+          />
+        )}
+
+        {activeTab === "presentation" && (
+          <ExecutivePresentation
+            activeTenant={activeTenant}
+            telemetry={telemetry}
+            equipmentList={equipmentList}
+            alarms={alarms}
+            onNavigateToTab={setActiveTab}
+            onOpenCopilot={() => setIsCopilotOpen(true)}
           />
         )}
       </main>
