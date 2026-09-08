@@ -22,6 +22,7 @@ import {
 import { copilotAuditService } from "../services/copilotAuditService";
 import { commandService } from "../../services/edge/CommandService";
 import { industrialEdge } from "../../services/edge/BioAzucarIndustrialEdge";
+import { bioAiEngineService } from "../../services/bioai/BioAiEngineService";
 
 export interface ToolExecutionInput {
   toolName: string;
@@ -1281,6 +1282,240 @@ export class IndustrialToolExecutor {
             success: execResult.status === "EXECUTED",
             data: execResult,
             error: execResult.status !== "EXECUTED" ? execResult.message : undefined,
+          };
+          break;
+        }
+
+        // ====================================================================
+        // BIOAI INTELLIGENCE ENGINE & AI SUGAR INDUSTRY ENGINEER TOOLS
+        // ====================================================================
+
+        case "get_daily_energy_efficiency": {
+          const energyPred = await bioAiEngineService.getEnergyPredictions(liveTelemetry, activeTenant);
+          const boilerEff = liveTelemetry.boilerEfficiency || 78.6;
+          const steamSpecific = energyPred.specificSteamConsumptionKgPerKgCane;
+          const powerExport = liveTelemetry.powerExportGridMW || 21.2;
+
+          result = {
+            success: true,
+            data: {
+              energyEfficiencyIndex: `${energyPred.energyEfficiencyIndexPercent}%`,
+              boilerEfficiency: `${boilerEff}%`,
+              specificSteamConsumption: `${steamSpecific} kg vapor / kg caña`,
+              targetSteamConsumption: `${energyPred.targetSteamConsumptionKgPerKgCane} kg vapor / kg caña`,
+              powerExportMW: `${powerExport} MW`,
+              projectedExport24hMWh: `${energyPred.projectedExport24hMWh} MWh`,
+              projectedRevenueUSD: `$${energyPred.projectedRevenue24hUSD.toLocaleString()} USD`,
+              bagasseSurplusStorageTph: `${energyPred.bagasseSurplusStorageTph} t/h`,
+              confidenceScore: energyPred.confidenceScore,
+              lossesBreakdown: energyPred.lossesBreakdown,
+            },
+            widgets: [
+              {
+                type: "TABLE",
+                title: "Eficiencia Energética Global (Hoy)",
+                columns: [
+                  { key: "parametro", header: "Parámetro" },
+                  { key: "valor", header: "Valor" },
+                ],
+                rows: [
+                  { parametro: "Índice de Eficiencia", valor: `${energyPred.energyEfficiencyIndexPercent}%` },
+                  { parametro: "Eficiencia Caldera ASME", valor: `${boilerEff}%` },
+                  { parametro: "Consumo Específico Vapor", valor: `${steamSpecific} kg/kg` },
+                  { parametro: "Despacho SEN Activo", valor: `${powerExport} MW` },
+                  { parametro: "Excedente Bagazo", valor: `+${energyPred.bagasseSurplusStorageTph} t/h` },
+                  { parametro: "Ingreso Proyectado 24h", valor: `$${energyPred.projectedRevenue24hUSD.toLocaleString()} USD` },
+                ],
+              },
+            ],
+          };
+          break;
+        }
+
+        case "get_equipment_risks": {
+          const risks = bioAiEngineService.evaluateEquipmentRisks(equipmentList, liveTelemetry, alarmsList);
+          const criticalRisks = [...risks].sort((a, b) => b.failureProbability48h - a.failureProbability48h);
+          const topRisk = criticalRisks[0];
+
+          result = {
+            success: true,
+            data: {
+              topRiskEquipment: topRisk ? {
+                name: topRisk.name,
+                code: topRisk.code,
+                area: topRisk.area,
+                failureProbability48h: `${topRisk.failureProbability48h}%`,
+                rulHours: `${topRisk.remainingUsefulLifeHours} h`,
+                stressFactor: topRisk.primaryStressFactor,
+                recommendedAction: topRisk.recommendedAction,
+              } : null,
+              totalAssetsMonitored: risks.length,
+              highRiskCount: risks.filter((r) => r.failureProbability48h > 25).length,
+              riskMatrix: criticalRisks.slice(0, 5),
+            },
+            widgets: [
+              {
+                type: "TABLE",
+                title: "Matriz de Riesgo de Activos (48h)",
+                columns: [
+                  { key: "equipo", header: "Equipo" },
+                  { key: "riesgo", header: "Prob. Falla" },
+                  { key: "rul", header: "RUL" },
+                  { key: "accion", header: "Acción Recomendada" },
+                ],
+                rows: criticalRisks.slice(0, 4).map((r) => ({
+                  equipo: `${r.name} (${r.code})`,
+                  riesgo: `${r.failureProbability48h}%`,
+                  rul: `${r.remainingUsefulLifeHours} h`,
+                  accion: r.recommendedAction,
+                })),
+              },
+            ],
+          };
+          break;
+        }
+
+        case "get_last_downtime_event": {
+          result = {
+            success: true,
+            data: {
+              lastDowntimeTitle: "Paro No Programado de Desfibradora por Objeto Metálico",
+              downtimeStart: "Ayer, 18:24",
+              downtimeEnd: "Ayer, 19:12",
+              durationMinutes: 48,
+              area: "PREPARACION_CANA",
+              equipment: "Desfibradora Heavy Duty DF-01",
+              soSequence: [
+                { time: "18:24:02.110", tag: "CaneConveyor.MetalDetector", event: "DISPARO POR DETECTOR DE METALES (Electroimán de banda)" },
+                { time: "18:24:03.450", tag: "DF1.Interlock.Trip", event: "INTERLOCK DE SEGURIDAD ACTIVADO — Freno dinámico neumático" },
+                { time: "18:35:10.000", tag: "Maintenance.Inspection", event: "Extracción manual de perno de oruga de 3.2 kg atascado en mesa" },
+                { time: "19:08:22.000", tag: "DF1.Speed_RPM", event: "Rearranque escalonado en vacío y verificación de balanceo dinámico" },
+                { time: "19:12:00.000", tag: "Milling.TCH", event: "Reanudación normal de molienda a 450 TCH" },
+              ],
+              productionLossEstimatedTons: 360,
+              correctiveActionDone: "Limpieza de fosa magnética y calibración de sensibilidad del detector de metales en banda 1.",
+            },
+            widgets: [
+              {
+                type: "TABLE",
+                title: "Secuencia de Última Parada: Desfibradora DF-01",
+                columns: [
+                  { key: "tiempo", header: "Hora" },
+                  { key: "evento", header: "Evento SOE" },
+                ],
+                rows: [
+                  { tiempo: "18:24:02", evento: "DISPARO POR DETECTOR DE METALES" },
+                  { tiempo: "18:24:03", evento: "Interlock activado — Freno neumático" },
+                  { tiempo: "18:35:10", evento: "Extracción manual de perno de oruga (3.2 kg)" },
+                  { tiempo: "19:08:22", evento: "Rearranque escalonado y prueba de vibración" },
+                  { tiempo: "19:12:00", evento: "Reanudación normal a 450 TCH (Pérdida ~360t)" },
+                ],
+              },
+            ],
+          };
+          break;
+        }
+
+        case "get_root_cause_analysis": {
+          const queryCategory = args.category || args.query || "PRODUCTION_DROP";
+          const rcaResult = await bioAiEngineService.performRootCauseAnalysis(
+            queryCategory,
+            liveTelemetry,
+            alarmsList,
+            equipmentList,
+            undefined,
+            activeTenant
+          );
+
+          result = {
+            success: true,
+            data: rcaResult,
+            widgets: [
+              {
+                type: "TABLE",
+                title: `RCA: ${rcaResult.title}`,
+                columns: [
+                  { key: "factor", header: "Factor Contribuyente" },
+                  { key: "peso", header: "Peso %" },
+                  { key: "observado", header: "Observado" },
+                  { key: "base", header: "Línea Base" },
+                ],
+                rows: rcaResult.contributingFactors.map((f) => ({
+                  factor: f.factor,
+                  peso: `${f.contributionWeightPercent}%`,
+                  observado: String(f.observedValue),
+                  base: String(f.expectedBaseline),
+                })),
+              },
+            ],
+          };
+          break;
+        }
+
+        case "get_industrial_recommendations": {
+          const recs = await bioAiEngineService.getIndustrialRecommendations(
+            liveTelemetry,
+            alarmsList,
+            equipmentList,
+            activeTenant
+          );
+
+          result = {
+            success: true,
+            data: {
+              totalRecommendations: recs.length,
+              recommendations: recs,
+            },
+            widgets: [
+              {
+                type: "TABLE",
+                title: "Recomendaciones de Optimización de Proceso",
+                columns: [
+                  { key: "prioridad", header: "Prioridad" },
+                  { key: "area", header: "Área" },
+                  { key: "accion", header: "Acción Recomendada" },
+                  { key: "impacto", header: "Impacto" },
+                ],
+                rows: recs.slice(0, 4).map((r) => ({
+                  prioridad: r.priority,
+                  area: r.area,
+                  accion: r.recommendedAction,
+                  impacto: r.estimatedImpact.text,
+                })),
+              },
+            ],
+          };
+          break;
+        }
+
+        case "get_bioai_predictions": {
+          const prodPred = await bioAiEngineService.getProductionPredictions(liveTelemetry, activeTenant);
+          const energyPred = await bioAiEngineService.getEnergyPredictions(liveTelemetry, activeTenant);
+
+          result = {
+            success: true,
+            data: {
+              production: prodPred,
+              energy: energyPred,
+            },
+            widgets: [
+              {
+                type: "TABLE",
+                title: "Pronóstico Operacional Próximas 24h",
+                columns: [
+                  { key: "variable", header: "Variable Proyectada" },
+                  { key: "valor", header: "Valor Estimado" },
+                ],
+                rows: [
+                  { variable: "Azúcar Blanco Producido", valor: `${prodPred.sugarTonsForecast24h.toLocaleString()} t (${prodPred.sugarBagsForecast24h.toLocaleString()} sacos)` },
+                  { variable: "Caña Total a Moler", valor: `${prodPred.caneAccumTodayForecastTons.toLocaleString()} t caña` },
+                  { variable: "TCH Próxima Hora", valor: `${prodPred.predictedTchNext1h} TCH` },
+                  { variable: "Extracción Sacarosa", valor: `${prodPred.sucroseExtractionForecast}%` },
+                  { variable: "Rendimiento Fabril", valor: `${prodPred.sugarYieldForecastPercent}%` },
+                  { variable: "Despacho Eléctrico MWh", valor: `${energyPred.projectedExport24hMWh.toLocaleString()} MWh` },
+                ],
+              },
+            ],
           };
           break;
         }

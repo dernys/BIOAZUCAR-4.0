@@ -913,24 +913,161 @@ export class CopilotIntentClassifier {
       }
     }
 
-    // 12. DIAGNOSTIC & ROOT CAUSE
+    // 12. BIOAI INTELLIGENCE ENGINE & AI SUGAR INDUSTRY ENGINEER QUERIES
+    // 12.1 Daily Energy Efficiency ("¿Cuál fue la eficiencia energética de hoy?")
+    const energyEfficiencyPatterns = [
+      /\bcual fue la eficiencia energetica de hoy\b/,
+      /\bcual es la eficiencia energetica de hoy\b/,
+      /\beficiencia energetica de hoy\b/,
+      /\beficiencia energetica hoy\b/,
+      /\bbalance energetico de hoy\b/,
+      /\bconsumo energetico de hoy\b/,
+      /\beficiencia termica de caldera hoy\b/,
+    ];
+    for (const pattern of energyEfficiencyPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "PREDICTIVE_ANALYTICS",
+          confidence: 0.99,
+          reason: "Consulta técnica de eficiencia energética diaria y balance térmico ASME PTC 4",
+          recommendedTool: "get_daily_energy_efficiency",
+        };
+      }
+    }
+
+    // 12.2 Equipment Risk ("¿Qué equipo tiene mayor riesgo?")
+    const equipmentRiskPatterns = [
+      /\bque equipo tiene mayor riesgo\b/,
+      /\bque equipo tiene mas riesgo\b/,
+      /\bcual equipo tiene mayor riesgo\b/,
+      /\bcual es el equipo de mayor riesgo\b/,
+      /\bequipo mas critico\b/,
+      /\bequipos en riesgo\b/,
+      /\bprobabilidad de falla en equipos\b/,
+      /\bactivos con mayor riesgo\b/,
+    ];
+    for (const pattern of equipmentRiskPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "EQUIPMENT_RISK",
+          confidence: 0.99,
+          reason: "Consulta de criticidad y probabilidad de falla 48h de activos de planta",
+          recommendedTool: "get_equipment_risks",
+        };
+      }
+    }
+
+    // 12.3 Downtime Analysis ("¿Qué ocurrió durante la última parada?")
+    const downtimePatterns = [
+      /\bque ocurrio durante la ultima parada\b/,
+      /\bque paso en la ultima parada\b/,
+      /\bcausa de la ultima parada\b/,
+      /\bpor que fue la ultima parada\b/,
+      /\bque causo la parada\b/,
+      /\bultima parada de planta\b/,
+      /\bultimo paro de molienda\b/,
+    ];
+    for (const pattern of downtimePatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "DOWNTIME_ANALYSIS",
+          confidence: 0.99,
+          reason: "Consulta de causa raíz y secuencia de eventos de la última parada de planta",
+          recommendedTool: "get_last_downtime_event",
+        };
+      }
+    }
+
+    // 12.4 AI Industrial Recommendations ("¿Qué recomendaciones tienes?")
+    const recommendationsPatterns = [
+      /\bque recomendaciones tienes\b/,
+      /\bque recomendaciones hay\b/,
+      /\brecomendaciones industriales\b/,
+      /\brecomendaciones de hoy\b/,
+      /\bcomo optimizar la planta\b/,
+      /\boptimizaciones recomendadas\b/,
+      /\bsugerencias de la ia\b/,
+    ];
+    for (const pattern of recommendationsPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "RECOMMENDATIONS",
+          confidence: 0.98,
+          reason: "Consulta de recomendaciones industriales generadas por BioAI Intelligence Engine",
+          recommendedTool: "get_industrial_recommendations",
+        };
+      }
+    }
+
+    // 12.5 AI Root Cause Analysis (RCA) - Specific questions
+    const rcaProductionPatterns = [
+      /\bpor que disminuyo la produccion\b/,
+      /\bpor que bajo la produccion\b/,
+      /\bpor que cayo la produccion\b/,
+      /\bpor que cayo el rendimiento\b/,
+      /\bpor que bajo el rendimiento\b/,
+    ];
+    for (const pattern of rcaProductionPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "ROOT_CAUSE_ANALYSIS",
+          confidence: 0.99,
+          reason: "Análisis Causal (RCA) de disminución en producción y rendimiento azucarero",
+          recommendedTool: "get_root_cause_analysis",
+        };
+      }
+    }
+
+    const rcaEnergyPatterns = [
+      /\bpor que aumento el consumo energetico\b/,
+      /\bpor que subio el consumo de energia\b/,
+      /\bpor que subio el consumo de vapor\b/,
+      /\bpor que aumento el consumo de vapor\b/,
+    ];
+    for (const pattern of rcaEnergyPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "ROOT_CAUSE_ANALYSIS",
+          confidence: 0.99,
+          reason: "Análisis Causal (RCA) de sobreconsumo energético o de vapor en fábrica",
+          recommendedTool: "get_root_cause_analysis",
+        };
+      }
+    }
+
+    const rcaAlarmPatterns = [
+      /\bpor que existe una alarma critica\b/,
+      /\bpor que hay una alarma critica\b/,
+      /\bcausa de la alarma critica\b/,
+    ];
+    for (const pattern of rcaAlarmPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "ROOT_CAUSE_ANALYSIS",
+          confidence: 0.99,
+          reason: "Análisis Causal (RCA) de activación de alarma crítica",
+          recommendedTool: "get_root_cause_analysis",
+        };
+      }
+    }
+
+    // 12.6 General DIAGNOSTIC & ROOT CAUSE Fallback
     const diagnosticPatterns = [
       /\bpor que bajo\b/,
       /\bpor que cayo\b/,
       /\bcausa raiz\b/,
       /\banalisis de falla\b/,
       /\bdiagnostico\b/,
-      /\bque causo la parada\b/,
       /\banomalia\b/,
     ];
 
     for (const pattern of diagnosticPatterns) {
       if (pattern.test(clean)) {
         return {
-          intent: "DIAGNOSTIC",
-          confidence: 0.90,
-          reason: "Diagnóstico causal de desviaciones o paradas en planta",
-          recommendedTool: "get_active_alarms",
+          intent: "ROOT_CAUSE_ANALYSIS",
+          confidence: 0.92,
+          reason: "Diagnóstico causal de desviaciones o anomalías industriales",
+          recommendedTool: "get_root_cause_analysis",
         };
       }
     }

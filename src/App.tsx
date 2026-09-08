@@ -638,6 +638,11 @@ export default function App() {
           <AICenter
             telemetry={telemetry}
             currentRole={currentRole}
+            activeTenant={activeTenant}
+            equipmentList={equipmentList}
+            alarms={alarms}
+            onNavigateToTab={setActiveTab}
+            onOpenCopilot={() => setIsCopilotOpen(true)}
           />
         )}
 

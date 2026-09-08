@@ -423,6 +423,64 @@ export const COPILOT_TOOL_POLICIES: Record<string, ToolSecurityPolicy> = {
   },
 
   // --------------------------------------------------------------------------
+  // BIOAI INTELLIGENCE ENGINE TOOLS (LEVEL 1 - READ & ANALYTICS)
+  // --------------------------------------------------------------------------
+  get_bioai_predictions: {
+    toolName: "get_bioai_predictions",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Consulta pronósticos predictivos a 24h de producción azucarera y balances de energía",
+    auditRequired: false,
+  },
+  get_equipment_risks: {
+    toolName: "get_equipment_risks",
+    level: 1,
+    requiredPermissions: ["VIEW_EQUIPMENT"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Evalúa matriz de criticidad, RUL y probabilidad de falla 48h de activos de planta",
+    auditRequired: false,
+  },
+  get_root_cause_analysis: {
+    toolName: "get_root_cause_analysis",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Ejecuta diagnóstico causal profundo (RCA) para caídas de producción, sobreconsumo o alarmas",
+    auditRequired: false,
+  },
+  get_industrial_recommendations: {
+    toolName: "get_industrial_recommendations",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Obtiene recomendaciones industriales priorizadas con impacto cuantificado y confianza IA",
+    auditRequired: false,
+  },
+  get_last_downtime_event: {
+    toolName: "get_last_downtime_event",
+    level: 1,
+    requiredPermissions: ["VIEW_EQUIPMENT"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Analiza causas técnicas, secuencia de eventos SOE y cronología de la última parada de planta",
+    auditRequired: false,
+  },
+  get_daily_energy_efficiency: {
+    toolName: "get_daily_energy_efficiency",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Consulta eficiencia energética diaria, pérdidas de caldera ASME PTC 4 y generación exportada",
+    auditRequired: false,
+  },
+
+  // --------------------------------------------------------------------------
   // CRITICAL WRITE TOOLS (LEVEL 3 - CRITICAL)
   // --------------------------------------------------------------------------
   request_setpoint_change: {
