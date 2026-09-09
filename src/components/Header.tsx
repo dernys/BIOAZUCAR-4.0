@@ -23,9 +23,16 @@ import {
   Users,
   Check,
   Sparkles,
-  Presentation
+  Presentation,
+  Sun,
+  Moon,
+  Wifi,
+  WifiOff,
+  Layers,
+  Server
 } from "lucide-react";
-import { UserRole, PlantStatus, AlarmEvent, SimulationScenario, UserAccount, TenantEnterprise } from "../types";
+import { UserRole, PlantStatus, AlarmEvent, SimulationScenario, UserAccount, TenantEnterprise, TelemetryData } from "../types";
+import { RuntimeMode } from "../services/runtime/types";
 import { getRoleBadgeInfo } from "../services/rbacService";
 
 export interface HeaderProps {
@@ -42,6 +49,9 @@ export interface HeaderProps {
   onOpenCreateTenantWizard?: () => void;
   onOpenCopilot?: () => void;
   onOpenPresentation?: () => void;
+  onOpenIndustrialConnectionModal?: () => void;
+  runtimeMode?: RuntimeMode;
+  telemetry?: TelemetryData;
   plantStatus?: PlantStatus;
   scenario: SimulationScenario;
   onScenarioChange: (scenario: SimulationScenario) => void;
@@ -52,6 +62,8 @@ export interface HeaderProps {
   alarms?: AlarmEvent[];
   isMuted?: boolean;
   onToggleMute?: () => void;
+  theme?: "dark" | "light";
+  onToggleTheme?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -68,6 +80,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCreateTenantWizard,
   onOpenCopilot,
   onOpenPresentation,
+  onOpenIndustrialConnectionModal,
+  runtimeMode = "SIMULATION",
+  telemetry,
   plantStatus = "OPERACION_NORMAL",
   scenario,
   onScenarioChange,
@@ -78,6 +93,8 @@ export const Header: React.FC<HeaderProps> = ({
   alarms = [],
   isMuted: propIsMuted,
   onToggleMute,
+  theme = "dark",
+  onToggleTheme,
 }) => {
   const [internalMuted, setInternalMuted] = useState(false);
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
@@ -96,6 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const roleInfo = getRoleBadgeInfo(currentRole);
   const isSuper = currentRole === "superadmin" || currentUser.isSuperAdmin;
+  const isLight = theme === "light";
 
   const filteredTenants = tenants.filter(
     (t) =>
@@ -105,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
   );
 
   return (
-    <header className="bg-slate-900/95 border-b border-slate-800 backdrop-blur sticky top-0 z-50 px-3 sm:px-4 py-2 shadow-xl">
+    <header className={`${isLight ? "bg-white/95 border-b border-slate-200/90" : "bg-slate-900/95 border-b border-slate-800"} backdrop-blur sticky top-0 z-50 px-3 sm:px-4 py-2 shadow-xl transition-colors`}>
       <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
         {/* Left: Brand & Plant Status */}
         <div className="flex items-center gap-2.5 sm:gap-3">
@@ -119,9 +137,9 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div>
             <div className="flex items-center gap-1.5">
-              <h1 className="text-sm sm:text-base font-bold tracking-wider font-tech text-white uppercase flex items-center gap-1.5">
+              <h1 className={`text-sm sm:text-base font-bold tracking-wider font-tech uppercase flex items-center gap-1.5 ${isLight ? "text-slate-900" : "text-white"}`}>
                 BioAzúcar 4.0
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${isLight ? "bg-emerald-100 text-emerald-900 border border-emerald-300" : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"}`}>
                   Multi-Tenant
                 </span>
               </h1>
@@ -133,17 +151,21 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsTenantMenuOpen(!isTenantMenuOpen)}
-                  className="mt-0.5 text-[11px] sm:text-xs text-slate-200 hover:text-white flex items-center gap-1.5 font-mono px-2 py-0.5 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-slate-700/70 transition shadow-inner"
+                  className={`mt-0.5 text-[11px] sm:text-xs flex items-center gap-1.5 font-mono px-2 py-0.5 rounded-lg transition border shadow-xs ${
+                    isLight
+                      ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
+                      : "bg-slate-950/80 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/70 shadow-inner"
+                  }`}
                   title="Cambiar de Ingenio / Empresa o Crear Nuevo"
                 >
                   <span
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ backgroundColor: activeTenant.themeColor || "#059669" }}
                   ></span>
-                  <span className="text-cyan-300 font-bold max-w-[150px] sm:max-w-[220px] truncate">
+                  <span className={`${isLight ? "text-cyan-800 font-extrabold" : "text-cyan-300 font-bold"} max-w-[150px] sm:max-w-[220px] truncate`}>
                     {activeTenant.name}
                   </span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 ${isTenantMenuOpen ? "rotate-180 text-cyan-400" : ""}`} />
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${isTenantMenuOpen ? "rotate-180 text-cyan-600" : isLight ? "text-slate-600" : "text-slate-400"}`} />
                 </button>
 
                 {/* Backdrop to dismiss on outside click */}
@@ -156,13 +178,19 @@ export const Header: React.FC<HeaderProps> = ({
 
                 {/* Tenant Switcher Dropdown */}
                 {isTenantMenuOpen && (
-                  <div className="absolute left-0 top-full mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl z-[70] p-3 font-mono text-xs animate-in zoom-in-95 duration-150 backdrop-blur-xl">
-                    <div className="px-1 py-1 text-[10px] text-slate-400 uppercase tracking-wider font-bold border-b border-slate-800 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5 text-slate-300">
-                        <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <div className={`absolute left-0 top-full mt-2 w-80 sm:w-96 rounded-2xl shadow-2xl z-[70] p-3 font-mono text-xs animate-in zoom-in-95 duration-150 backdrop-blur-xl border ${
+                    isLight
+                      ? "bg-white border-slate-200 shadow-slate-400/20 text-slate-900"
+                      : "bg-slate-900 border-slate-700/90 text-slate-200"
+                  }`}>
+                    <div className={`px-1 py-1 text-[10px] uppercase tracking-wider font-bold border-b flex items-center justify-between ${
+                      isLight ? "border-slate-200 text-slate-600" : "border-slate-800 text-slate-400"
+                    }`}>
+                      <span className={`flex items-center gap-1.5 ${isLight ? "text-slate-800" : "text-slate-300"}`}>
+                        <Building2 className={`w-3.5 h-3.5 ${isLight ? "text-emerald-700" : "text-emerald-400"}`} />
                         Directorio de Ingenios
                       </span>
-                      <span className="text-cyan-400 font-bold">{tenants.length} Activos</span>
+                      <span className={`${isLight ? "text-cyan-700" : "text-cyan-400"} font-bold`}>{tenants.length} Activos</span>
                     </div>
 
                     {/* Quick Search if more than 2 tenants */}
@@ -173,7 +201,11 @@ export const Header: React.FC<HeaderProps> = ({
                           placeholder="Buscar central o código..."
                           value={tenantSearch}
                           onChange={(e) => setTenantSearch(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-200 focus:outline-none focus:border-cyan-500"
+                          className={`w-full rounded-lg px-2.5 py-1.5 text-[11px] focus:outline-none ${
+                            isLight
+                              ? "bg-slate-50 border border-slate-300 text-slate-900 focus:border-cyan-600 placeholder-slate-400"
+                              : "bg-slate-950 border border-slate-800 text-slate-200 focus:border-cyan-500"
+                          }`}
                         />
                       </div>
                     )}
@@ -191,7 +223,11 @@ export const Header: React.FC<HeaderProps> = ({
                             }}
                             className={`w-full text-left p-2.5 rounded-xl flex items-center justify-between transition border ${
                               isSel
-                                ? "bg-cyan-950/70 text-cyan-200 border-cyan-500/50 shadow-md shadow-cyan-950/40"
+                                ? isLight
+                                  ? "bg-cyan-50 text-cyan-950 border-2 border-cyan-600 shadow-xs font-bold"
+                                  : "bg-cyan-950/70 text-cyan-200 border-cyan-500/50 shadow-md shadow-cyan-950/40"
+                                : isLight
+                                ? "hover:bg-slate-100 text-slate-700 hover:text-slate-950 border-slate-200"
                                 : "hover:bg-slate-800/90 text-slate-300 border-slate-800/60"
                             }`}
                           >
@@ -201,16 +237,16 @@ export const Header: React.FC<HeaderProps> = ({
                                   className="w-2 h-2 rounded-full shrink-0"
                                   style={{ backgroundColor: t.themeColor || "#059669" }}
                                 />
-                                <span className="font-bold truncate text-[12px]">{t.name}</span>
+                                <span className={`truncate text-[12px] ${isLight ? "text-slate-900 font-bold" : "text-slate-200 font-bold"}`}>{t.name}</span>
                               </div>
-                              <span className="text-[10px] text-slate-400 block mt-0.5">
+                              <span className={`text-[10px] block mt-0.5 ${isLight ? "text-slate-600 font-medium" : "text-slate-400"}`}>
                                 {t.code} • {t.nominalTch} TCH • {t.powerCapacityMW} MW • {t.location || t.country}
                               </span>
                             </div>
                             {isSel ? (
-                              <Check className="w-4 h-4 text-cyan-400 shrink-0" />
+                              <Check className={`w-4 h-4 shrink-0 ${isLight ? "text-cyan-700" : "text-cyan-400"}`} />
                             ) : (
-                              <span className="text-[10px] text-slate-500 group-hover:text-slate-300">Conmutar</span>
+                              <span className={`text-[10px] ${isLight ? "text-slate-500 hover:text-slate-800" : "text-slate-500 group-hover:text-slate-300"}`}>Conmutar</span>
                             )}
                           </button>
                         );
@@ -219,7 +255,7 @@ export const Header: React.FC<HeaderProps> = ({
 
                     {/* Superadmin Actions: Create with AI Wizard & Directory */}
                     {isSuper && (
-                      <div className="pt-2 mt-2 border-t border-slate-800 space-y-1.5">
+                      <div className={`pt-2 mt-2 border-t space-y-1.5 ${isLight ? "border-slate-200" : "border-slate-800"}`}>
                         {onOpenCreateTenantWizard && (
                           <button
                             type="button"
@@ -227,13 +263,17 @@ export const Header: React.FC<HeaderProps> = ({
                               setIsTenantMenuOpen(false);
                               onOpenCreateTenantWizard();
                             }}
-                            className="w-full text-left p-2 rounded-xl text-[11px] font-bold text-emerald-300 hover:text-emerald-200 bg-gradient-to-r from-emerald-950/70 to-teal-950/70 hover:from-emerald-900/70 hover:to-teal-900/70 border border-emerald-500/40 flex items-center justify-between transition shadow-md shadow-emerald-950/30"
+                            className={`w-full text-left p-2 rounded-xl text-[11px] font-bold flex items-center justify-between transition shadow-md ${
+                              isLight
+                                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border border-emerald-300"
+                                : "text-emerald-300 hover:text-emerald-200 bg-gradient-to-r from-emerald-950/70 to-teal-950/70 hover:from-emerald-900/70 hover:to-teal-900/70 border border-emerald-500/40 shadow-emerald-950/30"
+                            }`}
                           >
                             <span className="flex items-center gap-2">
-                              <span className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400">✨</span>
+                              <span className={`p-1 rounded-lg ${isLight ? "bg-emerald-200 text-emerald-900" : "bg-emerald-500/20 text-emerald-400"}`}>✨</span>
                               Crear Nuevo Central con Asistente IA
                             </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-200 font-mono">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${isLight ? "bg-emerald-200 text-emerald-900 font-bold" : "bg-emerald-500/30 text-emerald-200"}`}>
                               Wizard
                             </span>
                           </button>
@@ -246,7 +286,11 @@ export const Header: React.FC<HeaderProps> = ({
                               setIsTenantMenuOpen(false);
                               onOpenTenantsModal();
                             }}
-                            className="w-full text-center py-1.5 text-[11px] font-bold text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/90 rounded-xl border border-slate-700 transition"
+                            className={`w-full text-center py-1.5 text-[11px] font-bold rounded-xl border transition ${
+                              isLight
+                                ? "bg-slate-100 hover:bg-slate-200 text-slate-800 hover:text-slate-950 border-slate-300"
+                                : "text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/90 border-slate-700"
+                            }`}
                           >
                             Gestionar Directorio de Empresas
                           </button>
@@ -257,8 +301,8 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </div>
             ) : (
-              <p className="text-[11px] sm:text-xs text-slate-400 flex items-center gap-1.5 font-mono truncate">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse shrink-0"></span>
+              <p className={`text-[11px] sm:text-xs flex items-center gap-1.5 font-mono truncate ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse shrink-0"></span>
                 Zafra 2026-2027 • Central Azucarero
               </p>
             )}
@@ -266,13 +310,82 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Center: Live Simulation Controls & Scenario Injector */}
-        <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 bg-slate-950/80 p-1 rounded-lg border border-slate-800/80">
+        <div className={`flex items-center flex-wrap gap-1.5 sm:gap-2 p-1 rounded-lg border ${
+          isLight ? "bg-slate-100 border-slate-300" : "bg-slate-950/80 border-slate-800/80"
+        }`}>
+          {/* Data Source & Provenance Badge (SIMULATION vs REAL OT) */}
+          {onOpenIndustrialConnectionModal && (
+            <button
+              onClick={onOpenIndustrialConnectionModal}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold font-mono transition border ${
+                runtimeMode === "SIMULATION"
+                  ? isLight
+                    ? "bg-amber-100 text-amber-900 border-amber-400 font-bold hover:bg-amber-200"
+                    : "bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25"
+                  : runtimeMode === "HYBRID"
+                  ? isLight
+                    ? "bg-cyan-100 text-cyan-900 border-cyan-400 font-bold hover:bg-cyan-200"
+                    : "bg-cyan-500/15 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/25"
+                  : telemetry?.quality !== "BAD" && !telemetry?.isSimulated
+                  ? isLight
+                    ? "bg-emerald-100 text-emerald-900 border-emerald-400 font-bold hover:bg-emerald-200"
+                    : "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25"
+                  : isLight
+                  ? "bg-rose-100 text-rose-900 border-rose-400 font-bold hover:bg-rose-200"
+                  : "bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25"
+              }`}
+              title="Origen de datos del central. Clic para conmutar entre Simulación y Pasarela Real OT."
+            >
+              {runtimeMode === "SIMULATION" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                  <Sparkles className={`w-3.5 h-3.5 ${isLight ? "text-amber-700" : "text-amber-400"}`} />
+                  <span>SIMULADO</span>
+                  <span className="hidden xl:inline text-[10px] opacity-80 font-normal">
+                    (Hugot/ASME)
+                  </span>
+                </>
+              ) : runtimeMode === "HYBRID" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse shrink-0" />
+                  <Layers className={`w-3.5 h-3.5 ${isLight ? "text-cyan-700" : "text-cyan-400"}`} />
+                  <span>HÍBRIDO</span>
+                  <span className="hidden xl:inline text-[10px] opacity-80 font-normal">
+                    (OT + Twin)
+                  </span>
+                </>
+              ) : telemetry?.quality !== "BAD" && !telemetry?.isSimulated ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  <Wifi className={`w-3.5 h-3.5 ${isLight ? "text-emerald-700" : "text-emerald-400"}`} />
+                  <span>REAL OT</span>
+                  <span className="hidden xl:inline text-[10px] opacity-80 font-normal">
+                    (Conectado)
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                  <WifiOff className={`w-3.5 h-3.5 ${isLight ? "text-rose-700" : "text-rose-400"}`} />
+                  <span>OT DESCONECTADO</span>
+                  <span className="hidden xl:inline text-[10px] opacity-80 font-normal">
+                    (Sin datos falsos)
+                  </span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* Play/Pause */}
           <button
             onClick={onToggleSim}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition border ${
               isSimRunning
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
+                ? isLight
+                  ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-400 font-bold"
+                  : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
+                : isLight
+                ? "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-400 font-bold"
                 : "bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30"
             }`}
             title={isSimRunning ? "Pausar simulación PLC" : "Reanudar simulación PLC"}
@@ -282,14 +395,20 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {/* Speed selector */}
-          <div className="flex items-center bg-slate-900 rounded border border-slate-800 p-0.5">
+          <div className={`flex items-center rounded border p-0.5 ${
+            isLight ? "bg-white border-slate-300" : "bg-slate-900 border-slate-800"
+          }`}>
             {[1, 2, 5].map((speed) => (
               <button
                 key={speed}
                 onClick={() => onSpeedChange(speed)}
                 className={`px-1.5 py-0.5 text-[11px] font-mono rounded transition ${
                   speedMultiplier === speed
-                    ? "bg-slate-700 text-emerald-400 font-bold"
+                    ? isLight
+                      ? "bg-emerald-600 text-white font-bold shadow-xs"
+                      : "bg-slate-700 text-emerald-400 font-bold"
+                    : isLight
+                    ? "text-slate-600 hover:text-slate-950 hover:bg-slate-100"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
@@ -299,12 +418,16 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Scenario selector */}
-          <div className="flex items-center gap-1 pl-1 border-l border-slate-800">
-            <Sliders className="w-3.5 h-3.5 text-slate-400 hidden sm:inline" />
+          <div className={`flex items-center gap-1 pl-1 border-l ${isLight ? "border-slate-300" : "border-slate-800"}`}>
+            <Sliders className={`w-3.5 h-3.5 hidden sm:inline ${isLight ? "text-slate-600" : "text-slate-400"}`} />
             <select
               value={scenario}
               onChange={(e) => onScenarioChange(e.target.value as SimulationScenario)}
-              className="bg-slate-900 text-xs text-slate-200 rounded px-2 py-1 border border-slate-700/80 focus:outline-none focus:border-emerald-500 cursor-pointer font-mono max-w-[170px] sm:max-w-none truncate"
+              className={`text-xs rounded px-2 py-1 border focus:outline-none cursor-pointer font-mono max-w-[170px] sm:max-w-none truncate ${
+                isLight
+                  ? "bg-white text-slate-900 border-slate-300 focus:border-emerald-600 font-medium"
+                  : "bg-slate-900 text-slate-200 border-slate-700/80 focus:border-emerald-500"
+              }`}
             >
               <option value="NORMAL">Modo Normal ({activeTenant?.nominalTch || 450} TCH / {activeTenant?.powerCapacityMW || 32} MW)</option>
               <option value="VIBRACION_MOLINO3">⚠️ Anomalía: Vibración Molino 3 (4.8 mm/s)</option>
@@ -315,16 +438,48 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Alarms, Multi-Tenant, Config, RBAC & User Profile */}
+        {/* Right: Theme Toggle, Alarms, Multi-Tenant, Config, RBAC & User Profile */}
         <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Theme Toggle (Dark / Light) */}
+          {onToggleTheme && (
+            <button
+              onClick={onToggleTheme}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-mono transition ${
+                isLight
+                  ? "bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800 shadow-xs"
+                  : "bg-slate-800/80 hover:bg-slate-700/80 border-slate-700 text-slate-300"
+              }`}
+              title={theme === "dark" ? "Cambiar a Tema Claro (Control Room Diurno)" : "Cambiar a Tema Oscuro (Control Room Nocturno)"}
+              aria-label="Alternar tema claro y oscuro"
+            >
+              {theme === "dark" ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden xl:inline text-[11px] font-bold text-amber-300">Claro</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                  <span className="hidden xl:inline text-[11px] font-bold text-indigo-700">Oscuro</span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* Alarm indicator */}
           <button
             onClick={toggleMute}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs transition ${
               criticalCount > 0
-                ? "bg-rose-500/20 border-rose-500/50 text-rose-300 animate-pulse"
+                ? isLight
+                  ? "bg-rose-100 border-rose-400 text-rose-900 font-bold animate-pulse"
+                  : "bg-rose-500/20 border-rose-500/50 text-rose-300 animate-pulse"
                 : unackCount > 0
-                ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
+                ? isLight
+                  ? "bg-amber-100 border-amber-400 text-amber-900 font-bold"
+                  : "bg-amber-500/20 border-amber-500/40 text-amber-300"
+                : isLight
+                ? "bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700"
                 : "bg-slate-800/80 border-slate-700 text-slate-400"
             }`}
             title={isMuted ? "Alarmas silenciadas" : "Audio de alarmas activo"}
@@ -339,10 +494,14 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenCopilot && (
             <button
               onClick={onOpenCopilot}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-mono transition shadow-sm"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition shadow-xs border ${
+                isLight
+                  ? "bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-900 font-bold"
+                  : "bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300"
+              }`}
               title="Abrir BioAzúcar Copilot AI (Asistente Industrial)"
             >
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              <Sparkles className={`w-3.5 h-3.5 ${isLight ? "text-cyan-700" : "text-cyan-400"} animate-pulse`} />
               <span className="hidden sm:inline font-bold">Copilot</span>
             </button>
           )}
@@ -351,10 +510,14 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenPresentation && (
             <button
               onClick={onOpenPresentation}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-mono transition shadow-sm"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition shadow-xs border ${
+                isLight
+                  ? "bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900 font-bold"
+                  : "bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300"
+              }`}
               title="Abrir Presentación Ejecutiva / Pitch Deck 4.0 para Inversionistas y Clientes"
             >
-              <Presentation className="w-3.5 h-3.5 text-emerald-400" />
+              <Presentation className={`w-3.5 h-3.5 ${isLight ? "text-emerald-700" : "text-emerald-400"}`} />
               <span className="hidden sm:inline font-bold">Deck 4.0</span>
             </button>
           )}
@@ -363,10 +526,14 @@ export const Header: React.FC<HeaderProps> = ({
           {isSuper && onOpenTenantsModal && (
             <button
               onClick={onOpenTenantsModal}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-mono transition"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono transition border ${
+                isLight
+                  ? "bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-900 font-bold"
+                  : "bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300"
+              }`}
               title="Gestión de Empresas & Multi-Tenant"
             >
-              <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+              <Building2 className={`w-3.5 h-3.5 ${isLight ? "text-cyan-700" : "text-cyan-400"}`} />
               <span className="hidden md:inline font-bold">Empresas</span>
             </button>
           )}
@@ -375,10 +542,14 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenConfigVerification && (
             <button
               onClick={onOpenConfigVerification}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-mono transition"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono transition border ${
+                isLight
+                  ? "bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800 shadow-xs"
+                  : "bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300"
+              }`}
               title="Verificar y Gestionar Configuración del Sistema (CRUD)"
             >
-              <Settings className="w-3.5 h-3.5 text-emerald-400" />
+              <Settings className={`w-3.5 h-3.5 ${isLight ? "text-emerald-700" : "text-emerald-400"}`} />
               <span className="hidden md:inline font-bold">Config</span>
             </button>
           )}
@@ -386,10 +557,14 @@ export const Header: React.FC<HeaderProps> = ({
           {/* RBAC Security Center Button */}
           <button
             onClick={onOpenRbacModal}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-mono transition"
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono transition border ${
+              isLight
+                ? "bg-purple-50 hover:bg-purple-100 border-purple-300 text-purple-900 font-bold"
+                : "bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300"
+            }`}
             title="Matriz de Seguridad y Privilegios RBAC (IEC 62443)"
           >
-            <Shield className="w-3.5 h-3.5 text-purple-400" />
+            <Shield className={`w-3.5 h-3.5 ${isLight ? "text-purple-700" : "text-purple-400"}`} />
             <span className="hidden lg:inline font-bold">RBAC</span>
           </button>
 
@@ -398,26 +573,32 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenAuthModal}
             className={`flex items-center gap-2 p-1 pl-2 rounded-xl border transition ${
               isSuper
-                ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/40 ring-1 ring-amber-400/20"
+                ? isLight
+                  ? "bg-amber-50 hover:bg-amber-100 border-amber-300 ring-1 ring-amber-400/30 shadow-xs"
+                  : "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/40 ring-1 ring-amber-400/20"
+                : isLight
+                ? "bg-slate-100 hover:bg-slate-200 border-slate-300 shadow-xs"
                 : "bg-slate-950/90 hover:bg-slate-800 border-slate-800"
             }`}
             title="Gestión de Usuario, Autenticación y Credenciales"
           >
             <div className="flex flex-col text-right hidden xl:flex">
-              <span className="text-[11px] font-bold text-white leading-tight truncate max-w-[130px] flex items-center justify-end gap-1">
-                {isSuper && <Crown className="w-3 h-3 text-amber-400 shrink-0" />}
+              <span className={`text-[11px] font-bold leading-tight truncate max-w-[130px] flex items-center justify-end gap-1 ${
+                isLight ? "text-slate-900 font-bold" : "text-white"
+              }`}>
+                {isSuper && <Crown className={`w-3 h-3 ${isLight ? "text-amber-600" : "text-amber-400"} shrink-0`} />}
                 {currentUser.name}
               </span>
-              <span className="text-[9px] text-slate-400 uppercase font-mono">{currentUser.role}</span>
+              <span className={`text-[9px] uppercase font-mono ${isLight ? "text-slate-600 font-semibold" : "text-slate-400"}`}>{currentUser.role}</span>
             </div>
 
             <div className="relative">
               <img
                 src={currentUser.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"}
                 alt={currentUser.name}
-                className="w-7 h-7 rounded-lg object-cover border border-slate-700"
+                className={`w-7 h-7 rounded-lg object-cover border ${isLight ? "border-slate-300" : "border-slate-700"}`}
               />
-              <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-950 ${isSuper ? "bg-amber-400" : "bg-emerald-400"}`} />
+              <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border ${isLight ? "border-white" : "border-slate-950"} ${isSuper ? "bg-amber-400" : "bg-emerald-400"}`} />
             </div>
           </button>
         </div>

@@ -52,6 +52,7 @@ interface BioAzucarCopilotProps {
   onAcknowledgeAlarm?: (alarmId: string) => void;
   onUpdateSetpoint?: (tag: string, value: number) => void;
   onDispatchUpdate?: (exportMW: number) => void;
+  isFooterPinned?: boolean;
 }
 
 export const BioAzucarCopilot: React.FC<BioAzucarCopilotProps> = ({
@@ -69,6 +70,7 @@ export const BioAzucarCopilot: React.FC<BioAzucarCopilotProps> = ({
   onAcknowledgeAlarm,
   onUpdateSetpoint,
   onDispatchUpdate,
+  isFooterPinned = true,
 }) => {
   const [messages, setMessages] = useState<CopilotChatMessage[]>(() => [
     {
@@ -203,7 +205,9 @@ export const BioAzucarCopilot: React.FC<BioAzucarCopilotProps> = ({
       {/* 1. Floating Trigger Button */}
       <button
         onClick={onToggleOpen}
-        className={`fixed bottom-6 right-6 z-50 p-3.5 rounded-full shadow-2xl transition-all duration-300 flex items-center justify-center gap-2 font-mono text-xs font-bold ${
+        className={`fixed ${
+          isFooterPinned ? "bottom-11 sm:bottom-12" : "bottom-6"
+        } right-6 z-50 p-3.5 rounded-full shadow-2xl transition-all duration-300 flex items-center justify-center gap-2 font-mono text-xs font-bold ${
           isOpen
             ? "bg-slate-800 text-slate-400 hover:text-white border border-slate-700"
             : "bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 hover:brightness-110 shadow-cyan-500/20 scale-100 hover:scale-105"

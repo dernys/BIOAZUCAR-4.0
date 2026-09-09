@@ -13,6 +13,9 @@ import {
   Layers,
   ChevronRight,
   ShieldAlert,
+  Info,
+  ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { TelemetryData, TenantEnterprise } from "../../types";
 import {
@@ -61,7 +64,9 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
 
   useEffect(() => {
     loadPredictions();
-  }, [telemetry.tch, telemetry.powerExportGridMW, activeTenant?.id]);
+  }, [activeTenant?.id]);
+
+  const isSimulated = telemetry.isSimulated ?? true;
 
   return (
     <div className="space-y-6">
@@ -81,7 +86,7 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Pronósticos estequiométricos y termodinámicos entrenados con historiales de zafra y telemetría en vivo
+              Pronósticos estequiométricos y termodinámicos entrenados con historiales de zafra y telemetría de proceso
             </p>
           </div>
         </div>
@@ -111,6 +116,38 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-emerald-400" : ""}`} />
             <span>Recalcular</span>
           </button>
+        </div>
+      </div>
+
+      {/* Honest Data Provenance Banner */}
+      <div
+        className={`p-3.5 rounded-xl border flex items-start gap-3 text-xs leading-relaxed ${
+          isSimulated
+            ? "bg-amber-950/20 border-amber-500/30 text-amber-200/90"
+            : "bg-emerald-950/20 border-emerald-500/30 text-emerald-200/90"
+        }`}
+      >
+        <Info className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="font-bold font-mono uppercase tracking-wider text-white">
+              {isSimulated ? "Modo Simulación: Pronósticos Basados en Gemelo Físico" : "Modo En Vivo: Pronósticos Basados en Telemetría OT"}
+            </span>
+            <span
+              className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${
+                isSimulated
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/30 font-bold"
+                  : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 font-bold"
+              }`}
+            >
+              {isSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT"}
+            </span>
+          </div>
+          <p className="text-slate-300 text-[11px]">
+            {isSimulated
+              ? "Las proyecciones de tonelaje de azúcar y balance de vapor se calculan a partir de la simulación matemática continua del ingenio (ecuaciones de Hugot y ASME PTC 4)."
+              : "Las proyecciones de tonelaje de azúcar y balance de vapor se alimentan directamente de los sensores y pesas de caña en tiempo real de campo."}
+          </p>
         </div>
       </div>
 
@@ -267,7 +304,7 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
               <div>
                 <div className="flex justify-between text-xs font-mono mb-1">
                   <span className="text-slate-400">Pérdida de Pol en Bagazo (Tándem de Molienda)</span>
-                  <span className="text-amber-400 font-bold">{prodPred?.losses.bagassePolLossPercent || 1.82}%</span>
+                  <span className="text-amber-400 font-bold">{prodPred?.losses?.bagassePolLossPercent ?? 1.82}%</span>
                 </div>
                 <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
                   <div className="bg-amber-400 h-2 rounded-full" style={{ width: "36%" }}></div>
@@ -278,7 +315,7 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
               <div>
                 <div className="flex justify-between text-xs font-mono mb-1">
                   <span className="text-slate-400">Pérdida en Miel Final (Melaza Agotada)</span>
-                  <span className="text-rose-400 font-bold">{prodPred?.losses.finalMolassesLossPercent || 6.45}%</span>
+                  <span className="text-rose-400 font-bold">{prodPred?.losses?.finalMolassesLossPercent ?? 6.45}%</span>
                 </div>
                 <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
                   <div className="bg-rose-400 h-2 rounded-full" style={{ width: "65%" }}></div>
@@ -289,7 +326,7 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
               <div>
                 <div className="flex justify-between text-xs font-mono mb-1">
                   <span className="text-slate-400">Pérdida en Cachaza (Filtros Rotativos al Vacío)</span>
-                  <span className="text-cyan-400 font-bold">{prodPred?.losses.filterCakeLossPercent || 0.42}%</span>
+                  <span className="text-cyan-400 font-bold">{prodPred?.losses?.filterCakeLossPercent ?? 0.42}%</span>
                 </div>
                 <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
                   <div className="bg-cyan-400 h-2 rounded-full" style={{ width: "15%" }}></div>
@@ -300,7 +337,7 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
               <div>
                 <div className="flex justify-between text-xs font-mono mb-1">
                   <span className="text-slate-400">Pérdidas Indeterminadas e Inversión Térmica</span>
-                  <span className="text-indigo-400 font-bold">{prodPred?.losses.undeterminedLossPercent || 0.75}%</span>
+                  <span className="text-indigo-400 font-bold">{prodPred?.losses?.undeterminedLossPercent ?? 0.75}%</span>
                 </div>
                 <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
                   <div className="bg-indigo-400 h-2 rounded-full" style={{ width: "22%" }}></div>
@@ -325,9 +362,9 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
           </div>
 
           <div className="space-y-2.5">
-            {equipmentRisks.slice(0, 4).map((risk) => (
+            {(equipmentRisks || []).slice(0, 4).map((risk, idx) => (
               <div
-                key={risk.equipmentId}
+                key={risk.id || risk.code || `risk-item-${idx}`}
                 className="p-3 bg-slate-950/70 border border-slate-800 rounded-lg hover:border-slate-700 transition space-y-1.5"
               >
                 <div className="flex items-center justify-between">

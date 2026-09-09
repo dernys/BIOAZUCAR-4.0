@@ -12,11 +12,16 @@ export type EquipmentRiskAssessment = EquipmentRiskItem;
 export interface IndustrialGatewayStatus {
   activeChannel: string;
   adapterName: string;
-  latencyMs: number;
+  latencyMs: number | string;
   signalQuality: string;
   packetsPerSec: number;
   totalPacketsReceived: number;
   lastPacketTimestamp: string;
+  isSimulated: boolean;
+  provenance: string;
+  mode: "SIMULATION" | "LIVE_OT" | "HYBRID";
+  statusMessage?: string;
+  endpointUrl?: string;
 }
 
 /**
@@ -82,6 +87,8 @@ export interface ProductionPredictions {
   confidenceScore: number;
   riskOfThroughputDrop: "LOW" | "MODERATE" | "HIGH";
   riskExplanation?: string;
+  isSimulated?: boolean;
+  provenance?: string;
 }
 
 /**
@@ -119,6 +126,8 @@ export interface EnergyPredictions {
   projectedRevenue24hUSD: number;
   energyEfficiencyIndexPercent: number; // e.g. 87.4%
   confidenceScore: number;
+  isSimulated?: boolean;
+  provenance?: string;
 }
 
 /**
@@ -126,6 +135,7 @@ export interface EnergyPredictions {
  */
 export interface EquipmentRiskItem {
   id: string;
+  equipmentId?: string;
   name: string;
   code: string;
   area: string;
@@ -145,6 +155,8 @@ export interface EquipmentRiskItem {
   anomalyFlag: boolean;
   recommendedAction: string;
   timeToUrgentMaintenanceHours: number;
+  isSimulated?: boolean;
+  provenance?: string;
 }
 
 /**
@@ -190,6 +202,13 @@ export interface RootCauseAnalysisResult {
   preventiveActions: string[];
   financialImpactEstimatedUSD: string;
   isAiGenerated: boolean;
+  severity?: "CRITICA" | "ALTA" | "MEDIA" | "BAJA";
+  fiveWhys?: string[];
+  immediateAction?: string;
+  maintenanceRecommendation?: string;
+  estimatedFinancialLoss?: string;
+  isSimulated?: boolean;
+  provenance?: string;
 }
 
 /**
@@ -225,6 +244,8 @@ export interface IndustrialRecommendation {
     description: string;
   };
   createdAt: string;
+  isSimulated?: boolean;
+  provenance?: string;
 }
 
 /**

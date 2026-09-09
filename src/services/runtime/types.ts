@@ -39,6 +39,13 @@ export interface OTConfig {
   errorMessage?: string;
   isLiveConnection: boolean;
   connected?: boolean;
+  latencyMs?: number;
+  packetsReceived?: number;
+  activeGatewayName?: string;
+  mappedTagsCount?: number;
+  availableTags?: string[];
+  liveValues?: Partial<TelemetryData>;
+  forbidFakeData?: boolean;
 }
 
 export interface TenantIdentityConfig {

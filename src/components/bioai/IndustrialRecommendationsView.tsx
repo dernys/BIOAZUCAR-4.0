@@ -16,6 +16,8 @@ import {
   Layers,
   Scale,
   ShieldAlert,
+  Info,
+  ShieldCheck,
 } from "lucide-react";
 import { TelemetryData, TenantEnterprise } from "../../types";
 import { IndustrialRecommendation } from "../../types/bioai";
@@ -61,7 +63,9 @@ export const IndustrialRecommendationsView: React.FC<IndustrialRecommendationsVi
 
   useEffect(() => {
     loadRecommendations();
-  }, [telemetry.tch, telemetry.boilerPressureHP, activeTenant?.id]);
+  }, [activeTenant?.id]);
+
+  const isSimulated = telemetry.isSimulated ?? true;
 
   const handleApplyRecommendation = async (rec: IndustrialRecommendation) => {
     setApplyingId(rec.id);
@@ -157,6 +161,38 @@ export const IndustrialRecommendationsView: React.FC<IndustrialRecommendationsVi
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
           </button>
+        </div>
+      </div>
+
+      {/* Honest Data Provenance Banner */}
+      <div
+        className={`p-3.5 rounded-xl border flex items-start gap-3 text-xs leading-relaxed ${
+          isSimulated
+            ? "bg-amber-950/20 border-amber-500/30 text-amber-200/90"
+            : "bg-emerald-950/20 border-emerald-500/30 text-emerald-200/90"
+        }`}
+      >
+        <Info className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="font-bold font-mono uppercase tracking-wider text-white">
+              {isSimulated ? "Recomendaciones sobre Modelo Simulado" : "Recomendaciones de Campo en Tiempo Real"}
+            </span>
+            <span
+              className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${
+                isSimulated
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/30 font-bold"
+                  : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 font-bold"
+              }`}
+            >
+              {isSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT"}
+            </span>
+          </div>
+          <p className="text-slate-300 text-[11px]">
+            {isSimulated
+              ? "Estas acciones prescriptivas ajustan consignas virtuales en el gemelo matemático termodinámico. Los lazos de control de campo no reciben consignas automáticas sin autorización expresa del operador DCS."
+              : "Estas acciones prescriptivas aplican sobre lazos de control y setpoints de la instrumentación física en campo."}
+          </p>
         </div>
       </div>
 

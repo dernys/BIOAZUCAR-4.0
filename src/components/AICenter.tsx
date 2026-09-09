@@ -15,6 +15,7 @@ import {
   DollarSign,
   Layers,
   ArrowRight,
+  Info,
 } from "lucide-react";
 import { TelemetryData, UserRole, TenantEnterprise, EquipmentItem, AlarmEvent } from "../types";
 import { OperationalPredictionsView } from "./bioai/OperationalPredictionsView";
@@ -250,11 +251,49 @@ export const AICenter: React.FC<AICenterProps> = ({
       )}
 
       {activeBioAiTab === "gateway_status" && (
-        <IndustrialGatewayStatusView />
+        <IndustrialGatewayStatusView
+          telemetry={telemetry}
+          activeTenant={activeTenant}
+          onNavigateToTab={onNavigateToTab}
+        />
       )}
 
       {activeBioAiTab === "copilot_assistant" && (
         <div className="space-y-6">
+          {/* Honest Data Provenance Banner */}
+          <div
+            className={`p-3.5 rounded-xl border flex items-start gap-3 text-xs leading-relaxed ${
+              (telemetry.isSimulated ?? true)
+                ? "bg-amber-950/20 border-amber-500/30 text-amber-200/90"
+                : "bg-emerald-950/20 border-emerald-500/30 text-emerald-200/90"
+            }`}
+          >
+            <Info className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="font-bold font-mono uppercase tracking-wider text-white">
+                  {(telemetry.isSimulated ?? true)
+                    ? "Asistente AI Operando sobre Modelo Simulado (Spencer-Meade / ASME PTC 4)"
+                    : "Asistente AI Operando sobre Telemetría OT de Planta Real"}
+                </span>
+                <span
+                  className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${
+                    (telemetry.isSimulated ?? true)
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500/30 font-bold"
+                      : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 font-bold"
+                  }`}
+                >
+                  {(telemetry.isSimulated ?? true) ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT"}
+                </span>
+              </div>
+              <p className="text-slate-300 text-[11px]">
+                {(telemetry.isSimulated ?? true)
+                  ? "Las consultas y optimizaciones de caldera se calculan evaluando el estado del gemelo físico matemático en memoria."
+                  : "Las consultas y optimizaciones de caldera se calculan con base en las lecturas de los analizadores de gases e instrumentación de vapor en tiempo real."}
+              </p>
+            </div>
+          </div>
+
           {/* Combustion Quick Optimizer & Quick Queries */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Quick Combustion Optimizer (5 cols) */}

@@ -5,6 +5,7 @@ import {
   TelemetryData,
   TenantEnterprise,
 } from "../../types";
+import { INITIAL_EQUIPMENT } from "../../data/mockIndustrialData";
 import {
   EquipmentRiskItem,
   EnergyPredictions,
@@ -108,6 +109,8 @@ export class BioAiEngineService {
       confidenceScore: 94,
       riskOfThroughputDrop: currentTch < nominalTch * 0.9 ? "MODERATE" : "LOW",
       riskExplanation: "Flujo de camiones constante desde Sector El Palmar; humedad de caña en rango óptimo.",
+      isSimulated: telemetry.isSimulated ?? true,
+      provenance: telemetry.provenance || (telemetry.isSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT"),
     };
   }
 
@@ -185,6 +188,8 @@ export class BioAiEngineService {
       projectedRevenue24hUSD: projectedRevenue,
       energyEfficiencyIndexPercent: 88.2,
       confidenceScore: 96,
+      isSimulated: telemetry.isSimulated ?? true,
+      provenance: telemetry.provenance || (telemetry.isSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT"),
     };
   }
 
@@ -192,14 +197,19 @@ export class BioAiEngineService {
   // MODULE 1: EQUIPMENT HEALTH & PREDICTIVE RISK ASSESSMENT
   // --------------------------------------------------------------------------
   public evaluateEquipmentRisks(
-    equipmentList: EquipmentItem[],
+    equipmentList: EquipmentItem[] = [],
     telemetry: TelemetryData,
-    alarms: AlarmEvent[]
+    alarms: AlarmEvent[] = []
   ): EquipmentRiskItem[] {
-    return equipmentList.map((eq) => {
-      const isMill3 = eq.name.includes("Molino 3") || eq.code.includes("ML-03");
-      const isBoiler = eq.area === "CALDERA" || eq.name.includes("Caldera");
-      const isTurbine = eq.name.includes("Turbogenerador") || eq.code.includes("TG-01");
+    const safeEquipment = Array.isArray(equipmentList) && equipmentList.length > 0
+      ? equipmentList
+      : INITIAL_EQUIPMENT;
+    const safeAlarms = Array.isArray(alarms) ? alarms : [];
+
+    return safeEquipment.map((eq) => {
+      const isMill3 = eq.name?.includes("Molino 3") || eq.code?.includes("ML-03");
+      const isBoiler = eq.area === "CALDERA" || eq.name?.includes("Caldera");
+      const isTurbine = eq.name?.includes("Turbogenerador") || eq.code?.includes("TG-01");
 
       let failureProbability = 10;
       let rulHours = 3200;
@@ -230,7 +240,7 @@ export class BioAiEngineService {
       }
 
       // Check if there are active alarms for this equipment
-      const activeAlarm = alarms.find(
+      const activeAlarm = safeAlarms.find(
         (a) =>
           (a.equipmentId === eq.id || a.equipmentName === eq.name) &&
           (a.status === "ACTIVE" || !a.acknowledged)
@@ -243,6 +253,7 @@ export class BioAiEngineService {
 
       return {
         id: eq.id,
+        equipmentId: eq.id,
         name: eq.name,
         code: eq.code,
         area: eq.area,

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Pin, PinOff } from "lucide-react";
 import { Header } from "./components/Header";
 import { Navigation, NavigationTab } from "./components/Navigation";
 import { DashboardOverview } from "./components/DashboardOverview";
@@ -21,6 +22,7 @@ import { CentralProvisioningWizard } from "./components/CentralProvisioningWizar
 import { DataLineageModal } from "./components/DataLineageModal";
 import { BioAzucarCopilot } from "./copilot/components/BioAzucarCopilot";
 import { ExecutivePresentation } from "./components/ExecutivePresentation";
+import { IndustrialConnectionModal } from "./components/IndustrialConnectionModal";
 import {
   TelemetryData,
   UserRole,
@@ -35,6 +37,7 @@ import {
   RbacRoleDefinition,
   DataLineageInfo,
 } from "./types";
+import { RuntimeMode } from "./services/runtime/types";
 import { INITIAL_AUDIT_LOGS, INITIAL_TELEMETRY } from "./data/mockIndustrialData";
 import { updateTelemetry } from "./services/simulationEngine";
 import { dataProviderRegistry } from "./services/dataProviders/DataProviderRegistry";
@@ -86,8 +89,14 @@ export default function App() {
   const [isTenantsModalOpen, setIsTenantsModalOpen] = useState<boolean>(false);
   const [isCreateWizardOpen, setIsCreateWizardOpen] = useState<boolean>(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState<boolean>(false);
+  const [isIndustrialModalOpen, setIsIndustrialModalOpen] = useState<boolean>(false);
   const [selectedLineage, setSelectedLineage] = useState<DataLineageInfo | null>(null);
   const [dbLatencyMs, setDbLatencyMs] = useState<number>(24);
+
+  // Industrial OT Runtime Mode (SIMULATION vs HYBRID vs LIVE_OT)
+  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>(() => {
+    return tenantRuntimeManager.getRuntime(INITIAL_TENANTS[0].id).getMode();
+  });
 
   // Core App State backed by Cloud Firestore
   const [telemetry, setTelemetry] = useState<TelemetryData>(INITIAL_TELEMETRY);
@@ -99,6 +108,42 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(INITIAL_AUDIT_LOGS);
   const [usersList, setUsersList] = useState<UserAccount[]>(PREDEFINED_USERS);
   const [rolesList, setRolesList] = useState<RbacRoleDefinition[]>(DEFAULT_ROLES);
+
+  // Theme state: "dark" (default for industrial SCADA) or "light" (clean daylight mode)
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    const saved = localStorage.getItem("bioazucar_theme");
+    return saved === "light" ? "light" : "dark";
+  });
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
+
+  useEffect(() => {
+    localStorage.setItem("bioazucar_theme", theme);
+    if (theme === "light") {
+      document.documentElement.classList.add("light");
+      document.documentElement.classList.remove("dark");
+    } else {
+      document.documentElement.classList.add("dark");
+      document.documentElement.classList.remove("light");
+    }
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  // Pinned Footer State (Fixed at bottom across all views)
+  const [isFooterPinned, setIsFooterPinned] = useState<boolean>(() => {
+    const saved = localStorage.getItem("bioazucar_footer_pinned");
+    return saved !== null ? saved === "true" : true; // Default to true as requested
+  });
+
+  const handleToggleFooterPin = () => {
+    setIsFooterPinned((prev) => {
+      const next = !prev;
+      localStorage.setItem("bioazucar_footer_pinned", String(next));
+      return next;
+    });
+  };
 
   // Synchronize role change with user account
   const handleRoleChange = (newRole: UserRole) => {
@@ -247,6 +292,25 @@ export default function App() {
     };
   }, [activeTenant.id]);
 
+  // Sync active tenant's OT runtime mode
+  useEffect(() => {
+    const runtime = tenantRuntimeManager.getRuntime(activeTenant.id);
+    setRuntimeMode(runtime.getMode());
+  }, [activeTenant.id]);
+
+  // Handler for changing runtime mode via the IndustrialConnectionModal
+  const handleRuntimeModeChange = (newMode: RuntimeMode) => {
+    const runtime = tenantRuntimeManager.getRuntime(activeTenant.id);
+    runtime.setMode(newMode);
+    setRuntimeMode(newMode);
+    const snap = runtime.getTelemetrySnapshot();
+    setTelemetry((prev) => ({
+      ...prev,
+      ...snap,
+      tenantId: activeTenant.id,
+    }));
+  };
+
   // 3. Real-time industrial physics simulation & OT orchestration via TenantRuntime
   useEffect(() => {
     const runtime = tenantRuntimeManager.getRuntime(activeTenant.id);
@@ -303,7 +367,7 @@ export default function App() {
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [isSimRunning, speedMultiplier, scenario, activeTenant.id]);
+  }, [isSimRunning, speedMultiplier, scenario, activeTenant.id, runtimeMode]);
 
   // Handler to add a new batch (Persists directly to Cloud Firestore with RBAC check)
   const handleAddBatch = async (newBatch: CaneBatch) => {
@@ -523,7 +587,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
+    <div className={`min-h-screen flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950 transition-colors duration-200 ${
+      theme === "light" ? "light bg-slate-100 text-slate-900" : "dark bg-slate-950 text-slate-100"
+    }`}>
       {/* 1. Header (System Status, Multi-Tenant Selector, Simulation Controls, User Profile, RBAC trigger) */}
       <Header
         currentRole={currentRole}
@@ -539,6 +605,9 @@ export default function App() {
         onOpenCreateTenantWizard={() => setIsCreateWizardOpen(true)}
         onOpenCopilot={() => setIsCopilotOpen(true)}
         onOpenPresentation={() => setActiveTab("presentation")}
+        onOpenIndustrialConnectionModal={() => setIsIndustrialModalOpen(true)}
+        runtimeMode={runtimeMode}
+        telemetry={telemetry}
         scenario={scenario}
         onScenarioChange={setScenario}
         speedMultiplier={speedMultiplier}
@@ -546,6 +615,8 @@ export default function App() {
         isSimRunning={isSimRunning}
         onToggleSim={() => setIsSimRunning((prev) => !prev)}
         alarms={alarms}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* 2. Industrial Tab Navigation Bar with Live DB Sync Status */}
@@ -557,10 +628,13 @@ export default function App() {
         dbLatencyMs={dbLatencyMs}
         currentUser={currentUser}
         currentRole={currentRole}
+        theme={theme}
       />
 
       {/* 3. Main Operational Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 space-y-6">
+      <main className={`flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 space-y-6 transition-all duration-200 ${
+        isFooterPinned ? "pb-12 sm:pb-14" : ""
+      }`}>
         {activeTab === "dashboard" && (
           <DashboardOverview
             telemetry={telemetry}
@@ -597,6 +671,7 @@ export default function App() {
           <DigitalTwin3D
             telemetry={telemetry}
             equipmentList={equipmentList}
+            theme={theme}
           />
         )}
 
@@ -688,23 +763,94 @@ export default function App() {
         )}
       </main>
 
-      {/* 4. Industrial Footer & SCADA Status Bar */}
-      <footer className="border-t border-slate-900 bg-slate-950/90 py-3 px-4 sm:px-6 text-xs text-slate-500 font-mono flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
+      {/* 4. Industrial Footer & SCADA Status Bar — Single-Line Responsive Dock */}
+      <footer
+        className={`border-t h-8 sm:h-9 px-2.5 sm:px-4 text-[11px] font-mono transition-all duration-300 ${
+          isFooterPinned
+            ? "fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md shadow-[0_-2px_12px_rgba(0,0,0,0.15)]"
+            : "relative"
+        } ${
+          theme === "light"
+            ? "bg-white/95 border-slate-200 text-slate-600 shadow-sm"
+            : "bg-slate-950/95 border-slate-800/80 text-slate-400"
+        } flex items-center justify-between gap-2 sm:gap-4 flex-nowrap whitespace-nowrap overflow-hidden select-none`}
+      >
+        {/* Left Side: Firestore Live Latency & Active Tenant */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
+          {/* Cloud Firestore Status */}
           <button
+            type="button"
             onClick={() => setIsDbModalOpen(true)}
-            className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition"
+            className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 font-semibold transition shrink-0"
+            title="Ver diagnóstico y estado de sincronización Cloud Firestore"
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Cloud Firestore: Conectado ({dbLatencyMs}ms)</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+            <span className="hidden sm:inline">Cloud Firestore:</span>
+            <span>Conectado</span>
+            <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-normal">({dbLatencyMs}ms)</span>
           </button>
-          <span className="hidden sm:inline text-slate-600">|</span>
-          <span className="hidden sm:inline text-slate-400">
-            Empresa Activa: <strong className="text-cyan-400">{activeTenant.name} ({activeTenant.code})</strong> • Capacidad: {activeTenant.nominalTch} TCH / {activeTenant.powerCapacityMW} MW
-          </span>
+
+          <span className="text-slate-300 dark:text-slate-700 shrink-0">|</span>
+
+          {/* Active Enterprise / Tenant with graceful truncation */}
+          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden text-slate-700 dark:text-slate-300">
+            <span className="hidden md:inline text-slate-500 dark:text-slate-400 shrink-0">Empresa:</span>
+            <span className="text-cyan-600 dark:text-cyan-400 font-bold truncate">
+              {activeTenant.name}
+            </span>
+            <span className="hidden lg:inline text-slate-400 dark:text-slate-500 shrink-0 font-normal">
+              ({activeTenant.code})
+            </span>
+            <span className="hidden xl:inline text-slate-400 dark:text-slate-500 shrink-0 font-normal">
+              • Capacidad: {activeTenant.nominalTch} TCH / {activeTenant.powerCapacityMW} MW
+            </span>
+          </div>
         </div>
-        <div>
-          <span>BioAzúcar 4.0 Multi-Tenant Suite • IEC 62443 SL-3</span>
+
+        {/* Right Side: Security Standard & Pin Toggle Button */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <span className="hidden 2xl:inline text-slate-500 dark:text-slate-400 text-[10px]">
+            BioAzúcar 4.0 Suite
+          </span>
+          <span className="hidden lg:inline text-slate-400 dark:text-slate-500 text-[10px]">
+            IEC 62443 SL-3
+          </span>
+          <span className="hidden lg:inline text-slate-300 dark:text-slate-700">|</span>
+
+          {/* Toggle Button to Pin / Unpin */}
+          <button
+            type="button"
+            onClick={handleToggleFooterPin}
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-mono transition border shrink-0 ${
+              isFooterPinned
+                ? theme === "light"
+                  ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                  : "bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/60"
+                : theme === "light"
+                  ? "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:text-slate-900"
+                  : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+            }`}
+            title={
+              isFooterPinned
+                ? "Desfijar barra inferior (se posicionará al final de la página)"
+                : "Fijar barra inferior en la parte inferior de todas las pantallas"
+            }
+            aria-label="Conmutar barra inferior fija o libre"
+          >
+            {isFooterPinned ? (
+              <>
+                <Pin className="w-3 h-3 text-emerald-600 dark:text-emerald-400 fill-emerald-500/30 rotate-45 shrink-0" />
+                <span className="font-semibold">Fija</span>
+                <span className="text-[9px] opacity-75 underline">Quitar</span>
+              </>
+            ) : (
+              <>
+                <PinOff className="w-3 h-3 text-slate-500 shrink-0" />
+                <span className="font-normal">Libre</span>
+                <span className="text-[9px] opacity-75 underline">Fijar</span>
+              </>
+            )}
+          </button>
         </div>
       </footer>
 
@@ -805,6 +951,17 @@ export default function App() {
         onAcknowledgeAlarm={handleAcknowledgeAlarm}
         onUpdateSetpoint={handleUpdateSetpoint}
         onDispatchUpdate={handleDispatchUpdate}
+        isFooterPinned={isFooterPinned}
+      />
+
+      {/* 8. Industrial OT Connection & Provenance Gateway Modal */}
+      <IndustrialConnectionModal
+        isOpen={isIndustrialModalOpen}
+        onClose={() => setIsIndustrialModalOpen(false)}
+        activeTenant={activeTenant}
+        currentMode={runtimeMode}
+        onModeChange={handleRuntimeModeChange}
+        telemetry={telemetry}
       />
     </div>
   );

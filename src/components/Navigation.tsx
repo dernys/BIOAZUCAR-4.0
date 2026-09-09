@@ -34,6 +34,7 @@ interface NavigationProps {
   dbLatencyMs?: number;
   currentUser?: UserAccount;
   currentRole?: UserRole;
+  theme?: "dark" | "light";
 }
 
 type MenuCategory = "ALL" | "OPERATIONS" | "QUALITY_MAINT" | "DATA_IOT" | "AI" | "SECURITY_CONFIG";
@@ -46,10 +47,12 @@ export const Navigation: React.FC<NavigationProps> = ({
   dbLatencyMs = 24,
   currentUser,
   currentRole,
+  theme = "dark",
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const isLight = theme === "light";
   const isSuper = currentRole === "superadmin" || currentUser?.isSuperAdmin;
   const isAdmin = isSuper || currentRole === "administrador";
 
@@ -193,13 +196,13 @@ export const Navigation: React.FC<NavigationProps> = ({
   });
 
   return (
-    <nav className="border-b border-slate-800 bg-slate-950/95 backdrop-blur-md sticky top-0 z-20 shadow-lg">
+    <nav className={`border-b ${isLight ? "border-slate-200/90 bg-white/95 text-slate-800" : "border-slate-800 bg-slate-950/95"} backdrop-blur-md sticky top-0 z-20 shadow-sm transition-colors`}>
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         {/* Top Mini Toolbar: Categories Filter & Live Database Sync Indicator */}
-        <div className="flex flex-wrap items-center justify-between gap-2 py-1.5 border-b border-slate-900/80 text-[11px] font-mono">
+        <div className={`flex flex-wrap items-center justify-between gap-2 py-1.5 border-b text-[11px] font-mono ${isLight ? "border-slate-200/80" : "border-slate-900/80"}`}>
           {/* Category Filter Chips */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            <span className="text-slate-500 hidden sm:inline mr-1">Área:</span>
+            <span className={`${isLight ? "text-slate-600 font-bold" : "text-slate-500"} hidden sm:inline mr-1 text-xs`}>Área:</span>
             {[
               { id: "ALL", label: "Todas las Áreas" },
               { id: "OPERATIONS", label: "Operaciones SCADA" },
@@ -211,9 +214,13 @@ export const Navigation: React.FC<NavigationProps> = ({
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id as MenuCategory)}
-                className={`px-2.5 py-0.5 rounded-full transition whitespace-nowrap ${
+                className={`px-2.5 py-0.5 rounded-full transition whitespace-nowrap text-xs ${
                   selectedCategory === cat.id
-                    ? "bg-slate-800 text-emerald-300 font-bold border border-slate-700"
+                    ? isLight
+                      ? "bg-emerald-700 text-white font-bold border border-emerald-800 shadow-xs ring-1 ring-emerald-600/30"
+                      : "bg-slate-800 text-emerald-300 font-bold border border-slate-700"
+                    : isLight
+                    ? "bg-slate-100 text-slate-700 hover:text-slate-950 hover:bg-slate-200 border border-slate-300/80 font-medium"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
                 }`}
               >
@@ -227,13 +234,17 @@ export const Navigation: React.FC<NavigationProps> = ({
             {onOpenDbModal && (
               <button
                 onClick={onOpenDbModal}
-                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300 transition group"
+                className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full transition group text-xs ${
+                  isLight
+                    ? "bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 font-semibold shadow-xs"
+                    : "bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-300"
+                }`}
                 title="Gestor de Persistencia y Estado en Cloud Firestore"
               >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <Database className="w-3 h-3 text-emerald-400" />
+                <span className={`w-2 h-2 rounded-full animate-pulse ${isLight ? "bg-emerald-600" : "bg-emerald-400"}`}></span>
+                <Database className={`w-3 h-3 ${isLight ? "text-emerald-700" : "text-emerald-400"}`} />
                 <span>Cloud Firestore</span>
-                <span className="text-[10px] text-emerald-400/70 group-hover:text-emerald-300 font-bold">
+                <span className={`text-[10px] font-bold ${isLight ? "text-emerald-800 font-extrabold" : "text-emerald-400/70 group-hover:text-emerald-300"}`}>
                   {dbLatencyMs}ms
                 </span>
               </button>
@@ -253,7 +264,17 @@ export const Navigation: React.FC<NavigationProps> = ({
                 onClick={() => onTabChange(item.id)}
                 className={`flex items-center gap-2 px-3 py-1.5 sm:py-2 rounded-xl text-xs font-medium transition whitespace-nowrap shrink-0 relative ${
                   isActive
-                    ? item.highlight
+                    ? isLight
+                      ? item.highlight
+                        ? "bg-indigo-100 text-indigo-950 border-2 border-indigo-600 shadow-xs font-bold ring-1 ring-indigo-500/30"
+                        : item.id === "energy_dispatch"
+                        ? "bg-amber-100 text-amber-950 border-2 border-amber-600 shadow-xs font-bold ring-1 ring-amber-500/30"
+                        : item.id === "uns_hub" || item.id === "enterprises"
+                        ? "bg-cyan-100 text-cyan-950 border-2 border-cyan-600 shadow-xs font-bold ring-1 ring-cyan-500/30"
+                        : item.id === "users_roles" || item.id === "digital_twin"
+                        ? "bg-purple-100 text-purple-950 border-2 border-purple-600 shadow-xs font-bold ring-1 ring-purple-500/30"
+                        : "bg-emerald-100 text-emerald-950 border-2 border-emerald-600 shadow-xs font-bold ring-1 ring-emerald-500/30"
+                      : item.highlight
                       ? "bg-indigo-600/30 text-indigo-200 border border-indigo-500/50 shadow-lg shadow-indigo-500/20 font-bold"
                       : item.id === "energy_dispatch"
                       ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-lg shadow-amber-500/10 font-bold"
@@ -266,6 +287,10 @@ export const Navigation: React.FC<NavigationProps> = ({
                       : item.id === "digital_twin"
                       ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-lg shadow-purple-500/10 font-bold"
                       : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-lg shadow-emerald-500/10 font-bold"
+                    : isLight
+                    ? item.highlight
+                      ? "text-indigo-800 hover:bg-indigo-50 hover:text-indigo-950 border border-indigo-200 font-semibold"
+                      : "text-slate-700 hover:text-slate-950 hover:bg-slate-100 border border-transparent font-semibold"
                     : item.highlight
                     ? "text-indigo-300 hover:bg-indigo-950/40 hover:text-indigo-200 border border-indigo-500/20"
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent"
@@ -274,7 +299,17 @@ export const Navigation: React.FC<NavigationProps> = ({
                 <Icon
                   className={`w-4 h-4 shrink-0 ${
                     isActive
-                      ? item.highlight
+                      ? isLight
+                        ? item.highlight
+                          ? "text-indigo-700"
+                          : item.id === "energy_dispatch"
+                          ? "text-amber-700"
+                          : item.id === "uns_hub" || item.id === "enterprises"
+                          ? "text-cyan-800"
+                          : item.id === "users_roles" || item.id === "digital_twin"
+                          ? "text-purple-800"
+                          : "text-emerald-800"
+                        : item.highlight
                         ? "text-indigo-400"
                         : item.id === "energy_dispatch"
                         ? "text-amber-400"
@@ -287,6 +322,10 @@ export const Navigation: React.FC<NavigationProps> = ({
                         : item.id === "digital_twin"
                         ? "text-purple-400"
                         : "text-emerald-400"
+                      : isLight
+                      ? item.highlight
+                        ? "text-indigo-600"
+                        : "text-slate-600"
                       : "text-slate-400"
                   }`}
                 />
@@ -294,7 +333,9 @@ export const Navigation: React.FC<NavigationProps> = ({
                   <div className="flex items-center gap-1">
                     <span>{item.label}</span>
                     {item.tag && !isActive && (
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                        isLight ? "bg-slate-200 text-slate-800 border border-slate-300" : "bg-slate-800 text-slate-400"
+                      }`}>
                         {item.tag}
                       </span>
                     )}
