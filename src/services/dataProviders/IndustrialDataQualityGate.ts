@@ -57,19 +57,33 @@ export class IndustrialDataQualityGate {
   }
 
   /**
-   * Determine exact origin of a data point
+   * Determine exact origin of a data point or provenance string
    */
-  public resolveOrigin(point: IndustrialDataPoint): DataOrigin {
-    if (point.isSimulated || point.source === "SIMULATION") {
-      return "SIMULATED";
-    }
-    if (point.provenance === "SIMULATED_PROCESS_MODEL") {
-      return "SIMULATED";
-    }
-    if (point.source === "LIVE_OT" || point.source === "OPC_UA" || point.source === "MODBUS") {
+  public resolveOrigin(
+    pointOrProvenance?: IndustrialDataPoint | string,
+    isSimulated?: boolean
+  ): DataOrigin {
+    if (typeof pointOrProvenance === "object" && pointOrProvenance !== null) {
+      const point = pointOrProvenance as IndustrialDataPoint;
+      if (point.isSimulated || point.source === "SIMULATION") {
+        return "SIMULATED";
+      }
+      if (point.provenance === "SIMULATED_PROCESS_MODEL") {
+        return "SIMULATED";
+      }
+      if (point.source === "LIVE_OT" || point.source === "OPC_UA" || point.source === "MODBUS") {
+        return "REAL";
+      }
       return "REAL";
     }
-    return "REAL";
+
+    if (isSimulated || pointOrProvenance === "SIMULATED_PROCESS_MODEL") {
+      return "SIMULATED";
+    }
+    if (pointOrProvenance === "OBSERVED_OT" || pointOrProvenance === "LIVE_OT") {
+      return "REAL";
+    }
+    return isSimulated ? "SIMULATED" : "REAL";
   }
 
   /**

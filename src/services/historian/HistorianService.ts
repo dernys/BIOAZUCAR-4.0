@@ -2,6 +2,7 @@ import { collection, addDoc, query, where, orderBy, limit as firestoreLimit, get
 import { db } from "../firebase";
 import { HistorianRecord } from "../runtime/types";
 import { tenantRuntimeManager } from "../runtime/TenantRuntimeManager";
+import { industrialTsdbEngine, LttbPoint, TsdbBucketAggregation } from "./IndustrialTsdbEngine";
 
 export class HistorianService {
   private static instance: HistorianService;
@@ -16,9 +17,12 @@ export class HistorianService {
   }
 
   /**
-   * Persist a sample into runtime memory buffer and Firestore collection
+   * Persist a sample into runtime memory buffer, TSDB engine and Firestore collection
    */
   public async recordPoint(record: HistorianRecord): Promise<void> {
+    // 1. Ingest into fast local TSDB engine (ring buffers + LTTB downsampling)
+    industrialTsdbEngine.ingest([record]);
+
     const runtime = tenantRuntimeManager.getRuntime(record.tenantId);
     if (runtime) {
       // Memory buffer is populated via simulation runtime step or explicit call
@@ -121,6 +125,28 @@ export class HistorianService {
     );
 
     return [headers.join(","), ...rows].join("\n");
+  }
+
+  /**
+   * Query records downsampled with LTTB (Largest Triangle Three Buckets) for high-speed UI charting
+   */
+  public queryDownsampled(
+    tenantId: string,
+    tag: string,
+    targetPoints: number = 200
+  ): LttbPoint[] {
+    return industrialTsdbEngine.queryDownsampled(tenantId, tag, targetPoints);
+  }
+
+  /**
+   * Compute uniform time bucket aggregations (min, max, avg, first, last)
+   */
+  public aggregateTimeBuckets(
+    tenantId: string,
+    tag: string,
+    bucketDurationMs: number = 60000
+  ): TsdbBucketAggregation[] {
+    return industrialTsdbEngine.aggregateTimeBuckets(tenantId, tag, bucketDurationMs);
   }
 }
 

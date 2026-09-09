@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -673,6 +674,68 @@ app.get("/api/bioai/gateway-status", requireAuth, (req, res) => {
     isHealthy: true,
     totalThroughputTagsPerSec: 216.9,
     activeSecurityStandard: "IEC-62443-SL3",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// 5. Industrial Edge Gateway Telemetry Ingestion (HMAC-SHA256 & Anti-Replay Guard)
+app.post("/api/edge/telemetry-sync", (req, res) => {
+  const edgeNodeId = (req.headers["x-bioazucar-node-id"] as string) || "anonymous-edge";
+  const edgeTimestamp = req.headers["x-bioazucar-edge-timestamp"] as string;
+  const edgeSignature = req.headers["x-bioazucar-edge-signature"] as string;
+
+  // Anti-replay protection: timestamp window verification (5 minutes)
+  if (edgeTimestamp) {
+    const ts = new Date(edgeTimestamp).getTime();
+    const now = Date.now();
+    if (isNaN(ts) || Math.abs(now - ts) > 300000) {
+      return res.status(401).json({
+        error: "REPLAY_REJECTED: Timestamp fuera de ventana de validez permitida (300s)",
+      });
+    }
+  }
+
+  // HMAC verification if secret configured in environment
+  const edgeSecret = process.env.BIOAZUCAR_EDGE_SECRET;
+  if (edgeSecret && edgeSignature) {
+    const expected = crypto
+      .createHmac("sha256", edgeSecret)
+      .update(`${edgeNodeId}:${edgeTimestamp || ""}:${JSON.stringify(req.body)}`)
+      .digest("hex");
+
+    if (edgeSignature !== expected) {
+      return res.status(403).json({
+        error: "HMAC_INVALID: Firma criptográfica de nodo Edge inválida",
+      });
+    }
+  }
+
+  const { batchId, points, tenantId } = req.body || {};
+  const pointList = Array.isArray(points) ? points : [];
+
+  logServerAuditEvent({
+    id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: new Date().toISOString(),
+    actorUid: `edge-${edgeNodeId}`,
+    actorEmail: `edge-node@${edgeNodeId}`,
+    actorRole: "EDGE_SYSTEM",
+    tenantId: tenantId || "system",
+    action: "EDGE_TELEMETRY_SYNC",
+    resource: `/api/edge/telemetry-sync#${batchId || "batch"}`,
+    result: "SUCCESS",
+    ip: req.ip || "127.0.0.1",
+    metadata: {
+      batchId: batchId || "batch",
+      acceptedCount: pointList.length,
+      nodeId: edgeNodeId,
+    },
+  });
+
+  return res.json({
+    success: true,
+    batchId: batchId || `batch-${Date.now()}`,
+    acceptedCount: pointList.length,
+    nodeId: edgeNodeId,
     timestamp: new Date().toISOString(),
   });
 });

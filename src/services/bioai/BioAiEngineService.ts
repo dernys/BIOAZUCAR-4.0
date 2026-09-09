@@ -17,6 +17,7 @@ import {
   TimeSeriesPoint,
 } from "../../types/bioai";
 import { getAuthHeader } from "../authService";
+import { industrialDataQualityGate } from "../dataProviders/IndustrialDataQualityGate";
 
 // ============================================================================
 // BIOAI INTELLIGENCE ENGINE SERVICE
@@ -111,6 +112,12 @@ export class BioAiEngineService {
       riskExplanation: "Flujo de camiones constante desde Sector El Palmar; humedad de caña en rango óptimo.",
       isSimulated: telemetry.isSimulated ?? true,
       provenance: telemetry.provenance || (telemetry.isSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT"),
+      origin: industrialDataQualityGate.resolveOrigin(telemetry.provenance, telemetry.isSimulated),
+      dataQualityAudit: {
+        passed: !telemetry.quality || telemetry.quality === "GOOD",
+        score: telemetry.quality === "BAD" ? 20 : telemetry.quality === "UNCERTAIN" ? 65 : 98,
+        origin: industrialDataQualityGate.resolveOrigin(telemetry.provenance, telemetry.isSimulated),
+      },
     };
   }
 
@@ -190,6 +197,12 @@ export class BioAiEngineService {
       confidenceScore: 96,
       isSimulated: telemetry.isSimulated ?? true,
       provenance: telemetry.provenance || (telemetry.isSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT"),
+      origin: industrialDataQualityGate.resolveOrigin(telemetry.provenance, telemetry.isSimulated),
+      dataQualityAudit: {
+        passed: !telemetry.quality || telemetry.quality === "GOOD",
+        score: telemetry.quality === "BAD" ? 20 : telemetry.quality === "UNCERTAIN" ? 65 : 98,
+        origin: industrialDataQualityGate.resolveOrigin(telemetry.provenance, telemetry.isSimulated),
+      },
     };
   }
 
