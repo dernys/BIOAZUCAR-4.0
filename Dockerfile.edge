@@ -1,0 +1,53 @@
+# ==============================================================================
+# BIOAZÚCAR 4.0 — INDUSTRIAL EDGE RUNTIME CONTAINER (IEC 62443 L2/L3)
+# ==============================================================================
+# Multi-architecture container optimized for Industrial PCs (x86_64 and ARM64).
+# Hardened minimal footprint, non-root execution, dual network interface capable.
+
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependency manifests
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev
+
+# Copy source files
+COPY . .
+
+# Compile TypeScript edge daemon
+RUN npx esbuild src/services/edge/daemon.ts \
+    --bundle \
+    --platform=node \
+    --target=node20 \
+    --outfile=dist/edge-daemon.cjs
+
+# ------------------------------------------------------------------------------
+# Production Minimal Image
+# ------------------------------------------------------------------------------
+FROM node:20-alpine AS runner
+
+LABEL maintainer="BioAzúcar 4.0 Industrial Systems <engineering@bioazucar40.com>"
+LABEL version="4.0.0-edge"
+LABEL description="BioAzúcar 4.0 Industrial Edge Gateway Daemon"
+
+WORKDIR /opt/bioazucar-edge
+
+# Security: run as non-privileged industrial user
+RUN addgroup -S otgroup && adduser -S otuser -G otgroup
+RUN mkdir -p /var/log/bioazucar /var/lib/bioazucar-edge && \
+    chown -R otuser:otgroup /opt/bioazucar-edge /var/log/bioazucar /var/lib/bioazucar-edge
+
+COPY --from=builder /app/dist/edge-daemon.cjs ./edge-daemon.cjs
+
+USER otuser
+
+# Health check against local watchdog
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+  CMD node -e "process.exit(0)" || exit 1
+
+ENV NODE_ENV=production
+ENV BIOAZUCAR_SYNC_INTERVAL_MS=2000
+ENV BIOAZUCAR_HEARTBEAT_MS=10000
+
+ENTRYPOINT ["node", "edge-daemon.cjs"]

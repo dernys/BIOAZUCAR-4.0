@@ -1,0 +1,34 @@
+[Unit]
+Description=BioAzucar 4.0 Industrial Edge Gateway Daemon
+After=network.target
+Wants=network-online.target
+Documentation=https://docs.bioazucar40.com/edge
+
+[Service]
+Type=simple
+User=otuser
+Group=otgroup
+WorkingDirectory=/opt/bioazucar-edge
+ExecStart=/usr/bin/node /opt/bioazucar-edge/edge-daemon.cjs
+Restart=always
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=15s
+
+# Process and resource limits for Industrial PCs
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=150%
+
+# IEC 62443 Hardening
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/bioazucar-edge /var/log/bioazucar
+
+# Watchdog Integration
+WatchdogSec=30s
+
+[Install]
+WantedBy=multi-user.target
