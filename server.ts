@@ -14,6 +14,7 @@ import {
   getServerAuditTrail,
 } from "./src/server/authMiddleware";
 import { bootstrapDatabaseWithAdminSdk } from "./src/server/bootstrapService";
+import { prometheusMetrics } from "./src/services/monitoring/PrometheusMetrics";
 
 dotenv.config();
 
@@ -49,6 +50,12 @@ app.get("/api/health", (_req, res) => {
     aiReady: Boolean(process.env.GEMINI_API_KEY),
     securityModel: "IEC-62443-SL3-SERVER-AUTHORITATIVE",
   });
+});
+
+// Prometheus / OpenMetrics scrape endpoint (Operations / SIEM / Grafana)
+app.get("/metrics", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+  res.send(prometheusMetrics.scrape());
 });
 
 // Privileged Backend Database Bootstrap (SEC-6: Server Admin SDK only)

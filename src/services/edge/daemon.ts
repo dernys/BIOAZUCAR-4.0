@@ -14,10 +14,13 @@ import * as crypto from "crypto";
 import * as http from "http";
 import * as https from "https";
 import * as fs from "fs";
+import { URL } from "url";
 import { industrialEdge } from "./BioAzucarIndustrialEdge";
 import { diskStoreAndForward } from "./DiskStoreAndForwardEngine";
 import { SwingingDoorCompressor } from "./SwingingDoorCompressor";
 import { IndustrialDataPoint } from "../../types";
+import { edgeLogger } from "../logger/IndustrialLogger";
+import { prometheusMetrics } from "../monitoring/PrometheusMetrics";
 
 export interface EdgeDaemonConfig {
   tenantId: string;
@@ -138,7 +141,91 @@ export class BioAzucarEdgeDaemon {
   }
 
   /**
-   * Transmits a batch using HMAC-SHA256 cryptographic signing and mTLS/HTTPS
+   * Helper to perform HTTP/HTTPS requests with real mTLS (mutual TLS) certificates in Node.js
+   */
+  private async executeHttpRequest(
+    targetUrl: string,
+    headers: Record<string, string>,
+    body: string
+  ): Promise<{ statusCode: number; statusMessage?: string; data: string }> {
+    const parsedUrl = new URL(targetUrl);
+    const isHttps = parsedUrl.protocol === "https:";
+
+    return new Promise((resolve, reject) => {
+      const options: https.RequestOptions = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port ? parseInt(parsedUrl.port, 10) : isHttps ? 443 : 80,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Length": Buffer.byteLength(body),
+        },
+        timeout: 10000,
+      };
+
+      if (isHttps) {
+        options.rejectUnauthorized = this.config.rejectUnauthorized;
+
+        // mTLS: CA Root Certificate verification
+        if (this.config.tlsCaCertPath && fs.existsSync(this.config.tlsCaCertPath)) {
+          try {
+            options.ca = fs.readFileSync(this.config.tlsCaCertPath);
+          } catch (e: any) {
+            edgeLogger.warn(`Failed reading TLS CA certificate: ${e.message}`);
+          }
+        }
+
+        // mTLS: Client Certificate
+        if (this.config.tlsClientCertPath && fs.existsSync(this.config.tlsClientCertPath)) {
+          try {
+            options.cert = fs.readFileSync(this.config.tlsClientCertPath);
+          } catch (e: any) {
+            edgeLogger.warn(`Failed reading TLS Client certificate: ${e.message}`);
+          }
+        }
+
+        // mTLS: Client Private Key
+        if (this.config.tlsClientKeyPath && fs.existsSync(this.config.tlsClientKeyPath)) {
+          try {
+            options.key = fs.readFileSync(this.config.tlsClientKeyPath);
+          } catch (e: any) {
+            edgeLogger.warn(`Failed reading TLS Client key: ${e.message}`);
+          }
+        }
+      }
+
+      const client = isHttps ? https : http;
+      const req = client.request(options, (res) => {
+        let responseData = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          responseData += chunk;
+        });
+        res.on("end", () => {
+          resolve({
+            statusCode: res.statusCode || 500,
+            statusMessage: res.statusMessage,
+            data: responseData,
+          });
+        });
+      });
+
+      req.on("error", (err) => {
+        reject(err);
+      });
+
+      req.on("timeout", () => {
+        req.destroy(new Error(`Timeout connecting to ${targetUrl} (10s)`));
+      });
+
+      req.write(body);
+      req.end();
+    });
+  }
+
+  /**
+   * Transmits a batch using HMAC-SHA256 cryptographic signing and real mTLS/HTTPS
    */
   public async transmitBatch(batch: { batchId: string; points: IndustrialDataPoint[] }): Promise<boolean> {
     const timestampIso = new Date().toISOString();
@@ -166,19 +253,16 @@ export class BioAzucarEdgeDaemon {
       "x-bioazucar-tenant-id": this.config.tenantId,
     };
 
+    const startTime = Date.now();
     try {
-      const response = await fetch(this.config.cloudSyncUrl, {
-        method: "POST",
-        headers,
-        body: bodyString,
-      });
+      const response = await this.executeHttpRequest(this.config.cloudSyncUrl, headers, bodyString);
+      const latencySeconds = (Date.now() - startTime) / 1000;
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`HTTP ${response.statusCode} ${response.statusMessage || "Error"}: ${response.data}`);
       }
 
-      const resData = (await response.json()) as { success?: boolean };
+      const resData = JSON.parse(response.data || "{}") as { success?: boolean };
       if (resData.success) {
         diskStoreAndForward.acknowledgeBatch(batch.batchId);
         this.totalTransmittedBatches++;
@@ -186,6 +270,23 @@ export class BioAzucarEdgeDaemon {
         this.lastSuccessfulSync = Date.now();
         this.consecutiveErrors = 0;
         this.lastErrorReason = null;
+
+        // Prometheus telemetry metrics
+        prometheusMetrics.incCounter("bioazucar_edge_transmitted_points_total", "Puntos de telemetría transmitidos", batch.points.length, {
+          node_id: this.config.edgeId,
+          tenant_id: this.config.tenantId,
+        });
+        prometheusMetrics.incCounter("bioazucar_edge_transmitted_batches_total", "Lotes de telemetría transmitidos", 1, {
+          node_id: this.config.edgeId,
+          tenant_id: this.config.tenantId,
+        });
+        prometheusMetrics.observeLatency("bioazucar_edge_sync_latency", "Latencia de sincronización con nube", latencySeconds);
+        prometheusMetrics.setGauge("bioazucar_edge_buffer_points", "Puntos en cola Store and Forward", diskStoreAndForward.getState().bufferedCount, {
+          node_id: this.config.edgeId,
+          tenant_id: this.config.tenantId,
+        });
+
+        edgeLogger.debug(`Batch ${batch.batchId} acknowledged (${batch.points.length} pts, ${latencySeconds.toFixed(3)}s)`);
         return true;
       } else {
         throw new Error("Cloud rejected batch acknowledgment without success flag");
@@ -193,12 +294,17 @@ export class BioAzucarEdgeDaemon {
     } catch (sendErr: any) {
       // On network failure or HTTP 5xx, safely roll back the batch into the buffer
       diskStoreAndForward.rollbackBatch(batch.batchId);
+      prometheusMetrics.incCounter("bioazucar_edge_sync_errors_total", "Errores de sincronización con nube", 1, {
+        node_id: this.config.edgeId,
+        tenant_id: this.config.tenantId,
+      });
+      edgeLogger.warn(`Transmission failed for batch ${batch.batchId}: ${sendErr.message}`);
       throw sendErr;
     }
   }
 
   /**
-   * Local IPC Health HTTP Watchdog for systemd / Kubernetes / Docker health checks
+   * Local IPC Health & Metrics HTTP Watchdog (systemd, Prometheus, K8s)
    */
   private startHealthServer(): void {
     try {
@@ -217,10 +323,16 @@ export class BioAzucarEdgeDaemon {
             lastErrorReason: this.lastErrorReason,
             bufferState: diskStoreAndForward.getState(),
             securityStandard: "IEC-62443-4-2 SL3",
+            mtlsConfigured: Boolean(this.config.tlsClientCertPath && this.config.tlsClientKeyPath),
           };
 
           res.writeHead(isHealthy ? 200 : 503, { "Content-Type": "application/json" });
           res.end(JSON.stringify(statusPayload, null, 2));
+        } else if (req.url === "/metrics") {
+          // OpenMetrics / Prometheus scrape endpoint
+          const metricsData = prometheusMetrics.scrape();
+          res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" });
+          res.end(metricsData);
         } else {
           res.writeHead(404);
           res.end();
@@ -228,10 +340,10 @@ export class BioAzucarEdgeDaemon {
       });
 
       this.healthServer.listen(this.config.healthPort, "0.0.0.0", () => {
-        console.log(`[DAEMON] Local Health Watchdog listening on port ${this.config.healthPort}`);
+        edgeLogger.info(`Local Health & Metrics Watchdog listening on port ${this.config.healthPort}`);
       });
-    } catch (srvErr) {
-      console.warn("[DAEMON] Could not start health HTTP server (port might be in use):", srvErr);
+    } catch (srvErr: any) {
+      edgeLogger.warn(`Could not start health HTTP server: ${srvErr.message}`);
     }
   }
 

@@ -1,7 +1,8 @@
 {
-  "name": "react-example",
+  "name": "bioazucar-4.0",
   "private": true,
-  "version": "0.0.0",
+  "version": "4.0.0",
+  "description": "BioAzúcar 4.0 — Unified Industrial Platform & Digital Twin for Sugar Mills & Biomass Cogeneration (IEC 62443 / ISA-95)",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

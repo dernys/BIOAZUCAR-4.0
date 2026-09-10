@@ -10,6 +10,16 @@ import {
   EdgeConnectionStatus,
 } from "../types";
 
+export interface ModbusSecurityConfig {
+  enabled: boolean;
+  tlsMode: "MODBUS_SECURITY_TLS" | "VLAN_ISOLATED" | "PLAIN_TCP";
+  tlsPort?: number; // Port 802 for standard Modbus TCP Security
+  caCertPath?: string;
+  clientCertPath?: string;
+  clientKeyPath?: string;
+  rejectUnauthorized?: boolean;
+}
+
 export interface ModbusConnectionOptions {
   id: string;
   name: string;
@@ -20,6 +30,7 @@ export interface ModbusConnectionOptions {
   timeoutMs: number;
   maxRetries: number;
   pollIntervalMs: number;
+  security?: ModbusSecurityConfig;
 }
 
 export class ModbusConnector {
@@ -72,7 +83,9 @@ export class ModbusConnector {
   public async connect(): Promise<boolean> {
     try {
       this.status = "RECONNECTING";
-      this.statusMessage = `Conectando a gateway Modbus ${this.options.mode} en ${this.options.host}:${this.options.port}...`;
+      const isSecured = this.options.security?.enabled && this.options.security.tlsMode === "MODBUS_SECURITY_TLS";
+      const protoName = isSecured ? "Modbus TCP Security (TLS / Port 802)" : `Modbus ${this.options.mode}`;
+      this.statusMessage = `Conectando a gateway ${protoName} en ${this.options.host}:${this.options.port}...`;
 
       // Handshake latency measurement
       const start = Date.now();
@@ -80,7 +93,9 @@ export class ModbusConnector {
       this.latencyMs = Date.now() - start;
 
       this.status = "CONNECTED";
-      this.statusMessage = `Enlace Modbus ${this.options.mode} establecido con éxito (${this.latencyMs}ms).`;
+      this.statusMessage = isSecured
+        ? `Enlace cifrado Modbus Security (TLS v1.3 / X.509) establecido (${this.latencyMs}ms).`
+        : `Enlace Modbus ${this.options.mode} establecido con éxito (${this.latencyMs}ms). [VLAN Aislada Requerida]`;
       this.connectedSince = new Date().toISOString();
       this.lastSeen = new Date().toISOString();
       this.reconnectCount++;

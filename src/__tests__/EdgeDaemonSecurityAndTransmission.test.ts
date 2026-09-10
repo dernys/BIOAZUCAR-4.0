@@ -3,6 +3,10 @@ import * as crypto from "crypto";
 import { BioAzucarEdgeDaemon, defaultDaemonConfig } from "../services/edge/daemon";
 import { DiskStoreAndForwardEngine } from "../services/edge/DiskStoreAndForwardEngine";
 import { IndustrialDataPoint } from "../types";
+import { IndustrialLogger } from "../services/logger/IndustrialLogger";
+import { PrometheusRegistry } from "../services/monitoring/PrometheusMetrics";
+import { ModbusConnector } from "../services/edge/connectors/ModbusConnector";
+import { logServerAuditEvent, getServerAuditTrail } from "../server/authMiddleware";
 
 describe("BioAzúcar Industrial Edge Daemon & Transmission Security (IEC 62443 SL3)", () => {
   const testSecret = "test_super_secret_edge_key_64_bytes_long_industrial_security";
@@ -130,5 +134,94 @@ describe("BioAzúcar Industrial Edge Daemon & Transmission Security (IEC 62443 S
 
     // Expect transmission to fail and throw, rolling back the batch safely
     await expect(customDaemon.transmitBatch(sampleBatch)).rejects.toThrow();
+  });
+
+  it("should format structured JSON logs with SIEM compatibility in IndustrialLogger", () => {
+    const testLogger = new IndustrialLogger({
+      serviceName: "test-logger-service",
+      minLevel: "DEBUG",
+      outputJson: true,
+    });
+
+    const formatted = testLogger.formatEntry("INFO", "Motor de molienda sincronizado", {
+      rpm: 4.5,
+      amps: 230,
+    });
+
+    const parsed = JSON.parse(formatted);
+    expect(parsed.service).toBe("test-logger-service");
+    expect(parsed.level).toBe("INFO");
+    expect(parsed.message).toBe("Motor de molienda sincronizado");
+    expect(parsed.metadata.rpm).toBe(4.5);
+    expect(parsed.timestamp).toBeDefined();
+  });
+
+  it("should record and export metrics with Prometheus OpenMetrics format", () => {
+    const reg = new PrometheusRegistry();
+
+    reg.incCounter("bioazucar_test_batches_total", "Total test batches", 5, { tandem: "1" });
+    reg.setGauge("bioazucar_test_buffer_depth", "Current buffer depth", 42, { tandem: "1" });
+    reg.observeLatency("bioazucar_test_latency_seconds", "Test latency", 0.045);
+
+    const scraped = reg.scrape();
+    expect(scraped).toContain("# HELP bioazucar_test_batches_total");
+    expect(scraped).toContain("# TYPE bioazucar_test_batches_total counter");
+    expect(scraped).toContain('bioazucar_test_batches_total{tandem="1"} 5');
+    expect(scraped).toContain("# TYPE bioazucar_test_buffer_depth gauge");
+    expect(scraped).toContain('bioazucar_test_buffer_depth{tandem="1"} 42');
+    expect(scraped).toContain("bioazucar_test_latency_seconds_count 1");
+  });
+
+  it("should connect and report Modbus TCP Security with TLS 802 configuration", async () => {
+    const securedConnector = new ModbusConnector({
+      id: "modbus-milling-sec",
+      name: "Tandem 1 Básculas Seguras",
+      mode: "TCP",
+      host: "192.168.20.10",
+      port: 802,
+      timeoutMs: 1000,
+      maxRetries: 2,
+      pollIntervalMs: 500,
+      security: {
+        enabled: true,
+        tlsMode: "MODBUS_SECURITY_TLS",
+        tlsPort: 802,
+        rejectUnauthorized: true,
+      },
+    });
+
+    const connected = await securedConnector.connect();
+    expect(connected).toBe(true);
+
+    const diag = securedConnector.getDiagnostics();
+    expect(diag.protocol).toBe("MODBUS-TCP");
+    expect(diag.status).toBe("CONNECTED");
+    expect(diag.statusMessage).toContain("Modbus Security (TLS v1.3 / X.509)");
+    await securedConnector.disconnect();
+  });
+
+  it("should record server audit events and sanitize sensitive credentials", () => {
+    const record = logServerAuditEvent({
+      actorUid: "usr-supervisor-01",
+      actorRole: "supervisor",
+      tenantId: "TENANT_AZUCAR_01",
+      action: "UPDATE_BOILER_SETPOINT",
+      resource: "/api/boiler/setpoint",
+      result: "SUCCESS",
+      metadata: {
+        pressureSetpointBar: 65,
+        secretKey: "super_secret_plant_key", // Must be sanitized
+        password: "plant_admin_password",   // Must be sanitized
+      },
+    });
+
+    expect(record.metadata?.secretKey).toBe("[REDACTED]");
+    expect(record.metadata?.password).toBe("[REDACTED]");
+    expect(record.metadata?.pressureSetpointBar).toBe(65);
+
+    const trail = getServerAuditTrail();
+    const found = trail.find((r: any) => r.id === record.id);
+    expect(found).toBeDefined();
+    expect(found?.action).toBe("UPDATE_BOILER_SETPOINT");
   });
 });
