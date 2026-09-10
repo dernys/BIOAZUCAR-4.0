@@ -120,8 +120,8 @@ El demonio de borde se ejecuta de manera autónoma en computadores industriales 
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/bioazucar/bioazucar40.git
-cd bioazucar40
+git clone https://github.com/dernys/BIOAZUCAR-4.0.git
+cd BIOAZUCAR-4.0
 
 # 2. Ejecutar script de despliegue automatizado con privilegios de root
 sudo bash deploy/deploy-edge.sh

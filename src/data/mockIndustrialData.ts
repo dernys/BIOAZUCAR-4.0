@@ -1,4 +1,4 @@
-import { EquipmentItem, AlarmEvent, CaneBatch, WorkOrder, IIoTNode, ProcessTag, TelemetryData } from "../types";
+import { EquipmentItem, AlarmEvent, CaneBatch, WorkOrder, IIoTNode, ProcessTag, TelemetryData, AuditLogEntry } from "../types";
 
 export const INITIAL_TELEMETRY: TelemetryData = {
   tch: 452.4,
@@ -730,7 +730,7 @@ export const INITIAL_RBAC_ROLES = [
   },
 ];
 
-export const INITIAL_AUDIT_LOGS = [
+export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   {
     id: "aud-901",
     timestamp: "2026-08-28 16:45:12",

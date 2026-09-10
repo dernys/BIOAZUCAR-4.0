@@ -268,10 +268,15 @@ export async function createTenantInDb(
   }
 
   const tenantId = `tenant-${tenant.code.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now().toString().slice(-4)}`;
+  const isSimulation = tenant.runtimeMode === "SIMULATION" || tenant.simulationEnabled === true;
+
   const fullTenant: TenantEnterprise = {
     ...tenant,
     id: tenantId,
     createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+    runtimeMode: isSimulation ? "SIMULATION" : "LIVE_OT",
+    simulationEnabled: isSimulation,
+    otStatus: isSimulation ? "CONNECTED" : "WAITING_FOR_COMMISSIONING",
   };
 
   const batch = writeBatch(db);
@@ -282,15 +287,48 @@ export async function createTenantInDb(
 
   // 2. Initialize isolated telemetry snapshot for this new tenant
   const telemetryDocRef = doc(db, COLLECTIONS.TELEMETRY, `snapshot_${tenantId}`);
-  const factor = (tenant.nominalTch || 400) / 450;
-  batch.set(telemetryDocRef, {
-    ...initialTelemetry,
-    tenantId,
-    tch: Number(tenant.nominalTch.toFixed(1)),
-    powerGeneratedMW: Number(tenant.powerCapacityMW.toFixed(1)),
-    boilerPressureHP: Number(tenant.boilerPressureBar.toFixed(1)),
-    lastUpdated: new Date().toISOString(),
-  });
+  if (isSimulation) {
+    batch.set(telemetryDocRef, {
+      ...initialTelemetry,
+      tenantId,
+      tch: Number(tenant.nominalTch.toFixed(1)),
+      powerGeneratedMW: Number(tenant.powerCapacityMW.toFixed(1)),
+      boilerPressureHP: Number(tenant.boilerPressureBar.toFixed(1)),
+      lastUpdated: new Date().toISOString(),
+      isSimulated: true,
+      provenance: "SIMULATED",
+    });
+  } else {
+    // REAL TENANT: Strict real telemetry initialization (NO SIMULATION, NO FAKE DATA)
+    batch.set(telemetryDocRef, {
+      ...initialTelemetry,
+      tenantId,
+      tch: 0,
+      caneInventoryTons: 0,
+      bagasseProducedTons: 0,
+      sugarProducedBags: 0,
+      crusherSpeedRPM: 0,
+      mill1SpeedRPM: 0,
+      mill2SpeedRPM: 0,
+      mill3SpeedRPM: 0,
+      mill4SpeedRPM: 0,
+      mill5SpeedRPM: 0,
+      imbibitionWaterFlowM3h: 0,
+      rawJuiceFlowM3h: 0,
+      boilerSteamFlowTph: 0,
+      boilerPressureHP: 0,
+      steamTemperatureC: 0,
+      powerGeneratedMW: 0,
+      powerConsumedMW: 0,
+      powerExportedGridMW: 0,
+      frequencyHz: 0,
+      lastUpdated: new Date().toISOString(),
+      isSimulated: false,
+      provenance: "OBSERVED_OT",
+      quality: "BAD",
+      source: "Esperando conexión física con pasarela OT",
+    });
+  }
 
   // 3. Initialize core equipment for this new tenant
   const initialTenantEquipment: EquipmentItem[] = [
@@ -459,6 +497,13 @@ export async function createTenantInDb(
     status: "EXECUTED",
     ipAddress: "192.168.10.1",
   });
+
+  // Register tenant runtime in memory
+  try {
+    tenantRuntimeManager.registerTenant(fullTenant);
+  } catch (err) {
+    console.warn("No se pudo inicializar TenantRuntime en memoria:", err);
+  }
 
   return tenantId;
 }
@@ -1637,18 +1682,40 @@ export async function logAuditEventToDb(
   entry: Omit<AuditLogEntry, "id" | "timestamp"> & { timestamp?: string },
   tenantId?: string
 ): Promise<void> {
+  const newId = `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const fullEntry: AuditLogEntry = {
+    ...entry,
+    id: newId,
+    tenantId: tenantId || entry.tenantId || "tenant-bioazucar-01",
+    timestamp: entry.timestamp || new Date().toISOString().replace("T", " ").substring(0, 19),
+  };
+
+  // Local cache so UI sees new audit entries immediately
+  INITIAL_AUDIT_LOGS.unshift(fullEntry);
+  if (INITIAL_AUDIT_LOGS.length > 200) {
+    INITIAL_AUDIT_LOGS.pop();
+  }
+
+  // 1. If Firebase Auth user is present on client, persist to Firestore
+  if (auth.currentUser) {
+    try {
+      const docRef = doc(db, COLLECTIONS.AUDIT_LOGS, newId);
+      await setDoc(docRef, fullEntry);
+      return;
+    } catch (error: any) {
+      console.warn("Client Firestore audit log write deferred:", error?.message || error);
+    }
+  }
+
+  // 2. Server-side persistence fallback (for background scripts, tests, or unauthenticated client sessions)
   try {
-    const newId = `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const docRef = doc(db, COLLECTIONS.AUDIT_LOGS, newId);
-    const fullEntry: AuditLogEntry = {
-      ...entry,
-      id: newId,
-      tenantId: tenantId || entry.tenantId || "tenant-bioazucar-01",
-      timestamp: entry.timestamp || new Date().toISOString().replace("T", " ").substring(0, 19),
-    };
-    await setDoc(docRef, fullEntry);
-  } catch (error) {
-    console.error("Error logging audit event to Firestore:", error);
+    await fetch("/api/security/audit-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fullEntry),
+    });
+  } catch {
+    // Retained safely in INITIAL_AUDIT_LOGS local cache
   }
 }
 

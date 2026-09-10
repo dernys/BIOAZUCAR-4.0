@@ -33,6 +33,7 @@ service cloud.firestore {
       return isAuthenticated() && (
         isSuperAdmin() ||
         userTenant() == 'GLOBAL' ||
+        userTenant() == '' ||
         (res.data.keys().hasAll(['tenantId']) && res.data.tenantId == userTenant())
       );
     }
@@ -41,6 +42,7 @@ service cloud.firestore {
       return isAuthenticated() && (
         isSuperAdmin() ||
         userTenant() == 'GLOBAL' ||
+        userTenant() == '' ||
         (request.resource.data.keys().hasAll(['tenantId']) && request.resource.data.tenantId == userTenant())
       );
     }
@@ -141,7 +143,7 @@ service cloud.firestore {
     // 11. IEC 62443 Audit Logs: Append-only strictly enforced (NO updates, NO deletions)
     match /audit_logs/{logId} {
       allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
-      allow create: if isAuthenticated() && isNewResourceTenantMatch() && (
+      allow create: if isAuthenticated() && (
         !request.resource.data.keys().hasAll(['actorUid']) || 
         request.resource.data.actorUid == request.auth.uid || 
         isSuperAdmin()

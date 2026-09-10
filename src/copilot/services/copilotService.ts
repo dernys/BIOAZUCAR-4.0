@@ -32,9 +32,19 @@ export class CopilotService {
     // 1. Robust Intent Classification BEFORE any response generation
     const classification: IntentClassificationResult = CopilotIntentClassifier.classify(message, context);
 
-    // Short-circuit pure capabilities, unknown, and integration queries to guarantee 100% adherence
-    // and prevent any random boiler / steam / Hugot explanations from interfering
-    if (classification.intent === "CAPABILITIES" || classification.intent === "UNKNOWN" || classification.intent === "INTEGRATION") {
+    // Short-circuit pure deterministic intents to guarantee 100% adherence
+    const deterministicIntents = [
+      "CAPABILITIES",
+      "PROMETHEUS_METRICS",
+      "MODEL_CALIBRATION",
+      "EDGE_DAEMON_DEPLOYMENT",
+      "TENANT_PROVISIONING",
+      "CONNECTION_CONFIG",
+      "STANDARDS",
+      "INTEGRATION",
+    ];
+
+    if (deterministicIntents.includes(classification.intent)) {
       return this.generateDeterministicResponse(options, startTime, classification);
     }
 
@@ -872,6 +882,337 @@ BioAzúcar soporta arquitectura híbrida OT/IT desacoplada mediante el **Industr
 - **Flujo de Datos**: \`Fuentes OT ➔ Conectores Edge ➔ Normalización ISA-95 ➔ UNS Hub ➔ BioAzúcar ➔ Copilot\`.
 - **Aislamiento Ciberseguro**: Red OT (Nivel 2/3) aislada mediante doble tarjeta de red (Dual NIC) y colas Store & Forward.`;
         }
+        break;
+      }
+
+      // ======================================================================
+      // 15.1 PROMETHEUS & OBSERVABILITY METRICS (/metrics:3000)
+      // ======================================================================
+      case "PROMETHEUS_METRICS": {
+        toolsExecuted.push("get_procedure");
+        responseText = `### 📊 Levantamiento y Verificación de Scrape Prometheus en BioAzúcar 4.0
+
+BioAzúcar 4.0 expone de forma nativa métricas de planta en formato **OpenMetrics v0.0.4** a través del endpoint \`GET /metrics\` en el puerto \`3000\`.
+
+#### 1. Verificación Inmediata del Endpoint (/metrics)
+Ejecuta desde terminal para validar que el servicio esté levantado y respondiendo:
+\`\`\`bash
+# 1. Comprobar encabezados HTTP y estado 200 OK
+curl -i http://localhost:3000/metrics
+
+# 2. Filtrar métricas canónicas del ingenio
+curl -s http://localhost:3000/metrics | grep -E "bioazucar_milling|bioazucar_boiler|bioazucar_power"
+\`\`\`
+
+#### 2. Configuración en Prometheus (\`prometheus.yml\`)
+En tu servidor de monitoreo Prometheus, añade el siguiente bloque bajo \`scrape_configs\`:
+\`\`\`yaml
+scrape_configs:
+  - job_name: 'bioazucar-scada'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['127.0.0.1:3000']
+        labels:
+          tenant: '${activeTenant?.code || "CENTRAL-01"}'
+          plant: '${activeTenant?.name || "BioAzúcar Central"}'
+          environment: 'production'
+\`\`\`
+Recarga Prometheus con: \`curl -X POST http://localhost:9090/-/reload\` (o \`sudo systemctl restart prometheus\`).
+
+#### 3. Verificación de Estado en Prometheus y BioAzúcar UI
+- **Prometheus Web UI**: Navega a \`http://<prometheus-ip>:9090/targets\`. El target \`bioazucar-scada\` debe figurar en estado **UP** (1/1 activo).
+- **Consultas PromQL Esenciales**:
+  - \`bioazucar_milling_tch\`: Molienda horaria en tiempo real.
+  - \`bioazucar_boiler_pressure_bar\`: Presión de domo de caldera HP (64.6 bar).
+  - \`bioazucar_power_generation_mw\`: Generación eléctrica turbogenerador (32.6 MW).
+  - \`rate(bioazucar_security_events_total[5m])\`: Tasa de eventos auditados IEC 62443.
+- **En la Interfaz BioAzúcar**: Pulsa el badge **"Prometheus"** en el footer o abre el modal *Origen de Datos & Conexión* ➔ pestaña *Prometheus & Métricas* ➔ pulsa **"Consultar /metrics en Vivo"** para inspeccionar las métricas en tiempo real.`;
+
+        actions.push(
+          {
+            id: "act-open-conn-modal",
+            type: "NAVIGATE",
+            label: "Ver Métricas en Modal Conexiones",
+            payload: { targetRoute: "uns_hub" },
+            level: 1,
+          },
+          {
+            id: "act-nav-dashboard",
+            type: "NAVIGATE",
+            label: "Ver Dashboard Operativo",
+            payload: { targetRoute: "dashboard" },
+            level: 1,
+          }
+        );
+        break;
+      }
+
+      // ======================================================================
+      // 15.2 MODEL CALIBRATION & CONTROL LOOPS (E. HUGOT & ASME PTC 4)
+      // ======================================================================
+      case "MODEL_CALIBRATION": {
+        toolsExecuted.push("get_procedure");
+        responseText = `### ⚙️ Calibración de Lazos de Control de Molienda (E. Hugot) y Balance Térmico (ASME PTC 4)
+
+BioAzúcar 4.0 cuenta con el motor matemático **SugarMillModelCalibrator** y modelos de primeros principios de ingeniería azucarera.
+
+---
+
+#### I. Calibración de Molienda según Fórmulas Canónicas de E. Hugot
+1. **Fórmula Canónica de Extracción de Sacarosa**:
+   $$E = 100 - \\frac{100 - E_0}{1 + k_w \\cdot (W / F)}$$
+   - $E$: Extracción de sacarosa en tándem (%).
+   - $E_0$: Extracción en seco base sin imbibición (nominal 68.5% según Hugot).
+   - $W / F$: Relación agua de imbibición sobre fibra en caña ($W = \\text{\\% agua sobre caña}$, $F = \\text{\\% fibra en caña}$, típicamente 12.5% a 14.5%).
+   - $k_w$: Coeficiente de imbibición compuesta (rango óptimo 1.8 a 2.5).
+
+2. **Sintonización del Lazo de Imbibición (FIC)**:
+   - **Ratio W/F Óptimo**: Configurado entre **2.0 y 2.5** (equivalente a 28% - 32% de agua sobre caña).
+   - **Lazo de Control en Cascada**: El pesaje dinámico de caña (TCH) fija la consigna de caudal a la bomba de agua caliente con variador VFD.
+   - **Temperatura de Imbibición**: Mantener entre **60°C y 68°C**. Temperaturas > 70°C disuelven ceras de la corteza y generan patinaje de mazas; temperaturas < 55°C reducen la permeabilización celular de sacarosa.
+
+3. **Presión Hidráulica y Abertura de Mazas**:
+   - **Presión Hidráulica**: Calibrar acumuladores óleo-neumáticos en vírgenes a **220 - 250 bar** (35 a 45 toneladas por pie lineal de maza).
+   - **Abertura de Mazas (Ratio Hugot)**: Relación de abertura de entrada a salida ($E_{in} / E_{out}$) calibrada en **1.8:1 a 2.2:1** para asegurar colchón de bagazo homogéneo y humedad final < 50%.
+
+4. **Calibración Asistida por BioAI**:
+   - La clase \`SugarMillModelCalibrator.calibrateHugot(samples)\` realiza optimización por Grid Search (paso 0.02) contrastando con muestras de laboratorio de turno (Pol en caña, Pol en bagazo, humedad) para recalibrar $k_w$ minimizando el RMSE.
+
+---
+
+#### II. Calibración del Balance Térmico de Caldera de Biomasa según ASME PTC 4
+1. **Método Indirecto de Pérdidas Térmicas**:
+   $$\\eta_{\\text{ASME}} = 100 - (L_{gas} + L_{hum} + L_H + L_{rad} + L_{inq})$$
+   - $L_{gas}$: Pérdida por calor sensible en gases secos: $\\frac{(T_{gas} - T_{amb}) \\times 0.05}{21 - O_2\\%}$.
+   - $L_{hum}$: Pérdida por humedad en bagazo (vaporización de agua): $\\approx M_{hum} \\times 0.12\\%$.
+   - $L_{rad}$: Pérdidas por radiación y convección hacia el ambiente (calibrado en **1.45%**).
+   - $L_{inq}$: Pérdidas por incombustibles y carbono en cenizas (calibrado en **1.15%**).
+
+2. **Poder Calorífico Inferior (PCI) del Bagazo**:
+   $$PCI = 4250 - 48.5 \\cdot W - 42.5 \\cdot B \\text{ (kcal/kg)}$$
+   - $W$: Humedad del bagazo (% base húmeda, nominal 49.5% - 50.5%).
+   - $B$: Brix de la humedad residual (% sacarosa).
+
+3. **Lazo de Control de Combustión & $O_2$ Trim**:
+   - Calibrar lazo cruzado manteniendo **$O_2$ en gases de chimenea entre 3.8% y 4.5%** modulando el tiro forzado (FD fan) y tiro inducido (ID fan).
+   - Mantener tiro en hogar negativo entre **-5 y -10 mm $H_2O$** para evitar fugas de gases calientes y sobrepresión.
+   - El optimizador \`SugarMillModelCalibrator.calibrateBoilerLosses\` audita el factor de vaporización (nominal 2.15 a 2.30 kg vapor HP / kg bagazo).`;
+
+        actions.push(
+          {
+            id: "act-nav-scada",
+            type: "NAVIGATE",
+            label: "Ir al SCADA Molienda",
+            payload: { targetRoute: "scada" },
+            level: 1,
+          },
+          {
+            id: "act-nav-energy",
+            type: "NAVIGATE",
+            label: "Ir a Cogeneración & Caldera",
+            payload: { targetRoute: "energy_dispatch" },
+            level: 1,
+          },
+          {
+            id: "act-nav-ai",
+            type: "NAVIGATE",
+            label: "Abrir Centro BioAI",
+            payload: { targetRoute: "ai_center" },
+            level: 1,
+          }
+        );
+        break;
+      }
+
+      // ======================================================================
+      // 15.3 INDUSTRIAL EDGE DAEMON DEPLOYMENT & REPOSITORY (IEC 62443 L2/L3)
+      // ======================================================================
+      case "EDGE_DAEMON_DEPLOYMENT": {
+        toolsExecuted.push("get_procedure");
+        responseText = `### 🛡️ Despliegue y Configuración del Industrial Edge Daemon (IEC 62443 L2/L3)
+
+El **BioAzúcar Industrial Edge Daemon** se ejecuta de forma autónoma en computadores industriales (IPC Advantech, Siemens, Kontron o Raspberry Pi Industrial) para adquirir datos OT locales, aplicar compresión SDT, almacenar en buffer Store & Forward (SAF) y transmitir con firma HMAC-SHA256.
+
+El repositorio oficial de BioAzúcar 4.0 está ubicado en:
+🌐 **\`https://github.com/dernys/BIOAZUCAR-4.0\`**
+
+---
+
+#### 1. Despliegue Rápido Automatizado en Servidor Linux (systemd)
+\`\`\`bash
+# 1. Clonar el repositorio oficial
+git clone https://github.com/dernys/BIOAZUCAR-4.0.git
+cd BIOAZUCAR-4.0
+
+# 2. Ejecutar el script de despliegue con privilegios de root
+sudo bash deploy/deploy-edge.sh
+\`\`\`
+El script realiza automáticamente:
+- Crea el usuario y grupo de sistema sin login: \`otuser:otgroup\`.
+- Compila con \`esbuild\` el bundle autónomo a \`/opt/bioazucar-edge/edge-daemon.cjs\`.
+- Crea los directorios seguros \`/var/lib/bioazucar-edge\` (permisos 0750) y \`/var/log/bioazucar\` (permisos 0755).
+- Genera el archivo de entorno seguro \`/etc/bioazucar/edge.env\` (permisos 0600).
+- Instala e inicia la unidad \`systemd\`: \`/etc/systemd/system/bioazucar-edge.service\`.
+
+---
+
+#### 2. Configuración del Archivo de Entorno (\`/etc/bioazucar/edge.env\`)
+\`\`\`ini
+# Identidad del Nodo Edge
+EDGE_NODE_ID=edge-central-01
+TENANT_ID=${activeTenant?.code || "CENTRAL-01"}
+
+# Endpoint Central de Ingesta (BioAzúcar 4.0)
+INGESTION_URL=http://127.0.0.1:3000
+INGESTION_INTERVAL_MS=1000
+
+# Seguridad Criptográfica (FIPS 198-1 HMAC-SHA256)
+EDGE_HMAC_SECRET=c6f4a8b29e01d35a8123456789abcdef0123456789abcdef0123456789abcdef
+
+# Resiliencia Store and Forward (SAF)
+SAF_ENABLED=true
+SAF_DIR=/var/lib/bioazucar-edge
+SAF_MAX_ENTRIES=50000
+
+# Compresión de Series Temporales (Swinging Door Trending)
+COMPRESSION_ENABLED=true
+SDT_COMPRESSION_DEV=0.01
+
+# Conectividad OT de Planta (Zona 2/3 IEC 62443)
+OPCUA_ENDPOINT=opc.tcp://192.168.10.50:4840
+MODBUS_HOST=192.168.10.60
+MODBUS_PORT=502
+
+# Watchdog HTTP Local de Diagnóstico
+HEALTH_PORT=9099
+\`\`\`
+
+---
+
+#### 3. Verificación Operativa y Diagnóstico
+\`\`\`bash
+# Estado del servicio nativo
+sudo systemctl status bioazucar-edge
+
+# Monitoreo de logs en vivo
+journalctl -u bioazucar-edge -f
+
+# Consultar Watchdog de Salud Local
+curl http://127.0.0.1:9099/health
+# Retorna: {"status":"UP","saf":"HEALTHY","latencyMs":12,"uptime":...}
+\`\`\`
+
+#### 4. Despliegue con Docker Compose (Host Networking Dual-NIC)
+\`\`\`bash
+docker compose -f deploy/docker-compose.edge.yml up -d
+\`\`\``;
+
+        actions.push(
+          {
+            id: "act-nav-unshub",
+            type: "NAVIGATE",
+            label: "Ver Diagnósticos en Hub UNS",
+            payload: { targetRoute: "uns_hub" },
+            level: 1,
+          },
+          {
+            id: "act-nav-conn",
+            type: "NAVIGATE",
+            label: "Modal Conexiones Industriales",
+            payload: { targetRoute: "uns_hub" },
+            level: 1,
+          }
+        );
+        break;
+      }
+
+      // ======================================================================
+      // 15.4 TENANT PROVISIONING (CENTRAL PROVISIONING WIZARD)
+      // ======================================================================
+      case "TENANT_PROVISIONING": {
+        toolsExecuted.push("get_procedure");
+        responseText = `### 🏭 Asistente de Aprovisionamiento de Centrales (Tenants) en BioAzúcar 4.0
+
+El sistema permite aprovisionar y almacenar las configuraciones reales de cada ingenio a través del **CentralProvisioningWizard** (accesible en el módulo *Gestión de Centrales* con rol Superadmin):
+
+1. **Identidad & Jurisdicción**: Nombre corporativo, código único de partición (ej. \`CENTRAL-SANTA-ELENA\`), RIF/RFC fiscal, país, región cañera y color corporativo.
+2. **Tándem de Molienda Real**: Molienda nominal en TCH, número de molinos en el tándem (ej. 4, 5, 6), diámetro y longitud de mazas (m), velocidad nominal (RPM), % de imbibición sobre caña y % de fibra en caña.
+3. **Generación de Vapor HP Real**: Flujo de vapor sobrecalentado (t/h), presión de domo (bar), temperatura (°C) y humedad de bagazo esperada (%). Cálculo estequiométrico Hugot y ASME PTC 4 asistido por IA.
+4. **Infraestructura OT & Redes**: Protocolo industrial primario (OPC-UA, Modbus TCP, MQTT Sparkplug B, Siemens S7), endpoint URL o IP (ej. \`opc.tcp://192.168.10.50:4840\`), puerto, modo de cifrado X.509 (\`Basic256Sha256 / SignAndEncrypt\`), IP del gateway Edge y observabilidad Prometheus (\`/metrics:3000\`).
+5. **Administrador de Planta**: Creación transaccional del usuario administrador inicial y persistencia con partición aislada en Cloud Firestore.`;
+
+        actions.push({
+          id: "act-nav-enterprises",
+          type: "NAVIGATE",
+          label: "Ir a Gestión de Centrales",
+          payload: { targetRoute: "enterprises" },
+          level: 1,
+        });
+        break;
+      }
+
+      // ======================================================================
+      // 15.5 CENTRALIZED CONNECTION CONFIGURATION
+      // ======================================================================
+      case "CONNECTION_CONFIG": {
+        toolsExecuted.push("get_procedure");
+        responseText = `### 🔌 Conexiones Requeridas para el Funcionamiento de BioAzúcar 4.0
+
+El sistema centraliza la configuración de todas las conexiones necesarias en el modal **'Origen de Datos & Conexión de Sistemas Industriales'** (accesible desde el badge del Header o el badge de Prometheus en el Footer):
+
+1. **Pasarela OT Industrial (Piso de Planta)**:
+   - **Dónde**: Modal de Conexión Industrial -> Sección *Configuración de Pasarela Física*.
+   - **Protocolos Soportados**: **OPC-UA** (IEC 62541, puerto 4840), **MQTT Sparkplug B** (puerto 8883), **Modbus-TCP** (puerto 502) y **Siemens S7** (puerto 102).
+   - **Seguridad**: Cifrado simétrico/asimétrico X.509 (\`Basic256Sha256\`, \`SignAndEncrypt\`).
+   - **Modos**: *Simulación* (Digital Twin), *Conexión a Sistema Real* (datos de campo) y *Modo Híbrido* (Gemelo Sombra).
+
+2. **Observabilidad Prometheus / OpenMetrics**:
+   - **Dónde**: Pestaña *Prometheus & Métricas* del modal de conexión, o consumiendo el endpoint backend:
+   - **Endpoint**: \`GET /metrics\` en el puerto \`3000\`.
+   - **Métricas**: Expone \`bioazucar_milling_tch\`, \`bioazucar_boiler_pressure_bar\`, \`bioazucar_power_generation_mw\`, \`bioazucar_flue_gas_o2_percent\`, etc.
+   - **Scraping**: Bloque listo para \`prometheus.yml\` con \`job_name: 'bioazucar-scada'\` e intervalo de 15 segundos.
+
+3. **Base de Datos & Persistencia (Cloud Firestore)**:
+   - Sincronización multi-tenant para empresas, usuarios, telemetría y auditoría criptográfica con monitoreo de latencia.
+
+4. **ERP & Básculas (EROS Connector)**:
+   - Interfaz con pesaje de caña de entrada, LIMS analítico y liquidación por ARE.`;
+
+        actions.push({
+          id: "act-nav-unshub",
+          type: "NAVIGATE",
+          label: "Abrir Hub UNS / Conexiones",
+          payload: { targetRoute: "uns_hub" },
+          level: 1,
+        });
+        break;
+      }
+
+      // ======================================================================
+      // 15.6 STANDARDS & NORMS
+      // ======================================================================
+      case "STANDARDS": {
+        toolsExecuted.push("get_system_info");
+        responseText = `### 📜 Estándares Industriales Implementados en BioAzúcar 4.0
+
+BioAzúcar 4.0 cumple rigurosamente con los siguientes estándares de manufactura inteligente:
+
+- **ISA-95**: Arquitectura de integración Empresa-Control, jerarquía de 5 niveles y Unified Namespace (UNS Topic Namespace) para desacoplar productores y consumidores de datos.
+- **ISA-18.2 / ANSI/ISA-18.2**: Gestión del ciclo de vida de alarmas industriales (racionalización, priorización Baja/Media/Alta/Crítica, estados Normal, Activo, Reconocido y Suprimido, y mitigación de inundación de alarmas).
+- **ASME PTC 4**: Generadores de vapor por combustión de biomasa, cálculos estequiométricos de balance de masa y energía en calderas de bagazo y pérdidas de calor por gases de combustión.
+- **IEC 62443 (Nivel SL-3)**: Ciberseguridad para sistemas de automatización industrial, segmentación de zonas y conductos, cifrado de telemetría mTLS/X.509, principio de mínimos privilegios y bitácora criptográfica inmutable.
+- **ISO 22400-2**: Definición estandarizada de indicadores clave de desempeño (KPIs) para operaciones de manufactura, incluyendo el cálculo de OEE = Disponibilidad × Rendimiento × Calidad.
+- **E. Hugot (Handbook of Cane Sugar Engineering)**: Modelado canónico de extracción en tándem de molienda, presiones hidráulicas de mazas y capacidad de molienda continua.`;
+
+        actions.push({
+          id: "act-nav-dashboard",
+          type: "NAVIGATE",
+          label: "Ir al Dashboard",
+          payload: { targetRoute: "dashboard" },
+          level: 1,
+        });
         break;
       }
 

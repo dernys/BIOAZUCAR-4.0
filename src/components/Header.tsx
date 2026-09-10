@@ -494,14 +494,14 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenCopilot && (
             <button
               onClick={onOpenCopilot}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition shadow-xs border ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition shadow-xs border ${
                 isLight
-                  ? "bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-900 font-bold"
-                  : "bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300"
+                  ? "bg-cyan-100/90 hover:bg-cyan-200/90 border-cyan-400 text-cyan-950 font-bold shadow-xs ring-1 ring-cyan-500/20"
+                  : "bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 font-bold"
               }`}
               title="Abrir BioAzúcar Copilot AI (Asistente Industrial)"
             >
-              <Sparkles className={`w-3.5 h-3.5 ${isLight ? "text-cyan-700" : "text-cyan-400"} animate-pulse`} />
+              <Sparkles className={`w-3.5 h-3.5 ${isLight ? "text-cyan-800" : "text-cyan-400"} animate-pulse`} />
               <span className="hidden sm:inline font-bold">Copilot</span>
             </button>
           )}
@@ -510,14 +510,14 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenPresentation && (
             <button
               onClick={onOpenPresentation}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition shadow-xs border ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition shadow-xs border ${
                 isLight
-                  ? "bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900 font-bold"
-                  : "bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300"
+                  ? "bg-emerald-100/90 hover:bg-emerald-200/90 border-emerald-400 text-emerald-950 font-bold shadow-xs ring-1 ring-emerald-500/20"
+                  : "bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold"
               }`}
               title="Abrir Presentación Ejecutiva / Pitch Deck 4.0 para Inversionistas y Clientes"
             >
-              <Presentation className={`w-3.5 h-3.5 ${isLight ? "text-emerald-700" : "text-emerald-400"}`} />
+              <Presentation className={`w-3.5 h-3.5 ${isLight ? "text-emerald-800" : "text-emerald-400"}`} />
               <span className="hidden sm:inline font-bold">Deck 4.0</span>
             </button>
           )}
@@ -526,14 +526,14 @@ export const Header: React.FC<HeaderProps> = ({
           {isSuper && onOpenTenantsModal && (
             <button
               onClick={onOpenTenantsModal}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono transition border ${
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono transition border ${
                 isLight
-                  ? "bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-900 font-bold"
-                  : "bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300"
+                  ? "bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-900 font-bold shadow-xs"
+                  : "bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 font-bold"
               }`}
               title="Gestión de Empresas & Multi-Tenant"
             >
-              <Building2 className={`w-3.5 h-3.5 ${isLight ? "text-cyan-700" : "text-cyan-400"}`} />
+              <Building2 className={`w-3.5 h-3.5 ${isLight ? "text-slate-800" : "text-cyan-400"}`} />
               <span className="hidden md:inline font-bold">Empresas</span>
             </button>
           )}
@@ -542,14 +542,14 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenConfigVerification && (
             <button
               onClick={onOpenConfigVerification}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono transition border ${
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono transition border ${
                 isLight
-                  ? "bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800 shadow-xs"
-                  : "bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300"
+                  ? "bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-900 font-bold shadow-xs"
+                  : "bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold"
               }`}
               title="Verificar y Gestionar Configuración del Sistema (CRUD)"
             >
-              <Settings className={`w-3.5 h-3.5 ${isLight ? "text-emerald-700" : "text-emerald-400"}`} />
+              <Settings className={`w-3.5 h-3.5 ${isLight ? "text-emerald-800" : "text-emerald-400"}`} />
               <span className="hidden md:inline font-bold">Config</span>
             </button>
           )}
@@ -557,14 +557,14 @@ export const Header: React.FC<HeaderProps> = ({
           {/* RBAC Security Center Button */}
           <button
             onClick={onOpenRbacModal}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono transition border ${
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono transition border ${
               isLight
-                ? "bg-purple-50 hover:bg-purple-100 border-purple-300 text-purple-900 font-bold"
-                : "bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300"
+                ? "bg-purple-100/90 hover:bg-purple-200/90 border-purple-400 text-purple-950 font-bold shadow-xs ring-1 ring-purple-500/20"
+                : "bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 font-bold"
             }`}
             title="Matriz de Seguridad y Privilegios RBAC (IEC 62443)"
           >
-            <Shield className={`w-3.5 h-3.5 ${isLight ? "text-purple-700" : "text-purple-400"}`} />
+            <Shield className={`w-3.5 h-3.5 ${isLight ? "text-purple-800" : "text-purple-400"}`} />
             <span className="hidden lg:inline font-bold">RBAC</span>
           </button>
 

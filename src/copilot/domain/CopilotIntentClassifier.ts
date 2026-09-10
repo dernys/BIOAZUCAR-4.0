@@ -296,6 +296,159 @@ export class CopilotIntentClassifier {
     }
 
     // ========================================================================
+    // 3.5.1 PROMETHEUS & OPENMETRICS OBSERVABILITY (/metrics:3000)
+    // ========================================================================
+    const isPrometheusScrapeQuery =
+      clean.includes("prometheus") ||
+      clean.includes("scrape") ||
+      clean.includes("openmetrics") ||
+      clean.includes("metrics") ||
+      clean.includes("metricas prometheus") ||
+      clean.includes("endpoint metrics") ||
+      clean.includes("levantar y verificar el scrape") ||
+      clean.includes("verificar el scrape") ||
+      clean.includes("levantar prometheus") ||
+      clean.includes("verificar prometheus") ||
+      clean.includes("puerto 3000");
+
+    if (isPrometheusScrapeQuery && (clean.includes("prometheus") || clean.includes("metrics") || clean.includes("scrape") || clean.includes("openmetrics"))) {
+      return {
+        intent: "PROMETHEUS_METRICS",
+        confidence: 0.99,
+        reason: "Consulta sobre levantamiento, configuración y verificación de scrape Prometheus mediante endpoint /metrics en puerto 3000",
+        targetModule: "industrial_connections",
+        recommendedTool: "get_procedure",
+      };
+    }
+
+    // ========================================================================
+    // 3.5.2 MODEL CALIBRATION & CONTROL LOOPS (E. HUGOT & ASME PTC 4)
+    // ========================================================================
+    const isModelCalibrationQuery =
+      clean.includes("hugot") ||
+      clean.includes("asme ptc 4") ||
+      clean.includes("asme ptc") ||
+      clean.includes("calibrar los lazos de control") ||
+      clean.includes("calibrar lazos de control") ||
+      clean.includes("calibrar molienda") ||
+      clean.includes("calibrar caldera") ||
+      (clean.includes("calibrar") && (clean.includes("molienda") || clean.includes("caldera") || clean.includes("lazos") || clean.includes("modelo") || clean.includes("imbibicion"))) ||
+      (clean.includes("calibracion") && (clean.includes("molienda") || clean.includes("caldera") || clean.includes("lazos") || clean.includes("hugot") || clean.includes("asme"))) ||
+      clean.includes("sugarmillcalibrator") ||
+      clean.includes("coeficiente de imbibicion") ||
+      (clean.includes("kw") && clean.includes("imbibicion")) ||
+      (clean.includes("balance termico") && (clean.includes("asme") || clean.includes("caldera") || clean.includes("ptc 4")));
+
+    if (isModelCalibrationQuery) {
+      return {
+        intent: "MODEL_CALIBRATION",
+        confidence: 0.99,
+        reason: "Consulta sobre calibración físico-química de lazos de control de molienda (E. Hugot) y balance térmico de caldera (ASME PTC 4) asistido por BioAI",
+        targetModule: "scada",
+        recommendedTool: "get_procedure",
+      };
+    }
+
+    // ========================================================================
+    // 3.5.3 INDUSTRIAL EDGE DAEMON DEPLOYMENT & GITHUB REPO (IEC 62443 L2/L3)
+    // ========================================================================
+    const isEdgeDaemonDeploymentQuery =
+      (clean.includes("despliegue") && (clean.includes("edge") || clean.includes("daemon") || clean.includes("demonio"))) ||
+      (clean.includes("desplegar") && (clean.includes("edge") || clean.includes("daemon") || clean.includes("demonio"))) ||
+      clean.includes("industrial edge daemon") ||
+      clean.includes("edge daemon") ||
+      clean.includes("bioazucar edge service") ||
+      clean.includes("bioazucar-edge.service") ||
+      clean.includes("deploy-edge.sh") ||
+      clean.includes("deploy edge") ||
+      clean.includes("edge env") ||
+      clean.includes("edge.env") ||
+      clean.includes("saf-journal") ||
+      clean.includes("saf journal") ||
+      clean.includes("dernys") ||
+      clean.includes("repo de bioazucar") ||
+      clean.includes("repositorio de bioazucar") ||
+      clean.includes("repositorio oficial") ||
+      clean.includes("github.com/dernys/bioazucar-4.0") ||
+      (clean.includes("configuracion") && clean.includes("industrial edge daemon"));
+
+    if (isEdgeDaemonDeploymentQuery) {
+      return {
+        intent: "EDGE_DAEMON_DEPLOYMENT",
+        confidence: 0.99,
+        reason: "Consulta sobre despliegue, aprovisionamiento criptográfico y configuración del Industrial Edge Daemon y repositorio GitHub oficial",
+        targetModule: "uns_hub",
+        recommendedTool: "get_procedure",
+      };
+    }
+
+    // ========================================================================
+    // 3.5.4 TENANT PROVISIONING (CENTRAL PROVISIONING WIZARD)
+    // ========================================================================
+    const isTenantProvisioningQuery =
+      clean.includes("crear tenant") ||
+      clean.includes("crear central") ||
+      clean.includes("aprovisionar") ||
+      clean.includes("nuevo central") ||
+      clean.includes("wizard de aprovisionamiento") ||
+      clean.includes("configurar tenant");
+
+    if (isTenantProvisioningQuery) {
+      return {
+        intent: "TENANT_PROVISIONING",
+        confidence: 0.99,
+        reason: "Consulta sobre aprovisionamiento multi-tenant de centrales azucareros mediante CentralProvisioningWizard",
+        targetModule: "enterprises",
+        recommendedTool: "get_procedure",
+      };
+    }
+
+    // ========================================================================
+    // 3.5.5 INDUSTRIAL STANDARDS & NORMS (ISA-95, ISA-18.2, ASME PTC 4, IEC 62443, ISO 22400)
+    // ========================================================================
+    const isStandardsQuery =
+      clean.includes("estandares") ||
+      clean.includes("estándares") ||
+      clean.includes("normas") ||
+      clean.includes("isa-95") ||
+      clean.includes("isa 95") ||
+      clean.includes("isa-18.2") ||
+      clean.includes("isa 18.2") ||
+      clean.includes("iec 62443") ||
+      clean.includes("iso 22400");
+
+    if (isStandardsQuery && !isModelCalibrationQuery) {
+      return {
+        intent: "STANDARDS",
+        confidence: 0.98,
+        reason: "Consulta sobre estándares y normas técnicas implementadas en BioAzúcar 4.0",
+        recommendedTool: "get_system_info",
+      };
+    }
+
+    // ========================================================================
+    // 3.5.6 CENTRALIZED CONNECTION CONFIGURATION
+    // ========================================================================
+    const isConnectionConfigQuery =
+      clean.includes("donde y como se configura") ||
+      clean.includes("donde se configura") ||
+      clean.includes("como se configura") ||
+      clean.includes("conexiones requeridas") ||
+      clean.includes("configurar conexion") ||
+      clean.includes("configurar las conexiones") ||
+      clean.includes("configuracion total del sistema");
+
+    if (isConnectionConfigQuery && !isPrometheusScrapeQuery && !isEdgeDaemonDeploymentQuery) {
+      return {
+        intent: "CONNECTION_CONFIG",
+        confidence: 0.98,
+        reason: "Consulta sobre configuración centralizada de conexiones requeridas en BioAzúcar 4.0",
+        targetModule: "industrial_connections",
+        recommendedTool: "get_procedure",
+      };
+    }
+
+    // ========================================================================
     // 3.6 INDUSTRIAL INTEGRATION & OT CONNECTIVITY (EROS, OPC UA, MODBUS, MQTT, SPARKPLUG, PLC, DCS, RTU, EDGE, UNS)
     // ========================================================================
 

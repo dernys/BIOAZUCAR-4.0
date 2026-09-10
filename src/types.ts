@@ -31,7 +31,8 @@ export type NavigationTab =
   | "system_config"
   | "enterprises"
   | "users_roles"
-  | "presentation";
+  | "presentation"
+  | "industrial_connections";
 
 export type NavTabId = NavigationTab;
 
@@ -58,6 +59,34 @@ export interface TenantEnterprise {
   simulationEnabled?: boolean;
   simulationScenario?: SimulationScenario;
   otStatus?: "WAITING_FOR_COMMISSIONING" | "CONNECTED" | "DISCONNECTED" | "ERROR" | "RECONNECTING";
+
+  // Especificaciones reales de molienda y tándem
+  millCount?: number; // Número de molinos en tándem (ej. 5 o 6)
+  rollerDiameterM?: number; // Diámetro de mazas en metros (ej. 1.07 m)
+  rollerLengthM?: number; // Longitud de mazas en metros (ej. 2.13 m)
+  nominalRpm?: number; // RPM de molienda nominal (ej. 4.5 RPM)
+  imbibitionWaterRatio?: number; // % Imbibición sobre caña (ej. 28%)
+  fiberPercentCane?: number; // % Fibra en caña (ej. 13.5%)
+
+  // Calderas de Biomasa & Vapor HP real
+  boilerSteamFlowTph?: number; // Flujo nominal de vapor HP (t/h, ej. 120 t/h)
+  steamSuperheatTempC?: number; // Temperatura vapor sobrecalentado °C (ej. 480 °C)
+  bagasseMoistureExpected?: number; // % Humedad nominal de bagazo (ej. 49.5%)
+
+  // Conexiones OT y Protocolos Reales
+  otProtocol?: "OPC_UA" | "MODBUS_TCP" | "MQTT_SPARKPLUG_B" | "SIEMENS_S7";
+  otEndpointUrl?: string; // Endpoint URL (opc.tcp://..., mqtts://..., etc.)
+  otPort?: number; // Puerto de comunicación (4840, 502, 8883, 102)
+  otSecurityPolicy?: string; // Security Policy (Basic256Sha256 / Aes128_Sha256 / None)
+  otSecurityMode?: string; // Mode (SignAndEncrypt / Sign / None)
+  otGatewayHost?: string; // Dirección IP del gateway Edge industrial
+  otTagsPrefix?: string; // Prefijo de topics UNS ISA-95
+  unsTopicRoot?: string; // Topic raíz UNS ISA-95 (ej. bioazucar/central-01)
+
+  // Observabilidad Prometheus / OpenMetrics
+  prometheusMetricsPath?: string; // Ruta de métricas (/metrics)
+  prometheusScrapePort?: number; // Puerto de métricas (3000)
+  prometheusScrapeIntervalSec?: number; // Intervalo de scraping en segundos (15s)
 }
 
 export interface UserAccount {

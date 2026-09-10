@@ -2,7 +2,7 @@
 Description=BioAzúcar 4.0 Industrial Edge Gateway Daemon (IEC 62443 L2/L3)
 After=network.target network-online.target
 Wants=network-online.target
-Documentation=https://github.com/bioazucar/bioazucar40/tree/main/docs
+Documentation=https://github.com/dernys/BIOAZUCAR-4.0#readme
 
 [Service]
 Type=simple

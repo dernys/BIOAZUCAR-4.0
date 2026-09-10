@@ -293,9 +293,9 @@ export const IndustrialEdgeConsole: React.FC<IndustrialEdgeConsoleProps> = ({
 
       {/* 3. Connectors Status & Operational Diagnostics */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {diagnostics.connectors.map((c) => (
+        {diagnostics.connectors.map((c, cIdx) => (
           <div
-            key={c.connectorId}
+            key={c.connectorId || `connector-${c.name}-${cIdx}`}
             className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-4"
           >
             <div className="flex items-center justify-between">
@@ -592,40 +592,48 @@ export const IndustrialEdgeConsole: React.FC<IndustrialEdgeConsoleProps> = ({
                 No hay comandos despachados en esta sesión.
               </div>
             ) : (
-              commandHistory.map((cmd) => (
-                <div
-                  key={cmd.correlationId}
-                  className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs font-mono space-y-1"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-white flex items-center gap-1.5">
-                      <Lock className="w-3 h-3 text-cyan-400" />
-                      {cmd.tag}
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        cmd.status === "EXECUTED"
-                          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                          : "bg-red-500/10 text-red-400 border border-red-500/20"
-                      }`}
-                    >
-                      {cmd.status}
-                    </span>
-                  </div>
+              commandHistory.map((cmd, idx) => {
+                const isExecuted = cmd.executionStatus === "EXECUTED";
+                const displayMsg = cmd.result?.message || cmd.validationMessage || cmd.reason || "Comando procesado";
+                const displayOp = cmd.userName || cmd.userId || "Operador";
+                const displayTime = cmd.timestamp ? new Date(cmd.timestamp).toLocaleTimeString() : "";
+                const safeKey = cmd.commandId || cmd.idempotencyKey || `cmd-hist-${idx}`;
 
-                  <div className="text-[11px] text-slate-300">
-                    Valor: <strong className="text-cyan-400">{String(cmd.requestedValue)}</strong> • Operador:{" "}
-                    <span className="text-slate-400">{cmd.operatorId}</span>
-                  </div>
+                return (
+                  <div
+                    key={safeKey}
+                    className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs font-mono space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white flex items-center gap-1.5">
+                        <Lock className="w-3 h-3 text-cyan-400" />
+                        {cmd.tag}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          isExecuted
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            : "bg-red-500/10 text-red-400 border border-red-500/20"
+                        }`}
+                      >
+                        {cmd.executionStatus}
+                      </span>
+                    </div>
 
-                  <p className="text-[10px] text-slate-400 truncate">{cmd.message}</p>
+                    <div className="text-[11px] text-slate-300">
+                      Valor: <strong className="text-cyan-400">{String(cmd.requestedValue)}</strong> • Operador:{" "}
+                      <span className="text-slate-400">{displayOp}</span>
+                    </div>
 
-                  <div className="text-[9px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-900">
-                    <span>{cmd.idempotencyKey.slice(0, 18)}...</span>
-                    <span>{new Date(cmd.receivedAt).toLocaleTimeString()}</span>
+                    <p className="text-[10px] text-slate-400 truncate">{displayMsg}</p>
+
+                    <div className="text-[9px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-900">
+                      <span>{cmd.idempotencyKey ? `${cmd.idempotencyKey.slice(0, 18)}...` : safeKey}</span>
+                      <span>{displayTime}</span>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

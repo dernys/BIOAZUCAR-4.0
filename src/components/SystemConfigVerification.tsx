@@ -29,7 +29,9 @@ import {
   Sliders,
   Check,
   Building,
-  RotateCcw
+  RotateCcw,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 import { UserRole, SystemParameterConfig, UserAccount, TenantEnterprise } from "../types";
 import { INITIAL_SYSTEM_CONFIGS } from "../services/authService";
@@ -65,6 +67,17 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [dbHealth, setDbHealth] = useState<DatabaseHealthInfo | null>(null);
+  const [categoryDiagnostics, setCategoryDiagnostics] = useState<Record<string, {
+    status: "VERIFIED" | "OFFLINE" | "WARNING" | "ERROR";
+    details: string;
+    verifiedAt: string;
+    latencyMs?: number;
+    errorCode?: string;
+    errorMessage?: string;
+    remediation?: string;
+    [k: string]: any;
+  }>>({});
+  const [diagnosticRunTime, setDiagnosticRunTime] = useState<string | null>(null);
 
   // Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -94,7 +107,56 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
     currentRole === "administrador" ||
     currentRole === "supervisor";
 
-  // Subscribe to real-time configs in Firestore
+  // Run real category diagnostic against live backend
+  const executeRealDiagnostic = async () => {
+    setIsVerifying(true);
+    try {
+      const health = await checkDatabaseHealth();
+      setDbHealth(health);
+
+      const res = await fetch("/api/system/verify-diagnostics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId: activeTenant.id }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setCategoryDiagnostics(data.categories || {});
+        setDiagnosticRunTime(new Date().toLocaleTimeString());
+
+        const verifiedList = Object.values(data.categories || {}).filter((c: any) => c.status === "VERIFIED");
+        const offlineList = Object.values(data.categories || {}).filter((c: any) => c.status === "OFFLINE");
+
+        if (offlineList.length > 0) {
+          setFeedbackMsg({
+            text: `Auditoría completada: ${verifiedList.length} categorías verificadas, ${offlineList.length} con enlace físico offline (sin simulación). Revise detalles técnicos abajo.`,
+            type: "error",
+          });
+        } else {
+          setFeedbackMsg({
+            text: `¡Diagnóstico completado con éxito! ${verifiedList.length} categorías verificadas con enlace real. Latencia Firestore: ${health.latencyMs}ms.`,
+            type: "success",
+          });
+        }
+      } else {
+        throw new Error("Respuesta inválida del servidor al auditar categorías.");
+      }
+
+      const nowStr = new Date().toISOString().slice(0, 19).replace("T", " ");
+      setLastVerificationDate(nowStr);
+    } catch (err: any) {
+      setFeedbackMsg({
+        text: "Error durante el diagnóstico de sistemas reales: " + err.message,
+        type: "error",
+      });
+    } finally {
+      setIsVerifying(false);
+      setTimeout(() => setFeedbackMsg(null), 8000);
+    }
+  };
+
+  // Subscribe to real-time configs in Firestore & trigger live diagnostic
   useEffect(() => {
     const unsub = subscribeToSystemConfigs(activeTenant.id, (list) => {
       setConfigs(list);
@@ -103,32 +165,14 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
     // Check DB health
     checkDatabaseHealth().then(setDbHealth).catch(console.warn);
 
+    // Initial real diagnostic on active tenant change
+    executeRealDiagnostic();
+
     return () => unsub();
   }, [activeTenant.id]);
 
-  const handleRunGlobalDiagnostic = async () => {
-    setIsVerifying(true);
-    try {
-      const health = await checkDatabaseHealth();
-      setDbHealth(health);
-
-      // Verify each parameter
-      const nowStr = new Date().toISOString().slice(0, 19).replace("T", " ");
-      setLastVerificationDate(nowStr);
-
-      setFeedbackMsg({
-        text: `¡Diagnóstico global completado con éxito! ${configs.length} parámetros verificados, latencia Firestore: ${health.latencyMs}ms, ${health.tenantsCount} empresas multi-tenant auditadas.`,
-        type: "success",
-      });
-    } catch (err: any) {
-      setFeedbackMsg({
-        text: "Error durante el diagnóstico: " + err.message,
-        type: "error",
-      });
-    } finally {
-      setIsVerifying(false);
-      setTimeout(() => setFeedbackMsg(null), 6000);
-    }
+  const handleRunGlobalDiagnostic = () => {
+    executeRealDiagnostic();
   };
 
   const handleOpenCreateModal = () => {
@@ -381,6 +425,9 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
           {categories.map((cat) => {
             const Icon = cat.icon;
             const isSelected = selectedCategory === cat.id;
+            const catDiag = categoryDiagnostics[cat.id];
+            const hasOffline = catDiag?.status === "OFFLINE";
+
             return (
               <button
                 key={cat.id}
@@ -388,11 +435,24 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
                 className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 whitespace-nowrap transition ${
                   isSelected
                     ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                    : hasOffline
+                    ? "bg-rose-950/40 text-rose-300 hover:text-rose-200 border border-rose-800/60"
                     : "bg-slate-950/60 text-slate-400 hover:text-slate-200 border border-slate-800"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{cat.label}</span>
+                {catDiag && (
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      catDiag.status === "VERIFIED"
+                        ? "bg-emerald-400"
+                        : catDiag.status === "OFFLINE"
+                        ? "bg-rose-500 animate-pulse"
+                        : "bg-amber-400"
+                    }`}
+                  />
+                )}
               </button>
             );
           })}
@@ -410,15 +470,103 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
         </div>
       </div>
 
+      {/* Real Category Audit Status Panel */}
+      {Object.keys(categoryDiagnostics).length > 0 && (
+        <div className="bg-slate-950/80 rounded-xl p-4 border border-slate-800 font-mono text-xs space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">
+                Auditoría Verídica de Enlaces de Campo por Categoría (Sin Simulación)
+              </span>
+            </div>
+            {diagnosticRunTime && (
+              <span className="text-[10px] text-slate-400">
+                Última verificación socket: {diagnosticRunTime}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {Object.entries(categoryDiagnostics).map(([catKey, diag]: [string, any]) => {
+              const isOffline = diag.status === "OFFLINE";
+              const isVerified = diag.status === "VERIFIED";
+
+              return (
+                <div
+                  key={catKey}
+                  className={`p-2.5 rounded-lg border flex flex-col justify-between text-[11px] ${
+                    isOffline
+                      ? "bg-rose-950/30 border-rose-800/50 text-rose-200"
+                      : isVerified
+                      ? "bg-slate-900/60 border-slate-800 text-slate-300"
+                      : "bg-amber-950/20 border-amber-800/40 text-amber-200"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-bold text-slate-200 font-tech">{catKey}</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1 ${
+                        isVerified
+                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                          : isOffline
+                          ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                          : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                      }`}
+                    >
+                      {isVerified ? (
+                        <>
+                          <CheckCircle2 className="w-2.5 h-2.5" /> Verificado Real
+                        </>
+                      ) : isOffline ? (
+                        <>
+                          <WifiOff className="w-2.5 h-2.5" /> Sin Enlace Físico
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="w-2.5 h-2.5" /> Parcial
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed">
+                    {diag.details}
+                  </p>
+
+                  {isOffline && diag.errorCode && (
+                    <div className="mt-1.5 pt-1.5 border-t border-rose-900/40 flex items-center justify-between text-[9px] text-rose-400">
+                      <span>Error: {diag.errorCode}</span>
+                      <span className="truncate max-w-[140px]">{diag.remediation || "Verifique IP/Puerto"}</span>
+                    </div>
+                  )}
+
+                  {isVerified && diag.latencyMs !== undefined && (
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-800 flex items-center justify-between text-[9px] text-emerald-400">
+                      <span>Socket Latency:</span>
+                      <span className="font-bold">{diag.latencyMs}ms</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Configuration Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredConfigs.map((cfg) => {
-          const isVerified = cfg.status === "VERIFIED";
+          const catDiag = categoryDiagnostics[cfg.category];
+          const isOffline = catDiag?.status === "OFFLINE";
+          const isVerified = catDiag ? catDiag.status === "VERIFIED" : cfg.status === "VERIFIED";
 
           return (
             <div
               key={cfg.id}
-              className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-5 flex flex-col justify-between transition shadow-lg relative"
+              className={`bg-slate-900 border rounded-2xl p-5 flex flex-col justify-between transition shadow-lg relative ${
+                isOffline ? "border-rose-900/60 hover:border-rose-700/80" : "border-slate-800 hover:border-slate-700"
+              }`}
             >
               <div>
                 {/* Header */}
@@ -427,21 +575,43 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
                     <h3 className="text-sm font-bold text-white font-tech">{cfg.name}</h3>
                     <span className="text-[11px] font-mono text-cyan-400 font-bold block mt-0.5">{cfg.key}</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>Verificado</span>
-                  </span>
+                  {isOffline ? (
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1 shrink-0"
+                      title={catDiag?.errorMessage || "Hardware no detectado en red"}
+                    >
+                      <WifiOff className="w-3 h-3 text-rose-400" />
+                      <span>Sin Enlace Físico</span>
+                    </span>
+                  ) : isVerified ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shrink-0">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      <span>Verificado Real</span>
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0">
+                      <AlertTriangle className="w-3 h-3 text-amber-400" />
+                      <span>Parcial</span>
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-xs text-slate-400 mt-2 font-mono leading-relaxed line-clamp-2">
                   {cfg.description}
                 </p>
 
+                {isOffline && (
+                  <div className="mt-2.5 p-2 rounded-lg bg-rose-950/40 border border-rose-800/40 text-[10px] font-mono text-rose-300 flex items-center gap-1.5">
+                    <WifiOff className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span>Sin enlace con {catDiag?.target || "PLC/Gateway"}. No se generan valores falsos.</span>
+                  </div>
+                )}
+
                 {/* Values Box */}
                 <div className="mt-4 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 font-mono">
                   <div className="flex items-center justify-between text-xs mb-1.5">
                     <span className="text-slate-400">Valor Actual:</span>
-                    <span className="text-emerald-300 font-bold text-sm">
+                    <span className={`font-bold text-sm ${isOffline ? "text-slate-300" : "text-emerald-300"}`}>
                       {cfg.currentValue} {cfg.unit || ""}
                     </span>
                   </div>

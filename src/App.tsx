@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Pin, PinOff } from "lucide-react";
+import { Activity } from "lucide-react";
 import { Header } from "./components/Header";
 import { Navigation, NavigationTab } from "./components/Navigation";
 import { DashboardOverview } from "./components/DashboardOverview";
@@ -131,19 +131,8 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  // Pinned Footer State (Fixed at bottom across all views)
-  const [isFooterPinned, setIsFooterPinned] = useState<boolean>(() => {
-    const saved = localStorage.getItem("bioazucar_footer_pinned");
-    return saved !== null ? saved === "true" : true; // Default to true as requested
-  });
-
-  const handleToggleFooterPin = () => {
-    setIsFooterPinned((prev) => {
-      const next = !prev;
-      localStorage.setItem("bioazucar_footer_pinned", String(next));
-      return next;
-    });
-  };
+  // Industrial Footer is permanently docked at bottom across all views
+  const isFooterPinned = true;
 
   // Synchronize role change with user account
   const handleRoleChange = (newRole: UserRole) => {
@@ -728,6 +717,7 @@ export default function App() {
             onSelectTenant={handleSelectTenant}
             currentUser={currentUser}
             onOpenCreateWizard={() => setIsCreateWizardOpen(true)}
+            theme={theme}
           />
         )}
 
@@ -763,16 +753,12 @@ export default function App() {
         )}
       </main>
 
-      {/* 4. Industrial Footer & SCADA Status Bar — Single-Line Responsive Dock */}
+      {/* 4. Industrial Footer & SCADA Status Bar — Executive Single-Line Responsive Dock */}
       <footer
-        className={`border-t h-8 sm:h-9 px-2.5 sm:px-4 text-[11px] font-mono transition-all duration-300 ${
-          isFooterPinned
-            ? "fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md shadow-[0_-2px_12px_rgba(0,0,0,0.15)]"
-            : "relative"
-        } ${
+        className={`fixed bottom-0 left-0 right-0 z-40 border-t h-8 sm:h-9 px-2.5 sm:px-4 text-[11px] font-mono transition-all duration-300 backdrop-blur-md ${
           theme === "light"
-            ? "bg-white/95 border-slate-200 text-slate-600 shadow-sm"
-            : "bg-slate-950/95 border-slate-800/80 text-slate-400"
+            ? "bg-white/95 border-slate-300 text-slate-800 shadow-[0_-2px_12px_rgba(0,0,0,0.08)]"
+            : "bg-slate-950/95 border-slate-800/80 text-slate-300 shadow-[0_-2px_12px_rgba(0,0,0,0.3)]"
         } flex items-center justify-between gap-2 sm:gap-4 flex-nowrap whitespace-nowrap overflow-hidden select-none`}
       >
         {/* Left Side: Firestore Live Latency & Active Tenant */}
@@ -781,76 +767,56 @@ export default function App() {
           <button
             type="button"
             onClick={() => setIsDbModalOpen(true)}
-            className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 font-semibold transition shrink-0"
+            className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-300 font-bold transition shrink-0"
             title="Ver diagnóstico y estado de sincronización Cloud Firestore"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-            <span className="hidden sm:inline">Cloud Firestore:</span>
+            <span className="hidden sm:inline text-slate-700 dark:text-slate-400 font-semibold">Cloud Firestore:</span>
             <span>Conectado</span>
-            <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-normal">({dbLatencyMs}ms)</span>
+            <span className="text-[10px] text-emerald-800 dark:text-emerald-300 font-normal">({dbLatencyMs}ms)</span>
           </button>
 
           <span className="text-slate-300 dark:text-slate-700 shrink-0">|</span>
 
           {/* Active Enterprise / Tenant with graceful truncation */}
-          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden text-slate-700 dark:text-slate-300">
-            <span className="hidden md:inline text-slate-500 dark:text-slate-400 shrink-0">Empresa:</span>
-            <span className="text-cyan-600 dark:text-cyan-400 font-bold truncate">
+          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden text-slate-800 dark:text-slate-200">
+            <span className="hidden md:inline text-slate-600 dark:text-slate-400 shrink-0 font-medium">Empresa:</span>
+            <span className="text-cyan-950 dark:text-cyan-400 font-bold truncate">
               {activeTenant.name}
             </span>
-            <span className="hidden lg:inline text-slate-400 dark:text-slate-500 shrink-0 font-normal">
+            <span className="hidden lg:inline text-slate-600 dark:text-slate-400 shrink-0 font-medium">
               ({activeTenant.code})
             </span>
-            <span className="hidden xl:inline text-slate-400 dark:text-slate-500 shrink-0 font-normal">
+            <span className="hidden xl:inline text-slate-600 dark:text-slate-400 shrink-0 font-normal">
               • Capacidad: {activeTenant.nominalTch} TCH / {activeTenant.powerCapacityMW} MW
             </span>
           </div>
         </div>
 
-        {/* Right Side: Security Standard & Pin Toggle Button */}
+        {/* Right Side: Prometheus / OpenMetrics & Industrial Standards */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <span className="hidden 2xl:inline text-slate-500 dark:text-slate-400 text-[10px]">
-            BioAzúcar 4.0 Suite
-          </span>
-          <span className="hidden lg:inline text-slate-400 dark:text-slate-500 text-[10px]">
-            IEC 62443 SL-3
-          </span>
-          <span className="hidden lg:inline text-slate-300 dark:text-slate-700">|</span>
-
-          {/* Toggle Button to Pin / Unpin */}
+          {/* Prometheus Metrics Scrape Endpoint quick badge */}
           <button
             type="button"
-            onClick={handleToggleFooterPin}
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-mono transition border shrink-0 ${
-              isFooterPinned
-                ? theme === "light"
-                  ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
-                  : "bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/60"
-                : theme === "light"
-                  ? "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:text-slate-900"
-                  : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
-            }`}
-            title={
-              isFooterPinned
-                ? "Desfijar barra inferior (se posicionará al final de la página)"
-                : "Fijar barra inferior en la parte inferior de todas las pantallas"
-            }
-            aria-label="Conmutar barra inferior fija o libre"
+            onClick={() => setIsIndustrialModalOpen(true)}
+            className="flex items-center gap-1.5 text-indigo-900 dark:text-indigo-300 hover:text-indigo-700 dark:hover:text-indigo-200 font-bold transition shrink-0"
+            title="Ver estado de pasarelas industriales y métricas de Prometheus (/metrics)"
           >
-            {isFooterPinned ? (
-              <>
-                <Pin className="w-3 h-3 text-emerald-600 dark:text-emerald-400 fill-emerald-500/30 rotate-45 shrink-0" />
-                <span className="font-semibold">Fija</span>
-                <span className="text-[9px] opacity-75 underline">Quitar</span>
-              </>
-            ) : (
-              <>
-                <PinOff className="w-3 h-3 text-slate-500 shrink-0" />
-                <span className="font-normal">Libre</span>
-                <span className="text-[9px] opacity-75 underline">Fijar</span>
-              </>
-            )}
+            <Activity className="w-3.5 h-3.5 text-indigo-700 dark:text-indigo-400 shrink-0 animate-pulse" />
+            <span className="hidden sm:inline text-slate-700 dark:text-slate-400 font-medium">Prometheus:</span>
+            <span className="bg-indigo-100 dark:bg-indigo-950/70 text-indigo-950 dark:text-indigo-300 px-1.5 py-0.5 rounded font-bold border border-indigo-300 dark:border-indigo-800 text-[10px]">
+              /metrics:3000
+            </span>
           </button>
+
+          <span className="hidden lg:inline text-slate-300 dark:text-slate-700">|</span>
+
+          <span className="hidden 2xl:inline text-slate-700 dark:text-slate-400 text-[10px] font-medium">
+            BioAzúcar 4.0 Suite
+          </span>
+          <span className="hidden lg:inline text-slate-600 dark:text-slate-400 text-[10px] font-semibold">
+            ISA-95 • ISA-18.2 • ASME PTC 4 • IEC 62443 SL-3
+          </span>
         </div>
       </footer>
 
@@ -893,17 +859,18 @@ export default function App() {
           setIsCreateWizardOpen(false);
           setIsTenantsModalOpen(false);
         }}
+        theme={theme}
       />
 
       {/* Quick Modal for Superadmin Enterprise Management */}
       {isTenantsModalOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 relative">
-            <div className="flex justify-between items-center pb-4 mb-4 border-b border-slate-800">
-              <h2 className="text-lg font-bold text-white font-tech">Administrador de Empresas & Multi-Tenant</h2>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 relative text-slate-900 dark:text-slate-100">
+            <div className="flex justify-between items-center pb-4 mb-4 border-b border-slate-200 dark:border-slate-800">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white font-tech">Administrador de Empresas & Multi-Tenant</h2>
               <button
                 onClick={() => setIsTenantsModalOpen(false)}
-                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
               >
                 ✕
               </button>
@@ -912,6 +879,7 @@ export default function App() {
               tenants={tenants}
               currentUser={currentUser}
               activeTenant={activeTenant}
+              theme={theme}
               onOpenCreateWizard={() => {
                 setIsTenantsModalOpen(false);
                 setIsCreateWizardOpen(true);
@@ -962,6 +930,7 @@ export default function App() {
         currentMode={runtimeMode}
         onModeChange={handleRuntimeModeChange}
         telemetry={telemetry}
+        theme={theme}
       />
     </div>
   );

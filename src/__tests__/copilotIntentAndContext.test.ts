@@ -235,5 +235,60 @@ describe("BioAzúcar Copilot — Intent Classification, Context Awareness & Anti
       expect(response.confirmationDetails).toBeDefined();
       expect(response.confirmationDetails?.level).toBe(3);
     });
+
+    it("MUST provide complete Prometheus scrape SOP when asked how to lift and verify /metrics", async () => {
+      const response = await copilotService.sendMessage({
+        message: "cómo levantar y verificar el scrape de Prometheus mediante el endpoint /metrics",
+        context: baseContext,
+        liveTelemetry: INITIAL_TELEMETRY,
+        alarmsList: [],
+        equipmentList: [],
+        activeTenant,
+      });
+
+      expect(response.intent).toBe("PROMETHEUS_METRICS");
+      expect(response.message).toContain("GET /metrics");
+      expect(response.message).toContain("curl -i http://localhost:3000/metrics");
+      expect(response.message).toContain("bioazucar_milling_tch");
+      expect(response.message).toContain("prometheus.yml");
+      expect(response.message).toContain("scrape_interval: 15s");
+      expect(response.message).toContain("targets: ['127.0.0.1:3000']");
+    });
+
+    it("MUST provide rigorous Hugot milling and ASME PTC 4 thermal balance calibration", async () => {
+      const response = await copilotService.sendMessage({
+        message: "calibrar los lazos de control de molienda según las fórmulas de E. Hugot y el balance térmico ASME PTC 4",
+        context: baseContext,
+        liveTelemetry: INITIAL_TELEMETRY,
+        alarmsList: [],
+        equipmentList: [],
+        activeTenant,
+      });
+
+      expect(response.intent).toBe("MODEL_CALIBRATION");
+      expect(response.message).toContain("E. Hugot");
+      expect(response.message).toContain("100 - E_0");
+      expect(response.message).toContain("SugarMillModelCalibrator");
+      expect(response.message).toContain("ASME PTC 4");
+      expect(response.message).toContain("PCI");
+      expect(response.message).toContain("220 - 250 bar");
+    });
+
+    it("MUST provide industrial Edge Daemon deployment guide with official repository", async () => {
+      const response = await copilotService.sendMessage({
+        message: "despliegue y configuración del INDUSTRIAL EDGE DAEMON",
+        context: baseContext,
+        liveTelemetry: INITIAL_TELEMETRY,
+        alarmsList: [],
+        equipmentList: [],
+        activeTenant,
+      });
+
+      expect(response.intent).toBe("EDGE_DAEMON_DEPLOYMENT");
+      expect(response.message).toContain("https://github.com/dernys/BIOAZUCAR-4.0");
+      expect(response.message).toContain("deploy/deploy-edge.sh");
+      expect(response.message).toContain("/etc/bioazucar/edge.env");
+      expect(response.message).toContain("bioazucar-edge.service");
+    });
   });
 });

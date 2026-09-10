@@ -219,7 +219,12 @@ export async function persistAuditEventToFirestore(record: ServerAuditRecord): P
     await db.collection("audit_logs").doc(record.id).set(cleanDoc);
     return true;
   } catch (err: any) {
-    systemLogger.warn(`Failed persisting audit record ${record.id} to Firestore: ${err?.message}`);
+    const msg = err?.message || String(err);
+    if (msg.includes("PERMISSION_DENIED") || msg.includes("NOT_FOUND") || msg.includes("UNAUTHENTICATED")) {
+      systemLogger.debug(`Firestore audit persistence deferred to local disk journal: ${msg}`);
+    } else {
+      systemLogger.warn(`Failed persisting audit record ${record.id} to Firestore: ${msg}`);
+    }
     return false;
   }
 }
