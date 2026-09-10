@@ -19,7 +19,8 @@ import {
   Building2,
   Users,
   ShieldCheck,
-  Presentation
+  Presentation,
+  Tractor
 } from "lucide-react";
 import { NavigationTab, UserRole, UserAccount } from "../types";
 
@@ -81,6 +82,14 @@ export const Navigation: React.FC<NavigationProps> = ({
       icon: GitBranch,
       desc: "Mímico & Lazos PID",
       category: "OPERATIONS",
+    },
+    {
+      id: "agricultural_pda",
+      label: "Plan Agrícola PDA",
+      icon: Tractor,
+      desc: "Campo, CCT & ODS 2014",
+      category: "OPERATIONS",
+      tag: "PDA",
     },
     {
       id: "energy_dispatch",

@@ -23,6 +23,7 @@ import { DataLineageModal } from "./components/DataLineageModal";
 import { BioAzucarCopilot } from "./copilot/components/BioAzucarCopilot";
 import { ExecutivePresentation } from "./components/ExecutivePresentation";
 import { IndustrialConnectionModal } from "./components/IndustrialConnectionModal";
+import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
 import {
   TelemetryData,
   UserRole,
@@ -637,6 +638,14 @@ export default function App() {
             telemetry={telemetry}
             equipmentList={equipmentList}
             currentRole={currentRole}
+          />
+        )}
+
+        {activeTab === "agricultural_pda" && (
+          <AgriculturalPdaView
+            theme={theme}
+            currentTenantName={activeTenant.name}
+            nominalMillTch={telemetry.tch}
           />
         )}
 

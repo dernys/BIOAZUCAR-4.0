@@ -1,6 +1,6 @@
 {
   "name": "BioAzúcar 4.0 - Smart Mill & Cogeneration MES/IIoT",
-  "description": "Plataforma de Industria 4.0 y Gemelo Digital para Central Azucarero y Cogeneración Eléctrica con balance de masa/energía, SCADA, IA analítica y OEE.",
+  "description": "Plataforma de Industria 4.0, Gemelo Digital y Planificación Agrícola PDA para Central Azucarero y Cogeneración Eléctrica con balance de masa/energía, SCADA, curvas TCH, logística CCT, IA analítica y OEE.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

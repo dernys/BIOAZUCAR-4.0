@@ -22,6 +22,7 @@ export type NavigationTab =
   | "scada"
   | "digital_twin"
   | "energy_dispatch"
+  | "agricultural_pda"
   | "uns_hub"
   | "batches"
   | "equipment"
