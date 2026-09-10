@@ -12,9 +12,10 @@ import {
   securityHeadersMiddleware,
   logServerAuditEvent,
   getServerAuditTrail,
+  fetchDurableAuditTrail,
 } from "./src/server/authMiddleware";
 import { bootstrapDatabaseWithAdminSdk } from "./src/server/bootstrapService";
-import { prometheusMetrics } from "./src/services/monitoring/PrometheusMetrics";
+import { getMetrics, getMetricsContentType, trackHttpRequest } from "./src/services/metrics";
 
 dotenv.config();
 
@@ -24,6 +25,18 @@ const PORT = 3000;
 // Apply IEC 62443 / OWASP Security Headers
 app.use(securityHeadersMiddleware);
 app.use(express.json({ limit: "1mb" }));
+
+// Prometheus HTTP Request Duration & Count Tracking Middleware
+app.use((req, res, next) => {
+  const start = process.hrtime();
+  res.on("finish", () => {
+    const diff = process.hrtime(start);
+    const durationSeconds = diff[0] + diff[1] / 1e9;
+    const route = req.route?.path || req.path || "unknown";
+    trackHttpRequest(req.method, route, res.statusCode, durationSeconds);
+  });
+  next();
+});
 
 // Initialize Google GenAI client lazily or when key exists
 let aiClient: GoogleGenAI | null = null;
@@ -53,9 +66,9 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Prometheus / OpenMetrics scrape endpoint (Operations / SIEM / Grafana)
-app.get("/metrics", (_req, res) => {
-  res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
-  res.send(prometheusMetrics.scrape());
+app.get("/metrics", async (_req, res) => {
+  res.setHeader("Content-Type", getMetricsContentType());
+  res.send(await getMetrics());
 });
 
 // Privileged Backend Database Bootstrap (SEC-6: Server Admin SDK only)
@@ -64,14 +77,16 @@ app.post("/api/admin/bootstrap", async (_req, res) => {
   res.json(result);
 });
 
-// Server Security Audit Trail (Admin / Superadmin only)
+// Server Security Audit Trail (Admin / Superadmin only - Queries Firestore with Disk/RAM fallback)
 app.get(
   "/api/security/audit-trail",
   requireAuth,
   requireRole(["administrador", "superadmin"]),
-  (req, res) => {
+  async (req, res) => {
+    const tenantId = (req as any).user?.tenantId;
+    const trail = await fetchDurableAuditTrail(tenantId, 100);
     res.json({
-      auditTrail: getServerAuditTrail(),
+      auditTrail: trail,
       timestamp: new Date().toISOString(),
     });
   }

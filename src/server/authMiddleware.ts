@@ -6,6 +6,7 @@ import { UserRole } from "../types";
 import { getAdminAuth, getAdminFirestore } from "./firebaseAdmin";
 import { MembershipService } from "./membershipService";
 import { systemLogger } from "../services/logger/IndustrialLogger";
+import { auditEventsTotal } from "../services/metrics";
 
 export interface AuthenticatedUser {
   id?: string;
@@ -175,7 +176,19 @@ export function logServerAuditEvent(record: Partial<ServerAuditRecord>): ServerA
     auditRecord: fullRecord,
   });
 
-  // 2. Persistent Disk Append (Immunity against server restart)
+  // 2. Prometheus OpenMetrics telemetry counter
+  try {
+    auditEventsTotal.inc({
+      tenant_id: fullRecord.tenantId || "UNKNOWN",
+      action: fullRecord.action,
+      result: fullRecord.result,
+      severity: fullRecord.severity,
+    });
+  } catch {
+    // Prometheus metric increment error handled gracefully
+  }
+
+  // 3. Persistent Disk Append (Immunity against server restart)
   try {
     const dir = path.dirname(AUDIT_FILE_PATH);
     if (!fs.existsSync(dir)) {
@@ -186,22 +199,63 @@ export function logServerAuditEvent(record: Partial<ServerAuditRecord>): ServerA
     // Disk write error handled gracefully
   }
 
-  // 3. Durable Firestore Collection Persistence (IEC 62443 Centralized Tamper-Proof Audit)
-  if (process.env.NODE_ENV !== "test") {
-    try {
-      const db = getAdminFirestore();
-      db.collection("audit_logs")
-        .doc(fullRecord.id)
-        .set(fullRecord)
-        .catch(() => {
-          // Swallow any permission / emulator errors to prevent blocking server operations
-        });
-    } catch {
-      // Firebase Admin not initialized or running in offline mode
-    }
-  }
+  // 4. Durable Firestore Collection Persistence (IEC 62443 Centralized Tamper-Proof Audit)
+  persistAuditEventToFirestore(fullRecord).catch(() => {
+    // Firestore error already logged inside persistAuditEventToFirestore
+  });
 
   return fullRecord;
+}
+
+/**
+ * Persists an audit record directly into the Firestore 'audit_logs' collection (Admin SDK)
+ */
+export async function persistAuditEventToFirestore(record: ServerAuditRecord): Promise<boolean> {
+  try {
+    const db = getAdminFirestore();
+    const cleanDoc = Object.fromEntries(
+      Object.entries(record).filter(([_, v]) => v !== undefined)
+    );
+    await db.collection("audit_logs").doc(record.id).set(cleanDoc);
+    return true;
+  } catch (err: any) {
+    systemLogger.warn(`Failed persisting audit record ${record.id} to Firestore: ${err?.message}`);
+    return false;
+  }
+}
+
+/**
+ * Async version of logServerAuditEvent that awaits disk and Firestore writes
+ */
+export async function logServerAuditEventAsync(record: Partial<ServerAuditRecord>): Promise<ServerAuditRecord> {
+  const fullRecord = logServerAuditEvent(record);
+  await persistAuditEventToFirestore(fullRecord);
+  return fullRecord;
+}
+
+/**
+ * Returns durable audit trail: queries Firestore 'audit_logs' first, falling back to disk/memory
+ */
+export async function fetchDurableAuditTrail(tenantId?: string, limitCount: number = 100): Promise<ServerAuditRecord[]> {
+  try {
+    const db = getAdminFirestore();
+    let query: any = db.collection("audit_logs").orderBy("timestamp", "desc").limit(limitCount);
+    if (tenantId && tenantId !== "GLOBAL") {
+      query = db.collection("audit_logs").where("tenantId", "==", tenantId).limit(limitCount);
+    }
+    const snapshot = await query.get();
+    if (!snapshot.empty) {
+      const records: ServerAuditRecord[] = [];
+      snapshot.forEach((doc: any) => {
+        records.push(doc.data() as ServerAuditRecord);
+      });
+      return records;
+    }
+  } catch (_dbErr) {
+    // Fall back to memory and disk journal if Firestore is unreachable
+  }
+  // Disk / memory fallback
+  return getServerAuditTrail();
 }
 
 export function getServerAuditTrail(): ServerAuditRecord[] {

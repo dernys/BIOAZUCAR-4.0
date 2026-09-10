@@ -112,6 +112,56 @@ export class DiskStoreAndForwardEngine {
     return this.memQueue.getState();
   }
 
+  public getQueueLength(): number {
+    return this.memQueue.getState().bufferedCount;
+  }
+
+  public getBufferedPoints(): IndustrialDataPoint[] {
+    return this.memQueue.peek(50000);
+  }
+
+  /**
+   * Immediate synchronous persistence write for tests and critical shutdowns
+   */
+  public persistStateImmediate(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    const pending = this.memQueue.peek(50000);
+    const mods = getNodeModules();
+
+    if (mods) {
+      try {
+        const { fs, path, crypto } = mods;
+        const dir = path.dirname(this.diskJournalPath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+
+        let dataToWrite = JSON.stringify(pending);
+        if (this.encryptionKey) {
+          dataToWrite = "ENC:" + this.encryptData(dataToWrite, this.encryptionKey, crypto);
+        }
+
+        fs.writeFileSync(this.diskJournalPath, dataToWrite, { mode: 0o600 });
+      } catch (_err) {
+        // File system write failure handled gracefully
+      }
+      return;
+    }
+
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const raw = JSON.stringify(pending);
+        const encoded = "ENC_B64:" + btoa(unescape(encodeURIComponent(raw)));
+        window.localStorage.setItem(this.persistenceKey, encoded);
+      }
+    } catch (_err) {
+      // Handle storage quota gracefully
+    }
+  }
+
   /**
    * Restore un-forwarded points from persistent storage on startup
    */
