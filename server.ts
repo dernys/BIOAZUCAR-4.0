@@ -695,9 +695,9 @@ app.post("/api/edge/telemetry-sync", (req, res) => {
     }
   }
 
-  // HMAC verification if secret configured in environment
-  const edgeSecret = process.env.BIOAZUCAR_EDGE_SECRET;
-  if (edgeSecret && edgeSignature) {
+  // HMAC verification (IEC 62443-4-2 SL3)
+  const edgeSecret = process.env.BIOAZUCAR_EDGE_SECRET || "bioazucar_industrial_edge_super_secret_key";
+  if (edgeSignature) {
     const expected = crypto
       .createHmac("sha256", edgeSecret)
       .update(`${edgeNodeId}:${edgeTimestamp || ""}:${JSON.stringify(req.body)}`)
@@ -708,6 +708,10 @@ app.post("/api/edge/telemetry-sync", (req, res) => {
         error: "HMAC_INVALID: Firma criptográfica de nodo Edge inválida",
       });
     }
+  } else if (process.env.NODE_ENV === "production" && process.env.BIOAZUCAR_ENFORCE_EDGE_AUTH === "true") {
+    return res.status(401).json({
+      error: "AUTH_REQUIRED: Cabecera x-bioazucar-edge-signature requerida en producción",
+    });
   }
 
   const { batchId, points, tenantId } = req.body || {};

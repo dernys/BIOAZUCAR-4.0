@@ -1,0 +1,57 @@
+# ==============================================================================
+# BIOAZÚCAR 4.0 — INDUSTRIAL EDGE DAEMON DOCKER COMPOSE
+# ==============================================================================
+# Designed for Industrial PCs (Advantech, Siemens IPC, Kontron, Raspberry Pi 4/5)
+# Running Docker Engine on Linux with host networking or dual-bridged network.
+
+version: "3.8"
+
+services:
+  bioazucar-edge:
+    build:
+      context: ..
+      dockerfile: Dockerfile.edge
+    image: bioazucar/edge-daemon:latest
+    container_name: bioazucar-edge-node
+    restart: always
+    
+    # Run with host networking to access OT PLCs on eth0 and cloud on eth1 directly
+    network_mode: "host"
+
+    env_file:
+      - /etc/bioazucar/edge.env
+
+    environment:
+      - NODE_ENV=production
+      - BIOAZUCAR_SAF_JOURNAL_PATH=/var/lib/bioazucar-edge/saf-journal.json
+      - BIOAZUCAR_EDGE_HEALTH_PORT=9099
+
+    volumes:
+      # Persistent journal store-and-forward buffer
+      - /var/lib/bioazucar-edge:/var/lib/bioazucar-edge:rw
+      # Audit & operational logging
+      - /var/log/bioazucar:/var/log/bioazucar:rw
+      # mTLS Certificates (Read-only)
+      - /etc/bioazucar/certs:/etc/bioazucar/certs:ro
+
+    # Linux process & security constraints
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    
+    # Resource boundaries for IPC stability
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9099/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
