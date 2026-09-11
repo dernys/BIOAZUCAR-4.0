@@ -69,7 +69,7 @@ export class IndustrialToolExecutor {
         arguments: args,
         resultStatus: "DENIED",
         requiredPermission: authCheck.policy?.requiredPermissions.join(", "),
-      }, context.roles[0]);
+      }, (context.roles && context.roles[0]) ? context.roles[0] : "operador");
 
       return {
         success: false,
@@ -708,7 +708,8 @@ export class IndustrialToolExecutor {
 
         case "get_tutorial_step": {
           const stepNum = Number(args.stepNumber || 1);
-          const step = copilotKnowledgeService.getTutorialStep(stepNum) || copilotKnowledgeService.getInitialTutorialStep(context.roles[0]);
+          const userRole = (context.roles && context.roles[0]) ? context.roles[0] : "operador";
+          const step = copilotKnowledgeService.getTutorialStep(stepNum) || copilotKnowledgeService.getInitialTutorialStep(userRole);
           result = {
             success: true,
             data: {
@@ -1539,7 +1540,7 @@ export class IndustrialToolExecutor {
         arguments: args,
         resultStatus: result.success ? "SUCCESS" : "ERROR",
         confirmationRequired: result.requiredConfirmation,
-      }, context.roles[0]);
+      }, (context.roles && context.roles[0]) ? context.roles[0] : "operador");
 
       return result;
     } catch (err: any) {
@@ -1553,7 +1554,7 @@ export class IndustrialToolExecutor {
         toolName,
         arguments: args,
         resultStatus: "ERROR",
-      }, context.roles[0]);
+      }, (context.roles && context.roles[0]) ? context.roles[0] : "operador");
 
       return {
         success: false,

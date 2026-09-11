@@ -14,15 +14,20 @@ import { MembershipService } from "./membershipService";
 
 export async function bootstrapDatabaseWithAdminSdk(): Promise<{ success: boolean; message: string }> {
   try {
-    const firestore = getAdminFirestore();
+    const timeoutPromise = new Promise<{ success: boolean; message: string }>((_, reject) =>
+      setTimeout(() => reject(new Error("Admin SDK bootstrap check timed out")), 3500)
+    );
 
-    // Check if tenants exist
-    const tenantsSnap = await firestore.collection("tenants").limit(1).get();
-    if (!tenantsSnap.empty) {
-      return { success: true, message: "Database already initialized." };
-    }
+    const runBootstrap = async (): Promise<{ success: boolean; message: string }> => {
+      const firestore = getAdminFirestore();
 
-    console.log("⚡ [SERVER BOOTSTRAP] Privileged Admin SDK initialization starting...");
+      // Check if tenants exist
+      const tenantsSnap = await firestore.collection("tenants").limit(1).get();
+      if (!tenantsSnap.empty) {
+        return { success: true, message: "Database already initialized." };
+      }
+
+      console.log("⚡ [SERVER BOOTSTRAP] Privileged Admin SDK initialization starting...");
 
     const batch = firestore.batch();
 
@@ -129,9 +134,12 @@ export async function bootstrapDatabaseWithAdminSdk(): Promise<{ success: boolea
       });
     });
 
-    await batch.commit();
-    console.log("✅ [SERVER BOOTSTRAP] Privileged Firestore seed completed successfully.");
-    return { success: true, message: "Bootstrap completed successfully." };
+      await batch.commit();
+      console.log("✅ [SERVER BOOTSTRAP] Privileged Firestore seed completed successfully.");
+      return { success: true, message: "Bootstrap completed successfully." };
+    };
+
+    return await Promise.race([runBootstrap(), timeoutPromise]);
   } catch (err: any) {
     console.warn("⚠️ [SERVER BOOTSTRAP] Skipped or offline:", err.message);
     return { success: false, message: err.message };

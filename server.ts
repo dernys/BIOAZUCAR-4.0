@@ -1763,13 +1763,6 @@ Devuelve SIEMPRE un JSON válido con esta estructura:
 
 // Setup Vite development middleware or static file serving
 async function startServer() {
-  // Privileged initial bootstrap (SEC-6)
-  try {
-    await bootstrapDatabaseWithAdminSdk();
-  } catch (bootErr: any) {
-    console.warn("[BioAzúcar 4.0] Bootstrap check:", bootErr.message);
-  }
-
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1786,6 +1779,11 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`[BioAzúcar 4.0] Industrial Server online at http://0.0.0.0:${PORT}`);
+  });
+
+  // Non-blocking privileged initial bootstrap (SEC-6)
+  bootstrapDatabaseWithAdminSdk().catch((bootErr: any) => {
+    console.warn("[BioAzúcar 4.0] Bootstrap check:", bootErr?.message || bootErr);
   });
 }
 

@@ -21,6 +21,7 @@ import {
   CalculationTrace,
 } from "../../types/agriculture";
 import { MODEL_REVISION } from "./YieldCalculationService";
+import { AgriculturalParameterRegistry } from "./AgriculturalParameterRegistry";
 
 /**
  * Standard agricultural operations catalog for cane production.
@@ -151,12 +152,16 @@ export class AgriculturalPlanningService {
     campaignId: string;
     targetPreparationAreaHa: number;
     availableCalendarDays: number;
-    dailyEffectiveHours?: number;       // default 16 hours (2 shifts of 8h)
-    mechanicalAvailability?: number;    // default 0.85 (85% availability)
+    dailyEffectiveHours?: number;       // default from registry
+    mechanicalAvailability?: number;    // default from registry
     customOperations?: AgroOperationMaster[];
   }): SoilPreparationPlan {
-    const dailyHours = params.dailyEffectiveHours ?? 16;
-    const availability = params.mechanicalAvailability ?? 0.85;
+    const dailyHours =
+      params.dailyEffectiveHours ??
+      AgriculturalParameterRegistry.getParameterValue<number>("HOURS_PER_DAY_SOIL_PREP", 16);
+    const availability =
+      params.mechanicalAvailability ??
+      AgriculturalParameterRegistry.getParameterValue<number>("EQUIPMENT_AVAILABILITY_SOIL_PREP", 0.85);
     const effectiveHoursPerDay = dailyHours * availability;
 
     const operations =
@@ -251,11 +256,15 @@ export class AgriculturalPlanningService {
     fuelConsumptionLitersPerHour?: number; // default 20.0 L/h
     basalFertilizerKgPerHa?: number;    // default 400 kg/ha N-P-K
   }): PlantingPlan {
-    const seedRate = params.seedCaneRateTonsPerHa ?? 13.5;
+    const seedRate =
+      params.seedCaneRateTonsPerHa ??
+      AgriculturalParameterRegistry.getParameterValue<number>("SEED_CANE_RATE_TONS_PER_HA", 13.5);
     const nurseryTch = params.nurseryCaneAverageTch ?? 90.0;
     const capacity = params.effectiveCapacityHaPerHour ?? 0.75;
     const fuelRate = params.fuelConsumptionLitersPerHour ?? 20.0;
-    const fertilizerDose = params.basalFertilizerKgPerHa ?? 400.0;
+    const fertilizerDose =
+      params.basalFertilizerKgPerHa ??
+      AgriculturalParameterRegistry.getParameterValue<number>("FERTILIZER_BASAL_KG_PER_HA", 400.0);
 
     const totalSeedCaneTons = Number((params.targetPlantingAreaHa * seedRate).toFixed(2));
     const dedicatedSeedAreaHa = Number((totalSeedCaneTons / nurseryTch).toFixed(2));
@@ -309,14 +318,34 @@ export class AgriculturalPlanningService {
     campaignId: string;
     plantCaneAreaHa: number;
     ratoonCaneAreaHa: number;
-    vinasseApplicationRateM3PerHa?: number; // default 150 m3/ha
-    filterCakeApplicationRateTonsPerHa?: number; // default 30 t/ha
-    vinasseEligiblePercent?: number;        // default 40% of ratoon within mill radius
+    vinasseApplicationRateM3PerHa?: number; // default from registry
+    filterCakeApplicationRateTonsPerHa?: number; // default from registry
+    vinasseEligiblePercent?: number;        // default from registry
   }): CulturalTreatmentPlan {
-    const vinasseRate = params.vinasseApplicationRateM3PerHa ?? 150.0;
-    const filterCakeRate = params.filterCakeApplicationRateTonsPerHa ?? 30.0;
+    const vinasseRate =
+      params.vinasseApplicationRateM3PerHa ??
+      AgriculturalParameterRegistry.getParameterValue<number>(
+        "VINASSE_APPLICATION_RATE_M3_PER_HA",
+        150.0
+      );
+    const filterCakeRate =
+      params.filterCakeApplicationRateTonsPerHa ??
+      AgriculturalParameterRegistry.getParameterValue<number>(
+        "FILTER_CAKE_APPLICATION_RATE_TONS_PER_HA",
+        30.0
+      );
+    const vinasseEligible =
+      params.vinasseEligiblePercent ??
+      AgriculturalParameterRegistry.getParameterValue<number>(
+        "VINASSE_COVERAGE_RATIO",
+        0.4
+      );
     const vinasseArea = Number(
-      (params.ratoonCaneAreaHa * (params.vinasseEligiblePercent ?? 0.4)).toFixed(2)
+      (params.ratoonCaneAreaHa * vinasseEligible).toFixed(2)
+    );
+    const ratoonFertilizerDose = AgriculturalParameterRegistry.getParameterValue<number>(
+      "FERTILIZER_RATOON_KG_PER_HA",
+      350.0
     );
 
     const treatmentItems: CulturalTreatmentWorkloadItem[] = [
@@ -356,9 +385,9 @@ export class AgriculturalPlanningService {
         fuelConsumptionLitersPerHour: 14.0,
         requiredDieselLiters: Number(((params.ratoonCaneAreaHa / 1.05) * 14.0).toFixed(2)),
         inputProduct: "Fertilizante Cobertura N-P-K (20-05-20)",
-        inputDosagePerHa: 350.0,
+        inputDosagePerHa: ratoonFertilizerDose,
         inputUnit: "kg/ha",
-        totalInputQuantity: Number(((params.ratoonCaneAreaHa * 350.0) / 1000.0).toFixed(2)),
+        totalInputQuantity: Number(((params.ratoonCaneAreaHa * ratoonFertilizerDose) / 1000.0).toFixed(2)),
         usesIndustrialSubproduct: false,
       },
       // 4. Soca: Reciclaje de Vinaza Fabril en Campo

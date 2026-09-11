@@ -18,6 +18,7 @@ import {
   YieldScenarioParams,
   YieldCalculationResult,
 } from "../../types/agriculture";
+import { AgriculturalParameterRegistry } from "./AgriculturalParameterRegistry";
 
 export const MODEL_REVISION = "ODS-PDA-SET30-REV2014-V1.0";
 
@@ -104,9 +105,15 @@ export const COMMERCIAL_VARIETIES_CATALOG: CaneVarietyYieldMaster[] = [
 export class YieldCalculationService {
   /**
    * Retrieves a cane variety by code or throws an explicit error.
+   * Dynamically resolved from AgriculturalParameterRegistry.
    */
   public static getVariety(code: string): CaneVarietyYieldMaster {
-    const variety = COMMERCIAL_VARIETIES_CATALOG.find(
+    const dynamicCatalog = AgriculturalParameterRegistry.getVarietyCatalog();
+    const catalog =
+      Object.values(dynamicCatalog).length > 0
+        ? Object.values(dynamicCatalog)
+        : COMMERCIAL_VARIETIES_CATALOG;
+    const variety = catalog.find(
       (v) => v.varietyCode.toUpperCase() === code.toUpperCase()
     );
     if (!variety) {
@@ -116,10 +123,12 @@ export class YieldCalculationService {
   }
 
   /**
-   * Returns the entire catalog of commercial cane varieties.
+   * Returns the entire dynamic catalog of commercial cane varieties.
    */
   public static getCatalog(): CaneVarietyYieldMaster[] {
-    return [...COMMERCIAL_VARIETIES_CATALOG];
+    const dynamicCatalog = AgriculturalParameterRegistry.getVarietyCatalog();
+    const values = Object.values(dynamicCatalog);
+    return values.length > 0 ? values : [...COMMERCIAL_VARIETIES_CATALOG];
   }
 
   /**
@@ -154,13 +163,16 @@ export class YieldCalculationService {
       varietyCatalog?: CaneVarietyYieldMaster[];
     } = {}
   ): FieldPlot {
-    const catalog = options.varietyCatalog || COMMERCIAL_VARIETIES_CATALOG;
+    // Dynamically query registry with fallback to catalog
+    const dynamicCatalog = AgriculturalParameterRegistry.getVarietyCatalog();
+    const catalog = options.varietyCatalog || Object.values(dynamicCatalog).length > 0 ? Object.values(dynamicCatalog) : COMMERCIAL_VARIETIES_CATALOG;
     const variety =
       catalog.find((v) => v.varietyCode.toUpperCase() === plotInput.varietyCode.toUpperCase()) ||
       this.getVariety(plotInput.varietyCode);
 
+    const dynamicSoilFactors = AgriculturalParameterRegistry.getSoilImpactFactors();
     const decayFactor = variety.ratoonDecayFactors[plotInput.currentStage] ?? 0.0;
-    const soilFactor = SOIL_IMPACT_FACTORS[plotInput.soilType] ?? 1.0;
+    const soilFactor = dynamicSoilFactors[plotInput.soilType] ?? SOIL_IMPACT_FACTORS[plotInput.soilType] ?? 1.0;
     const climateFactor = options.climateFactor ?? 1.0;
     const variationMultiplier = 1.0 + (options.tchVariationPercent ?? 0.0) / 100.0;
 
@@ -202,6 +214,95 @@ export class YieldCalculationService {
       projectedTch,
       projectedTotalCaneTons,
       trace,
+    };
+  }
+
+  /**
+   * Evaluates an entire collection of field plots recalculating yields and lineage traces.
+   */
+  public static calculatePlotYields(
+    plots: FieldPlot[],
+    options: {
+      climateFactor?: number;
+      tchVariationPercent?: number;
+      varietyCatalog?: CaneVarietyYieldMaster[];
+    } = {}
+  ): FieldPlot[] {
+    return plots.map((p) => this.calculatePlotYield(p, options));
+  }
+
+  /**
+   * Computes the mathematical area balance across seasons:
+   * AreaFinal = AreaInicial + Plantacion - Demolicion + Altas - Bajas
+   * 
+   * Source: ODS Sheet 'Áreas PS e PL' (Balanço de Áreas de Cana)
+   */
+  public static computeAreaBalance(params: {
+    initialAreaHa: number;
+    plantedAreaHa: number;
+    demolishedAreaHa: number;
+    newArableAdditionsHa?: number;
+    lostAreaDeletionsHa?: number;
+  }): {
+    initialAreaHa: number;
+    plantedAreaHa: number;
+    demolishedAreaHa: number;
+    finalAreaHa: number;
+    netChangeHa: number;
+    trace: CalculationTrace;
+  } {
+    const additions = params.newArableAdditionsHa ?? 0;
+    const deletions = params.lostAreaDeletionsHa ?? 0;
+    const finalAreaHa = Number(
+      (params.initialAreaHa + params.plantedAreaHa - params.demolishedAreaHa + additions - deletions).toFixed(2)
+    );
+    const netChangeHa = Number((finalAreaHa - params.initialAreaHa).toFixed(2));
+
+    const trace: CalculationTrace = {
+      formula: "AreaFinal = AreaInicial + Plantacion - Demolicion + Altas - Bajas",
+      sourceSheet: "Áreas PS e PL",
+      sourceCells: "Áreas PS e PL!B3:H12",
+      inputs: {
+        initialAreaHa: { value: params.initialAreaHa, unit: "ha" },
+        plantedAreaHa: { value: params.plantedAreaHa, unit: "ha" },
+        demolishedAreaHa: { value: params.demolishedAreaHa, unit: "ha" },
+        finalAreaHa: { value: finalAreaHa, unit: "ha" },
+        netChangeHa: { value: netChangeHa, unit: "ha" },
+      },
+      calculatedAt: new Date().toISOString(),
+      modelRevision: MODEL_REVISION,
+    };
+
+    return {
+      initialAreaHa: params.initialAreaHa,
+      plantedAreaHa: params.plantedAreaHa,
+      demolishedAreaHa: params.demolishedAreaHa,
+      finalAreaHa,
+      netChangeHa,
+      trace,
+    };
+  }
+
+  /**
+   * Physical-dimensional validation for agricultural field plot data.
+   */
+  public static validateFieldPlotData(plot: FieldPlot): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    if (!plot.code || plot.code.trim().length === 0) {
+      errors.push("El código de lote es obligatorio");
+    }
+    if (plot.areaHectares <= 0 || Number.isNaN(plot.areaHectares)) {
+      errors.push(`Área inválida: ${plot.areaHectares} ha (debe ser > 0)`);
+    }
+    if (plot.projectedTch != null && (plot.projectedTch < 0 || Number.isNaN(plot.projectedTch))) {
+      errors.push(`TCH proyectado inválido: ${plot.projectedTch} t/ha`);
+    }
+    if (plot.distanceToMillKm < 0 || Number.isNaN(plot.distanceToMillKm)) {
+      errors.push(`Distancia a fábrica inválida: ${plot.distanceToMillKm} km`);
+    }
+    return {
+      isValid: errors.length === 0,
+      errors,
     };
   }
 

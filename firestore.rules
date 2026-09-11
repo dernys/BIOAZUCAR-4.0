@@ -172,5 +172,35 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
       allow write: if isAuthenticated() && isNewResourceTenantMatch();
     }
+
+    // 15. Agricultural Parameters & Governance (ODS PDA)
+    match /agricultural_parameters/{paramId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+    }
+
+    // 16. Agricultural Field Plots
+    match /agricultural_plots/{plotId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+    }
+
+    // 17. Agricultural Campaigns
+    match /agricultural_campaigns/{campId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+    }
+
+    // 18. Agricultural Varieties Catalog
+    match /agricultural_varieties/{varId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+    }
+
+    // 19. Agricultural Operations & Workloads
+    match /agricultural_operations/{opId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+    }
   }
 }

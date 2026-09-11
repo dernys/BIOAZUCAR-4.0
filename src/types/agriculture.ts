@@ -39,17 +39,75 @@ export type AgroOperationCategory =
   | "COLHEITA"
   | "TRANSPORTE";
 
+export type ParameterValidationStatus =
+  | "CONFIRMADO"
+  | "REQUIERE_VALIDACION"
+  | "CONFIGURABLE"
+  | "PDA_VERIFIED"
+  | "DERIVED"
+  | "CURRENT_ASSUMPTION"
+  | "REQUIRES_VALIDATION";
+
+export type ValidationStatus = "CONFIRMADO" | "REQUIERE_VALIDACION" | "CONFIGURABLE";
+
+export type ParameterCategory =
+  | "VARIETY_DECAY"
+  | "SOIL_FACTORS"
+  | "AGRO_OPERATIONS"
+  | "HARVEST_CCT"
+  | "ECONOMIC_PRICES"
+  | "INPUTS_BYPRODUCTS"
+  | "THRESHOLDS";
+
+export type AgroParameterCategory =
+  | "VARIEDAD"
+  | "SUELO"
+  | "PREPARACION_SUELO"
+  | "PLANTIO"
+  | "TRATOS_CULTURALES"
+  | "MAQUINARIA"
+  | "CCT_LOGISTICA"
+  | "ECONOMIA"
+  | ParameterCategory;
+
+export interface AgriculturalParameter {
+  id: string;
+  tenantId: string;
+  category: AgroParameterCategory;
+  name: string;
+  key: string;
+  value: number | string | boolean | Record<string, any>;
+  unit: string;
+  source: string;              // e.g. "PDA ODS Model" | "Empirical Mill Assumption" | "Operational Standard"
+  sourceSheet?: string;        // e.g. "TCH", "COLHEITA", "DIESEL e LUBR", "EVOLUÇÃO tch por cepa"
+  sourceCell?: string;         // e.g. "TCH!C5:H30", only when proven from cell
+  sourceCells?: string;        // alias for sourceCell
+  version: string;             // e.g. "1.0.0"
+  effectiveFrom: string;
+  effectiveTo?: string;
+  validationStatus: ValidationStatus | ParameterValidationStatus;
+  description?: string;
+  notes?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
 /**
  * Evidence-First Calculation Lineage
  * Every mathematical result records its source sheet, formula and precise inputs.
+ * Trace chain: resultado → fórmula → parámetros → valores → unidades → fuente → versión → escenario → usuario → timestamp
  */
 export interface CalculationTrace {
   formula: string;
   sourceSheet: string;
   sourceCells?: string;
-  inputs: Record<string, { value: number | string; unit: string }>;
+  inputs: Record<string, { value: number | string; unit: string; source?: string; validationStatus?: ParameterValidationStatus }>;
+  parameters?: Array<{ key: string; value: any; unit: string; validationStatus: ParameterValidationStatus; sourceSheet?: string }>;
+  scenario?: string;
+  user?: string;
   calculatedAt: string;
   modelRevision: string;
+  result?: { value: number | string; unit: string };
 }
 
 /**

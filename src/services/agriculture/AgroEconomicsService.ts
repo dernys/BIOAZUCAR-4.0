@@ -24,6 +24,7 @@ import {
   CalculationTrace,
 } from "../../types/agriculture";
 import { MODEL_REVISION } from "./YieldCalculationService";
+import { AgriculturalParameterRegistry } from "./AgriculturalParameterRegistry";
 
 export const BENCHMARK_ECONOMIC_PRICES = {
   DIESEL_USD_PER_LITER: 0.95,
@@ -63,16 +64,29 @@ export class AgroEconomicsService {
     soilRenovationCapexUSD?: number;
   }): AgroEconomicsSummary {
     const dieselPrice =
-      params.customDieselPriceUSD ?? BENCHMARK_ECONOMIC_PRICES.DIESEL_USD_PER_LITER;
+      params.customDieselPriceUSD ??
+      AgriculturalParameterRegistry.getParameterValue<number>(
+        "DIESEL_PRICE_USD_PER_LITER",
+        BENCHMARK_ECONOMIC_PRICES.DIESEL_USD_PER_LITER
+      );
+
+    const harvestDieselRate = AgriculturalParameterRegistry.getParameterValue<number>(
+      "DIESEL_HARVEST_LITERS_PER_TON",
+      4.2
+    );
+    const transportDieselRate = AgriculturalParameterRegistry.getParameterValue<number>(
+      "DIESEL_TRANSPORT_LITERS_PER_TON",
+      1.8
+    );
 
     // Diesel volume consolidation
     const prepDiesel = params.soilPrepPlan?.totalDieselLiters ?? 0;
     const plantDiesel = params.plantingPlan?.requiredDieselLiters ?? 0;
     const treatDiesel = params.treatmentsPlan?.totalDieselLiters ?? 0;
     const harvestDiesel =
-      params.harvestDieselLiters ?? params.totalCaneTonsDelivered * 4.2;
+      params.harvestDieselLiters ?? params.totalCaneTonsDelivered * harvestDieselRate;
     const transportDiesel =
-      params.transportDieselLiters ?? params.totalCaneTonsDelivered * 1.8;
+      params.transportDieselLiters ?? params.totalCaneTonsDelivered * transportDieselRate;
 
     const totalDieselLiters = Number(
       (prepDiesel + plantDiesel + treatDiesel + harvestDiesel + transportDiesel).toFixed(2)
@@ -81,16 +95,36 @@ export class AgroEconomicsService {
 
     // Insumos & Fertilizers
     const basalFertilizerTons = params.plantingPlan?.totalBasalFertilizerTons ?? 0;
-    // Cover fertilizer on ratoon cane: ~350 kg/ha
+    const ratoonFertilizerRateKgPerHa = AgriculturalParameterRegistry.getParameterValue<number>(
+      "FERTILIZER_RATOON_KG_PER_HA",
+      350.0
+    );
+    const fertilizerNpkPriceUSD = AgriculturalParameterRegistry.getParameterValue<number>(
+      "PRICE_FERTILIZER_NPK_USD_PER_TON",
+      BENCHMARK_ECONOMIC_PRICES.FERTILIZER_NPK_USD_PER_TON
+    );
+    const herbicideCostPerHa = AgriculturalParameterRegistry.getParameterValue<number>(
+      "COST_HERBICIDE_USD_PER_HA",
+      BENCHMARK_ECONOMIC_PRICES.HERBICIDE_DEFENSIVE_USD_PER_HA
+    );
+    const maintenanceRatePerHourUSD = AgriculturalParameterRegistry.getParameterValue<number>(
+      "COST_MACHINERY_MAINTENANCE_USD_PER_HOUR",
+      BENCHMARK_ECONOMIC_PRICES.MAINTENANCE_PARTS_USD_PER_HOUR
+    );
+    const operatorMonthlySalaryUSD = AgriculturalParameterRegistry.getParameterValue<number>(
+      "LABOR_OPERATOR_MONTHLY_USD",
+      BENCHMARK_ECONOMIC_PRICES.LABOR_OPERATOR_MONTH_USD
+    );
+
     const ratoonArea = params.treatmentsPlan?.ratoonCaneAreaHa ?? params.totalArableAreaHa * 0.8;
-    const coverFertilizerTons = (ratoonArea * 350.0) / 1000.0;
+    const coverFertilizerTons = (ratoonArea * ratoonFertilizerRateKgPerHa) / 1000.0;
     const totalFertilizerTons = basalFertilizerTons + coverFertilizerTons;
     const fertilizersAndAmendmentsCostUSD = Number(
-      (totalFertilizerTons * BENCHMARK_ECONOMIC_PRICES.FERTILIZER_NPK_USD_PER_TON).toFixed(2)
+      (totalFertilizerTons * fertilizerNpkPriceUSD).toFixed(2)
     );
 
     const agrochemicalsAndDefensivesCostUSD = Number(
-      (params.totalArableAreaHa * BENCHMARK_ECONOMIC_PRICES.HERBICIDE_DEFENSIVE_USD_PER_HA).toFixed(2)
+      (params.totalArableAreaHa * herbicideCostPerHa).toFixed(2)
     );
 
     // Maintenance of Fleet & Implement wear parts
@@ -101,14 +135,14 @@ export class AgroEconomicsService {
       (params.totalCaneTonsDelivered / 50.0); // Harvester hours (~50 t/h)
 
     const machineryMaintenanceCostUSD = Number(
-      (totalMachineHours * BENCHMARK_ECONOMIC_PRICES.MAINTENANCE_PARTS_USD_PER_HOUR).toFixed(2)
+      (totalMachineHours * maintenanceRatePerHourUSD).toFixed(2)
     );
 
     // Labor (estimated headcount based on machine hours / standard shift)
     const totalWorkDays = totalMachineHours / 8.0;
     const laborMonths = totalWorkDays / 25.0;
     const workforceLaborCostUSD = Number(
-      (laborMonths * BENCHMARK_ECONOMIC_PRICES.LABOR_OPERATOR_MONTH_USD).toFixed(2)
+      (laborMonths * operatorMonthlySalaryUSD).toFixed(2)
     );
 
     const otherOperationalCostsUSD = Number(

@@ -478,7 +478,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 Azúcar Comercial
               </span>
               <span className="text-sm font-bold font-tech text-white">
-                {telemetry.sugarProductionTonsToday.toFixed(1)} t
+                {(telemetry.sugarProductionTonsToday ?? 0).toFixed(1)} t
               </span>
             </div>
             <div className="bg-slate-900/90 p-2.5 rounded-lg border border-yellow-500/40 text-center">

@@ -39,7 +39,14 @@ import {
   DataLineageInfo,
 } from "./types";
 import { RuntimeMode } from "./services/runtime/types";
-import { INITIAL_AUDIT_LOGS, INITIAL_TELEMETRY } from "./data/mockIndustrialData";
+import {
+  INITIAL_AUDIT_LOGS,
+  INITIAL_TELEMETRY,
+  INITIAL_EQUIPMENT,
+  INITIAL_BATCHES,
+  INITIAL_WORK_ORDERS,
+  INITIAL_ALARMS,
+} from "./data/mockIndustrialData";
 import { updateTelemetry } from "./services/simulationEngine";
 import { dataProviderRegistry } from "./services/dataProviders/DataProviderRegistry";
 import { tenantRuntimeManager } from "./services/runtime/TenantRuntimeManager";
@@ -102,10 +109,10 @@ export default function App() {
   // Core App State backed by Cloud Firestore
   const [telemetry, setTelemetry] = useState<TelemetryData>(INITIAL_TELEMETRY);
 
-  const [equipmentList, setEquipmentList] = useState<EquipmentItem[]>([]);
-  const [batches, setBatches] = useState<CaneBatch[]>([]);
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
-  const [alarms, setAlarms] = useState<AlarmEvent[]>([]);
+  const [equipmentList, setEquipmentList] = useState<EquipmentItem[]>(INITIAL_EQUIPMENT);
+  const [batches, setBatches] = useState<CaneBatch[]>(INITIAL_BATCHES);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(INITIAL_WORK_ORDERS);
+  const [alarms, setAlarms] = useState<AlarmEvent[]>(INITIAL_ALARMS);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(INITIAL_AUDIT_LOGS);
   const [usersList, setUsersList] = useState<UserAccount[]>(PREDEFINED_USERS);
   const [rolesList, setRolesList] = useState<RbacRoleDefinition[]>(DEFAULT_ROLES);

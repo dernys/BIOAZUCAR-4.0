@@ -19,22 +19,34 @@ import {
   CalculationTrace,
 } from "../../types/agriculture";
 import { MODEL_REVISION } from "./YieldCalculationService";
+import { AgriculturalParameterRegistry } from "./AgriculturalParameterRegistry";
 
 /**
  * Standard benchmark acquisition cost for agricultural machinery (USD).
- * Source: ODS Sheet 'Equipamentos_base/DIN', 'Equipamentos PS_COMPRAS'
+ * Dynamic resolution via AgriculturalParameterRegistry with fallback.
  */
 export const BENCHMARK_ACQUISITION_PRICES_USD: Record<EquipmentCategory, number> = {
   TRACTOR_PESADO: 190000.0,
   TRACTOR_MEDIO: 125000.0,
   TRACTOR_LIGERO: 80000.0,
   COSECHADORA_COMBINADA: 450000.0,
-  TRACTOR_TRANSBORDO: 145000.0, // Tractor + transloading wagon combo
-  CAMION_CANERO_RODOVIARIO: 185000.0, // Truck tractor + bi-trailer 45t
+  TRACTOR_TRANSBORDO: 145000.0,
+  CAMION_CANERO_RODOVIARIO: 185000.0,
   IMPLEMENTO_AGRICOLA: 35000.0,
 };
 
 export class MachineryAndLogisticsService {
+  /**
+   * Helper to retrieve equipment acquisition price from the dynamic registry.
+   */
+  public static getEquipmentUnitPrice(category: EquipmentCategory): number {
+    const regKey = `PRICE_${category}_USD`;
+    return AgriculturalParameterRegistry.getParameterValue<number>(
+      regKey,
+      BENCHMARK_ACQUISITION_PRICES_USD[category] ?? 100000.0
+    );
+  }
+
   /**
    * Calculates fleet dimensioning and acquisition deficit for an operational category.
    * Deterministic formula:
@@ -49,15 +61,19 @@ export class MachineryAndLogisticsService {
     description: string;
     totalWorkloadHours: number;
     workingWindowDays: number;
-    dailyOperatingHours?: number;         // default 16 h/day
-    mechanicalAvailabilityRatio?: number; // default 0.85
+    dailyOperatingHours?: number;         // default from registry
+    mechanicalAvailabilityRatio?: number; // default from registry
     fleetAvailableUnits: number;
     customUnitPriceUSD?: number;
   }): MachineryFleetBalanceItem {
-    const dailyHours = params.dailyOperatingHours ?? 16;
-    const availability = params.mechanicalAvailabilityRatio ?? 0.85;
+    const dailyHours =
+      params.dailyOperatingHours ??
+      AgriculturalParameterRegistry.getParameterValue<number>("HOURS_PER_DAY_SOIL_PREP", 16);
+    const availability =
+      params.mechanicalAvailabilityRatio ??
+      AgriculturalParameterRegistry.getParameterValue<number>("EQUIPMENT_AVAILABILITY_SOIL_PREP", 0.85);
     const unitPrice =
-      params.customUnitPriceUSD ?? BENCHMARK_ACQUISITION_PRICES_USD[params.category];
+      params.customUnitPriceUSD ?? this.getEquipmentUnitPrice(params.category);
 
     const capacityPerMachineHours = params.workingWindowDays * dailyHours * availability;
     const fleetRequiredUnits =
@@ -182,14 +198,30 @@ export class MachineryAndLogisticsService {
     payloadTonsPerTruck?: number;        // default 45.0 t (Bi-tren cañero)
     dailyUtilizationFactor?: number;     // default 0.80 (80% 24h utilization = 19.2 operating hours)
   }): CctTransportCycleCalculation {
-    const speedEmpty = params.averageSpeedEmptyKmH ?? 45.0;
-    const speedLoaded = params.averageSpeedLoadedKmH ?? 32.0;
-    const loadTime = params.loadingInFieldTimeHours ?? 0.45;
-    const unloadTime = params.unloadingAtMillTimeHours ?? 0.35;
-    const fieldQueue = params.fieldQueueTimeHours ?? 0.15;
-    const millQueue = params.millWeighbridgeQueueTimeHours ?? 0.20;
-    const payload = params.payloadTonsPerTruck ?? 45.0;
-    const utilization = params.dailyUtilizationFactor ?? 0.80;
+    const speedEmpty =
+      params.averageSpeedEmptyKmH ??
+      AgriculturalParameterRegistry.getParameterValue<number>("CCT_SPEED_EMPTY_KM_H", 45.0);
+    const speedLoaded =
+      params.averageSpeedLoadedKmH ??
+      AgriculturalParameterRegistry.getParameterValue<number>("CCT_SPEED_LOADED_KM_H", 32.0);
+    const loadTime =
+      params.loadingInFieldTimeHours ??
+      AgriculturalParameterRegistry.getParameterValue<number>("CCT_LOADING_IN_FIELD_HOURS", 0.45);
+    const unloadTime =
+      params.unloadingAtMillTimeHours ??
+      AgriculturalParameterRegistry.getParameterValue<number>("CCT_UNLOADING_AT_MILL_HOURS", 0.35);
+    const fieldQueue =
+      params.fieldQueueTimeHours ??
+      AgriculturalParameterRegistry.getParameterValue<number>("CCT_FIELD_QUEUE_HOURS", 0.15);
+    const millQueue =
+      params.millWeighbridgeQueueTimeHours ??
+      AgriculturalParameterRegistry.getParameterValue<number>("CCT_MILL_QUEUE_HOURS", 0.20);
+    const payload =
+      params.payloadTonsPerTruck ??
+      AgriculturalParameterRegistry.getParameterValue<number>("CCT_TRUCK_PAYLOAD_TONS", 45.0);
+    const utilization =
+      params.dailyUtilizationFactor ??
+      AgriculturalParameterRegistry.getParameterValue<number>("CCT_UTILIZATION_FACTOR", 0.80);
 
     // One-way distance is roundTrip / 2
     const oneWayDistance = params.roundTripDistanceKm / 2.0;
