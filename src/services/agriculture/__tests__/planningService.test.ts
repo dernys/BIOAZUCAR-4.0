@@ -56,8 +56,8 @@ describe("BioAzúcar 4.0 — Agricultural Planning Service (ODS PDA)", () => {
 
     expect(plan.totalMachineHours).toBeGreaterThan(0);
     expect(plan.totalDieselLiters).toBeGreaterThan(0);
-    expect(plan.trace.sourceSheet).toBe("Áreas PS e PL");
-    expect(plan.trace.modelRevision).toBe(MODEL_REVISION);
+    expect(plan.trace.formulaId).toBe("SOIL_PREP_CONSOLIDATED_V1");
+    expect(plan.trace.modelType).toBe("PDA_VALIDATED");
   });
 
   it("3. Planting Planning: verifies seed cane demand, nursery area discount and fertilizer", () => {
@@ -86,7 +86,8 @@ describe("BioAzúcar 4.0 — Agricultural Planning Service (ODS PDA)", () => {
     expect(plantingPlan.requiredMachineHours).toBeCloseTo(1333.33, 1);
     expect(plantingPlan.requiredDieselLiters).toBeCloseTo(26666.67, 0);
 
-    expect(plantingPlan.trace.sourceSheet).toBe("PLANTIO");
+    expect(plantingPlan.trace.formulaId).toBe("PLANTING_OPERATIONS_V1");
+    expect(plantingPlan.trace.modelType).toBe("PDA_VALIDATED");
   });
 
   it("4. Cultural Treatments: computes plant vs ratoon treatments and factory vinasse recycling", () => {
@@ -114,6 +115,7 @@ describe("BioAzúcar 4.0 — Agricultural Planning Service (ODS PDA)", () => {
 
     expect(treatments.totalMachineHours).toBeGreaterThan(0);
     expect(treatments.totalDieselLiters).toBeGreaterThan(0);
-    expect(treatments.trace.sourceSheet).toContain("TRATOS");
+    expect(treatments.trace.formulaId).toBe("CULTURAL_TREATMENTS_V1");
+    expect(treatments.trace.modelType).toBe("PDA_VALIDATED");
   });
 });

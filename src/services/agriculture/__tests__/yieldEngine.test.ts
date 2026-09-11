@@ -72,10 +72,9 @@ describe("BioAzúcar 4.0 — Agronomic Yield Calculation Engine (ODS PDA)", () =
 
     // Check evidence-first calculation trace
     expect(calculated.trace).toBeDefined();
-    expect(calculated.trace?.sourceSheet).toContain("TCH");
     expect(calculated.trace?.modelRevision).toBe(MODEL_REVISION);
     expect(calculated.trace?.inputs.areaHectares.value).toBe(50.0);
-    expect(calculated.trace?.inputs.resultTch.value).toBe(105.0);
+    expect(calculated.trace?.result?.value).toBe(105.0);
   });
 
   it("4. Ratoon Decay Curve: verifies deterministic yield reduction through all cutting stages", () => {

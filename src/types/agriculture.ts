@@ -39,14 +39,19 @@ export type AgroOperationCategory =
   | "COLHEITA"
   | "TRANSPORTE";
 
+export type AgroModelType = "PDA_VALIDATED" | "BIOAZUCAR_MODEL" | "WHAT_IF_SCENARIO";
+
 export type ParameterValidationStatus =
-  | "CONFIRMADO"
-  | "REQUIERE_VALIDACION"
+  | "PDA_VALIDATED"
   | "CONFIGURABLE"
-  | "PDA_VERIFIED"
   | "DERIVED"
+  | "BIOAZUCAR_MODEL"
+  | "REQUIRES_VALIDATION"
+  | "CONFIRMADO"
+  | "PDA_VERIFIED"
   | "CURRENT_ASSUMPTION"
-  | "REQUIRES_VALIDATION";
+  | "REQUIERE_VALIDACION"
+  | "INVALID_SOURCE";
 
 export type ValidationStatus = "CONFIRMADO" | "REQUIERE_VALIDACION" | "CONFIGURABLE";
 
@@ -70,6 +75,8 @@ export type AgroParameterCategory =
   | "ECONOMIA"
   | ParameterCategory;
 
+export type ParameterValueType = "numeric" | "factor" | "rate" | "currency" | "text" | "object" | "boolean";
+
 export interface AgriculturalParameter {
   id: string;
   tenantId: string;
@@ -78,36 +85,64 @@ export interface AgriculturalParameter {
   key: string;
   value: number | string | boolean | Record<string, any>;
   unit: string;
-  source: string;              // e.g. "PDA ODS Model" | "Empirical Mill Assumption" | "Operational Standard"
-  sourceSheet?: string;        // e.g. "TCH", "COLHEITA", "DIESEL e LUBR", "EVOLUÇÃO tch por cepa"
-  sourceCell?: string;         // e.g. "TCH!C5:H30", only when proven from cell
-  sourceCells?: string;        // alias for sourceCell
+  type?: ParameterValueType;
+  description?: string;
   version: string;             // e.g. "1.0.0"
+  status?: ParameterValidationStatus;
+  validity?: string;           // e.g. "Vigente 2026/2027", "Permanente"
   effectiveFrom: string;
   effectiveTo?: string;
-  validationStatus: ValidationStatus | ParameterValidationStatus;
-  description?: string;
-  notes?: string;
+  provenanceDoc?: string;      // Documentary history metadata, e.g. "Estudio Agronómico PDA 2014"
+  historicReference?: string;  // Non-operative historical note
+  createdBy?: string;
   updatedBy?: string;
   updatedAt?: string;
+  changeReason?: string;
+  notes?: string;
+  // Backward compatibility fields (non-operative metadata)
+  source?: string;
+  sourceSheet?: string;
+  sourceCell?: string;
+  sourceCells?: string;
+  validationStatus?: ValidationStatus | ParameterValidationStatus;
 }
 
 /**
- * Evidence-First Calculation Lineage
- * Every mathematical result records its source sheet, formula and precise inputs.
- * Trace chain: resultado → fórmula → parámetros → valores → unidades → fuente → versión → escenario → usuario → timestamp
+ * Sovereign Internal Calculation Lineage (ISA-95 Level 4 / MOM)
+ * Trace chain: Entrada → Parámetros → Fórmula → Versión del modelo → Resultado → Unidad → Campaña → Escenario → Usuario → Fecha.
+ * Completely autonomous and independent from external files.
  */
 export interface CalculationTrace {
-  formula: string;
-  sourceSheet: string;
-  sourceCells?: string;
-  inputs: Record<string, { value: number | string; unit: string; source?: string; validationStatus?: ParameterValidationStatus }>;
-  parameters?: Array<{ key: string; value: any; unit: string; validationStatus: ParameterValidationStatus; sourceSheet?: string }>;
+  formulaId: string;
+  formulaName?: string;
+  formulaExpression?: string;
+  modelType?: AgroModelType;
+  modelVersion?: string;
+  campaignId?: string;
   scenario?: string;
   user?: string;
   calculatedAt: string;
-  modelRevision: string;
+  inputs: Record<string, { value: number | string | boolean; unit: string; description?: string; parameterKey?: string; source?: string; validationStatus?: ParameterValidationStatus }>;
+  parameters?: Array<{
+    key: string;
+    value: any;
+    unit: string;
+    status?: ParameterValidationStatus;
+    category?: AgroParameterCategory;
+    provenanceDoc?: string;
+    validationStatus?: ParameterValidationStatus;
+    sourceSheet?: string;
+  }>;
   result?: { value: number | string; unit: string };
+  provenance?: {
+    documentSource?: string;
+    historicReference?: string;
+  };
+  // Backward compatibility fields
+  formula?: string;
+  sourceSheet?: string;
+  sourceCells?: string;
+  modelRevision?: string;
 }
 
 /**
@@ -148,12 +183,13 @@ export interface FieldPlot {
   projectedTotalCaneTons: number;   // areaHectares * projectedTch (t)
   scheduledHarvestMonth: number;    // Harvest calendar slot (1-12)
   status: FieldPlotStatus;
+  agronomicModel?: AgroModelType;
   trace?: CalculationTrace;
 }
 
 /**
  * Agricultural Campaign / Zafra Parameters
- * Source: ODS 'PREMISSAS', 'PDA_SET30'
+ * Canonical campaign operational baseline
  */
 export interface AgriculturalCampaign {
   id: string;
@@ -177,6 +213,7 @@ export interface AgriculturalCampaign {
  */
 export interface YieldScenarioParams {
   name: string;
+  modelType?: AgroModelType;
   tchVariationPercent?: number;     // e.g. -10 for -10% TCH drought
   areaVariationPercent?: number;    // e.g. +5 for expanded area
   climateFactor?: number;           // Multiplier: 0.85 (drought) to 1.10 (favorable)
@@ -416,6 +453,124 @@ export interface AgroEconomicsSummary {
   capex: AgroCapexCostBreakdown;
   trace: CalculationTrace;
 }
+
+/**
+ * Internal Sovereign Mathematical Formula & Model Governance
+ * Clean separation between canonical validated model, BioAzúcar 4.0 predictive model,
+ * and what-if simulation models.
+ */
+export type PdaFormulaStatus =
+  | "PDA_VALIDATED"
+  | "PDA_VERIFIED"
+  | "CONFIGURABLE"
+  | "DERIVED"
+  | "BIOAZUCAR_MODEL"
+  | "REQUIRES_VALIDATION"
+  | "INVALID_SOURCE";
+
+export type PdaModelOrigin =
+  | "PDA_2014"             // Modelo agronómico canónico histórico
+  | "BIOAZUCAR_4_0";       // Modelo predictivo / mejora analítica multivariante BioAzúcar 4.0
+
+export interface PdaFormulaVariable {
+  name: string;
+  symbol: string;
+  unit: string;
+  description: string;
+  moduleCategory?: string;
+  sourceSheet?: string;    // Deprecated historical reference
+  defaultValue?: number | string;
+}
+
+export interface PdaFormulaAuditEntry {
+  version: string;
+  changedAt: string;
+  changedBy: string;
+  reason: string;
+  previousExpression?: string;
+}
+
+export interface PdaFormulaMaster {
+  formulaId: string;           // Canonical internal ID (e.g. "TCH_PROYECTADO_V1", "AREA_FINAL_V1")
+  name: string;
+  version: string;
+  status: PdaFormulaStatus | ParameterValidationStatus;
+  modelOrigin: PdaModelOrigin;
+  expression: string;
+  variables: PdaFormulaVariable[];
+  units: string;
+  description?: string;
+  moduleCategory?: string;
+  rules?: string[];
+  provenanceDoc?: string;      // Documentary history metadata
+  historicReference?: string;
+  effectiveFrom: string;
+  effectiveTo?: string;
+  isEditable: boolean;
+  notes?: string;
+  auditHistory?: PdaFormulaAuditEntry[];
+  // Deprecated backward compatibility fields
+  sourceDoc?: string;
+  sourceSheet?: string;
+  sourceRange?: string;
+  provenance?: string;
+}
+
+export type InternalAgroFormula = PdaFormulaMaster;
+
+/**
+ * Reusable Agricultural Reporting Types
+ */
+export type PdaReportType =
+  | "MASTER_PDA"
+  | "AREA_BALANCE"
+  | "RENOVATION_PLANTING"
+  | "SOIL_PREP"
+  | "TREATMENTS_INPUTS"
+  | "PRODUCTION_TCH"
+  | "HARVEST"
+  | "MACHINERY"
+  | "CCT_LOGISTICS"
+  | "FUEL_DIESEL"
+  | "COSTS_OPEX_CAPEX"
+  | "CAMPAIGN_SCENARIO_COMPARISON"
+  | "FORMULAS_PARAMETERS_TRACE";
+
+export interface PdaReportKpi {
+  label: string;
+  value: string | number;
+  unit?: string;
+  trend?: "up" | "down" | "neutral";
+  color?: string;
+}
+
+export interface PdaReportColumn {
+  key: string;
+  label: string;
+  align?: "left" | "right" | "center";
+}
+
+export interface PdaReportMetadata {
+  reportId: string;
+  reportType: PdaReportType;
+  title: string;
+  subtitle?: string;
+  campaignId: string;
+  campaignName: string;
+  tenantId: string;
+  generatedAt: string;
+  generatedBy: string;
+  modelRevision: string;
+}
+
+export interface PdaReportResult {
+  metadata: PdaReportMetadata;
+  summaryKpis: PdaReportKpi[];
+  columns: PdaReportColumn[];
+  rows: Record<string, any>[];
+  traceNotes?: string[];
+}
+
 
 
 

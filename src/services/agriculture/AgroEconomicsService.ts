@@ -202,10 +202,13 @@ export class AgroEconomicsService {
     };
 
     const trace: CalculationTrace = {
+      formulaId: "AGRO_ECONOMICS_CONSOLIDATED_V1",
+      formulaName: "Consolidación de Economía Agrícola (OPEX & CAPEX)",
+      formulaExpression:
+        "TotalOpex = Sum(Diesel + Fert + Chem + Maint + Labor + Other); CostPerTon = TotalOpex / TotalCaneTons; CostPerHa = TotalOpex / TotalAreaHa",
+      modelType: "PDA_VALIDATED",
       formula:
         "TotalOpex = Sum(Diesel + Fert + Chem + Maint + Labor + Other); CostPerTon = TotalOpex / TotalCaneTons; CostPerHa = TotalOpex / TotalAreaHa",
-      sourceSheet: "OPEX / CAPEX / DIESEL e LUBR",
-      sourceCells: "OPEX!B4:H30, CAPEX!C3:J20",
       inputs: {
         totalAreaHa: { value: params.totalArableAreaHa, unit: "ha" },
         totalCaneTons: { value: params.totalCaneTonsDelivered, unit: "t" },

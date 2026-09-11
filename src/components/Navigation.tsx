@@ -87,7 +87,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       id: "agricultural_pda",
       label: "Plan Agrícola PDA",
       icon: Tractor,
-      desc: "Campo, CCT & ODS 2014",
+      desc: "Campo, CCT & Zafra",
       category: "OPERATIONS",
       tag: "PDA",
     },

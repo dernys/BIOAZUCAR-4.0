@@ -188,10 +188,13 @@ export class AgriculturalPlanningService {
       estimatedLaborDays += workDays * operation.operatorCount;
 
       const trace: CalculationTrace = {
+        formulaId: "SOIL_PREP_WORKLOAD_OP_V1",
+        formulaName: "Carga Operacional de Preparación de Suelo",
+        formulaExpression:
+          "Hours = AreaHa / EffectiveCapacityHaPerHour; Diesel = Hours * FuelRateLitersPerHour; Machines = Ceil(WorkDays / CalendarDays)",
+        modelType: "PDA_VALIDATED",
         formula:
           "Hours = AreaHa / EffectiveCapacityHaPerHour; Diesel = Hours * FuelRateLitersPerHour; Machines = Ceil(WorkDays / CalendarDays)",
-        sourceSheet: "Áreas PS_operações",
-        sourceCells: "Áreas PS_operações!B4:H20",
         inputs: {
           areaHa: { value: params.targetPreparationAreaHa, unit: "ha" },
           operationName: { value: operation.name, unit: "text" },
@@ -217,9 +220,11 @@ export class AgriculturalPlanningService {
     });
 
     const planTrace: CalculationTrace = {
+      formulaId: "SOIL_PREP_CONSOLIDATED_V1",
+      formulaName: "Consolidación de Preparación de Suelo & Demolición",
+      formulaExpression: "TotalMachineHours = Sum(OpHours); TotalDiesel = Sum(OpDiesel)",
+      modelType: "PDA_VALIDATED",
       formula: "TotalMachineHours = Sum(OpHours); TotalDiesel = Sum(OpDiesel)",
-      sourceSheet: "Áreas PS e PL",
-      sourceCells: "Áreas PS e PL!C3:J15",
       inputs: {
         totalAreaHa: { value: params.targetPreparationAreaHa, unit: "ha" },
         totalHours: { value: Number(totalMachineHours.toFixed(2)), unit: "h" },
@@ -243,8 +248,7 @@ export class AgriculturalPlanningService {
 
   /**
    * Plans the mechanized planting schedule and nursery seed cane consumption.
-   * 
-   * Source: ODS Sheet 'PLANTIO'
+   * Internal model for planting operations, seed cane requirements and basal fertilization.
    */
   public static planPlanting(params: {
     tenantId: string;
@@ -275,10 +279,13 @@ export class AgriculturalPlanningService {
     );
 
     const trace: CalculationTrace = {
+      formulaId: "PLANTING_OPERATIONS_V1",
+      formulaName: "Plan de Siembra Mecanizada & Consumo de Semilla",
+      formulaExpression:
+        "SeedTons = AreaHa * SeedRate; NurseryArea = SeedTons / NurseryTch; Diesel = (AreaHa / Cap) * FuelRate; FertTons = AreaHa * FertDose / 1000",
+      modelType: "PDA_VALIDATED",
       formula:
         "SeedTons = AreaHa * SeedRate; NurseryArea = SeedTons / NurseryTch; Diesel = (AreaHa / Cap) * FuelRate; FertTons = AreaHa * FertDose / 1000",
-      sourceSheet: "PLANTIO",
-      sourceCells: "PLANTIO!B3:F25",
       inputs: {
         plantingAreaHa: { value: params.targetPlantingAreaHa, unit: "ha" },
         seedRateTonsPerHa: { value: seedRate, unit: "t/ha" },
@@ -419,10 +426,13 @@ export class AgriculturalPlanningService {
     ); // Applied on 30% of plant cane area
 
     const trace: CalculationTrace = {
+      formulaId: "CULTURAL_TREATMENTS_V1",
+      formulaName: "Tratos Culturales & Dosificación de Subproductos Fabriles",
+      formulaExpression:
+        "Hours = Area / EffCap; Diesel = Hours * FuelRate; VinasseM3 = EligibleSocaArea * 150 m3/ha",
+      modelType: "PDA_VALIDATED",
       formula:
         "Hours = Area / EffCap; Diesel = Hours * FuelRate; VinasseM3 = EligibleSocaArea * 150 m3/ha",
-      sourceSheet: "TRATOS PLANTA / TRATOS SOCAeRETONOS",
-      sourceCells: "TRATOS PLANTA!C4:H20, TRATOS SOCAeRETONOS!B3:G25",
       inputs: {
         plantCaneAreaHa: { value: params.plantCaneAreaHa, unit: "ha" },
         ratoonCaneAreaHa: { value: params.ratoonCaneAreaHa, unit: "ha" },

@@ -82,8 +82,8 @@ describe("BioAzúcar 4.0 — Agro-Economics Consolidation (ODS PDA)", () => {
     expect(economics.opex.costPerTonCaneUSD).toBeGreaterThan(8.0);
     expect(economics.opex.costPerTonCaneUSD).toBeLessThan(35.0);
 
-    expect(economics.trace.sourceSheet).toContain("OPEX");
-    expect(economics.trace.modelRevision).toBe(MODEL_REVISION);
+    expect(economics.trace.formulaId).toBe("AGRO_ECONOMICS_CONSOLIDATED_V1");
+    expect(economics.trace.modelType).toBe("PDA_VALIDATED");
   });
 
   it("3. CAPEX Consolidation: integrates fleet acquisition, infrastructure and soil improvements", () => {

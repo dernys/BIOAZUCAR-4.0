@@ -21,7 +21,7 @@ describe("BioAzúcar 4.0 — Machinery Dimensioning & CCT Logistics (ODS PDA)", 
   it("1. Benchmark Prices: contains validated market prices for heavy agricultural equipment", () => {
     expect(BENCHMARK_ACQUISITION_PRICES_USD.TRACTOR_PESADO).toBe(190000.0);
     expect(BENCHMARK_ACQUISITION_PRICES_USD.COSECHADORA_COMBINADA).toBe(450000.0);
-    expect(BENCHMARK_ACQUISITION_PRICES_USD.CAMION_CANERO_RODOVIARIO).toBe(185000.0);
+    expect(BENCHMARK_ACQUISITION_PRICES_USD.CAMION_CANERO_RODOVIARIO).toBe(210000.0);
   });
 
   it("2. Fleet Balance Calculation: computes required units, deficit and CAPEX accurately", () => {
@@ -48,7 +48,7 @@ describe("BioAzúcar 4.0 — Machinery Dimensioning & CCT Logistics (ODS PDA)", 
     expect(balance.fleetDeficitUnits).toBe(2);
     expect(balance.totalAcquisitionCapexUSD).toBe(380000.0);
 
-    expect(balance.trace.sourceSheet).toContain("Equipamentos");
+    expect(balance.trace.sourceSheet).toContain("Maquinaria");
     expect(balance.trace.modelRevision).toBe(MODEL_REVISION);
     expect(balance.trace.inputs.workloadHours.value).toBe(2000.0);
     expect(balance.trace.inputs.deficitUnits.value).toBe(2);
@@ -82,7 +82,7 @@ describe("BioAzúcar 4.0 — Machinery Dimensioning & CCT Logistics (ODS PDA)", 
     expect(consolidated.totalFleetRequired).toBe(item1.fleetRequiredUnits + item2.fleetRequiredUnits);
     expect(consolidated.totalFleetDeficit).toBe(item1.fleetDeficitUnits + item2.fleetDeficitUnits);
     expect(consolidated.totalAcquisitionCapexUSD).toBe(380000.0 + 900000.0);
-    expect(consolidated.trace.sourceSheet).toBe("EQUIPAos_RESUMO");
+    expect(consolidated.trace.sourceSheet).toContain("Maquinaria");
   });
 
   it("4. Transport Cycle (CCT): verifies transit, cycle times, trips and required truck fleet", () => {
@@ -118,7 +118,7 @@ describe("BioAzúcar 4.0 — Machinery Dimensioning & CCT Logistics (ODS PDA)", 
     expect(cct.dailyCapacityPerTruckTons).toBeGreaterThan(250.0);
     expect(cct.trucksRequiredForDailyDemand).toBe(10);
 
-    expect(cct.trace.sourceSheet).toContain("COLHEITA");
+    expect(cct.trace.sourceSheet).toContain("CCT");
     expect(cct.trace.inputs.trucksRequired.value).toBe(10);
   });
 });

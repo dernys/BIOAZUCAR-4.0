@@ -1,13 +1,13 @@
 /**
  * BioAzúcar 4.0 — Agricultural Intelligence & Planning Executive View (PDA Audit & Governance)
- * Model: Plano de Desenvolvimento Agrícola (PDA_set30_rev2014_v1.ods)
+ * Sovereign internal agronomic planning model and operational governance.
  * 
  * Audited Architecture:
  * 1. Categorization & Governance of Parameters:
- *    - CONFIRMADO: Fórmulas y celdas ODS auditadas matemáticamente.
+ *    - CONFIRMADO / PDA_VALIDATED: Modelos y ecuaciones canónicas validadas matemáticamente.
  *    - REQUIERE_VALIDACION: Parámetros agronómicos que requieren calibración en campo/ingenio real.
  *    - CONFIGURABLE: Variables económicas o logísticas que fluctúan por zafra y mercado.
- * 2. Complete Traceability: ISA-95 Level 4 audit trace with exact ODS coordinates.
+ * 2. Complete Traceability: ISA-95 Level 4 audit trace with internal formula lineage.
  * 3. Bidirectional Industrial Flows:
  *    - Harvested plots dispatch to Mill Reception -> creates real CaneBatch in cane_batches.
  *    - Agricultural machinery prep -> generates Preventive Work Orders in work_orders.
@@ -89,6 +89,7 @@ import { VarietyModal } from "./agriculture/VarietyModal";
 import { CampaignModal } from "./agriculture/CampaignModal";
 import { ParameterModal } from "./agriculture/ParameterModal";
 import { FormulaViewerModal } from "./agriculture/FormulaViewerModal";
+import { ReportsCenterView } from "./agriculture/ReportsCenterView";
 
 interface AgriculturalPdaViewProps {
   theme?: "dark" | "light";
@@ -98,7 +99,7 @@ interface AgriculturalPdaViewProps {
   onWorkOrderCreated?: (wo: WorkOrder) => void;
 }
 
-type SubTab = "plots" | "varieties" | "operations" | "fleet_cct" | "economics" | "governance";
+type SubTab = "plots" | "varieties" | "operations" | "fleet_cct" | "economics" | "governance" | "reports";
 
 /**
  * Universal safe number formatter to prevent runtime undefined.toFixed() crashes
@@ -348,6 +349,29 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
   // Variety decay curve reference from dynamic varieties catalog
   const varietyCatalogList = varieties;
 
+  // Reusable Report context for PDA reporting engine
+  const reportContext = useMemo(() => ({
+    campaign,
+    plots,
+    campaignSummary,
+    soilPrepPlan,
+    plantingPlan,
+    treatmentsPlan: culturalTreatmentsPlan,
+    fleetPlan,
+    cctLogistics,
+    economics,
+  }), [
+    campaign,
+    plots,
+    campaignSummary,
+    soilPrepPlan,
+    plantingPlan,
+    culturalTreatmentsPlan,
+    fleetPlan,
+    cctLogistics,
+    economics,
+  ]);
+
   // Plot CRUD handlers
   const handleSavePlot = async (savedPlot: FieldPlot) => {
     // Recalculate projected TCH and Tons with the latest variety & soil factors
@@ -470,7 +494,9 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
         governanceSearch.trim() === "" ||
         p.key.toLowerCase().includes(governanceSearch.toLowerCase()) ||
         p.name.toLowerCase().includes(governanceSearch.toLowerCase()) ||
-        p.sourceSheet.toLowerCase().includes(governanceSearch.toLowerCase());
+        (p.category || "").toLowerCase().includes(governanceSearch.toLowerCase()) ||
+        (p.provenanceDoc || "").toLowerCase().includes(governanceSearch.toLowerCase()) ||
+        ((p as any).sourceSheet || "").toLowerCase().includes(governanceSearch.toLowerCase());
       return matchCat && matchStatus && matchSearch;
     });
   }, [parameters, governanceCategoryFilter, governanceStatusFilter, governanceSearch]);
@@ -509,7 +535,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
 
   // Reset parameters
   const handleResetParameters = async () => {
-    if (window.confirm("¿Restablecer todos los parámetros agrícolas a los valores canónicos del ODS PDA?")) {
+    if (window.confirm("¿Restablecer todos los parámetros agrícolas a los valores canónicos del Modelo PDA?")) {
       await AgriculturalPersistenceService.resetParametersToCanonical(campaign.tenantId);
       setNotificationMsg({ text: "Parámetros restablecidos al modelo canónico PDA", type: "info" });
       setTimeout(() => setNotificationMsg(null), 4000);
@@ -724,6 +750,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
           { id: "fleet_cct", label: "Flota & Logística CCT", icon: Truck },
           { id: "economics", label: "Agro-Economía & CAPEX", icon: DollarSign },
           { id: "governance", label: "Gestor de Fórmulas & Parámetros", icon: ShieldCheck },
+          { id: "reports", label: "Centro de Reportes PDA (13)", icon: FileSpreadsheet },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -762,7 +789,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
               <div className="flex items-center gap-2">
                 <Wheat className="w-4 h-4 text-emerald-500" />
                 <h3 className="font-bold text-xs uppercase tracking-wider text-slate-300">
-                  Curvas de Decaimiento Biológico por Variedad (ODS Sheets: 'TCH' & 'EVOLUÇÃO tch por cepa')
+                  Curvas de Decaimiento Biológico por Variedad (Curvas Canónicas de Productividad)
                 </h3>
               </div>
               <span className="text-xs text-slate-500">
@@ -991,7 +1018,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
 
                           <button
                             onClick={() => setSelectedTrace(plot.trace)}
-                            title="Auditar cálculo ODS"
+                            title="Auditar cálculo determinista"
                             className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
                           >
                             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
@@ -1152,7 +1179,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <div className="flex items-center gap-2">
                   <Tractor className="w-5 h-5 text-amber-500" />
                   <h3 className="font-bold text-sm">
-                    Preparación de Suelos & Renovación (ODS Sheets: 'Áreas PS e PL' & 'Áreas PS_operações')
+                    Preparación de Suelos & Renovación (Mecanización & Laboreo)
                   </h3>
                 </div>
                 <button
@@ -1214,7 +1241,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <div className="flex items-center gap-2">
                   <Sprout className="w-5 h-5 text-emerald-500" />
                   <h3 className="font-bold text-sm">
-                    Plantío Mecanizado & Semilleros (ODS Sheet: 'PLANTIO')
+                    Plantío Mecanizado & Semilleros (Operaciones de Siembra)
                   </h3>
                 </div>
                 <button
@@ -1257,7 +1284,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
               <div className="flex items-center gap-2">
                 <Droplets className="w-5 h-5 text-blue-400" />
                 <h3 className="font-bold text-sm">
-                  Economía Circular & Subproductos Fabriles (ODS Sheets: 'TRATOS PLANTA' & 'TRATOS SOCAeRETONOS')
+                  Economía Circular & Subproductos Fabriles (Nutrición & Enmiendas Orgánicas)
                 </h3>
               </div>
             </div>
@@ -1309,7 +1336,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
               <div className="flex items-center gap-2">
                 <Tractor className="w-5 h-5 text-amber-500" />
                 <h3 className="font-bold text-sm">
-                  Balance y Dimensionamiento de Flota Agrícola (ODS Sheets: 'Equipamentos PS_CALCULOS' & 'COMPRAS')
+                  Balance y Dimensionamiento de Flota Agrícola (Tracción & Cosecha Mecanizada)
                 </h3>
               </div>
               <button
@@ -1511,7 +1538,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <div className="flex items-center gap-2">
                   <DollarSign className="w-5 h-5 text-emerald-500" />
                   <h3 className="font-bold text-sm">
-                    Estructura OPEX de Campo (ODS Sheet: 'OPEX' & 'DIESEL e LUBR')
+                    Estructura OPEX de Campo (Costes Directos de Operación)
                   </h3>
                 </div>
                 <button
@@ -1588,7 +1615,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-amber-500" />
                   <h3 className="font-bold text-sm">
-                    Inversiones de Capital CAPEX (ODS Sheet: 'CAPEX' & 'OUTROS INV')
+                    Inversiones de Capital CAPEX & Renovación de Parque
                   </h3>
                 </div>
               </div>
@@ -1636,7 +1663,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
         </div>
       )}
 
-      {/* SUB-TAB 5: PDA Parameters Governance & Audit (ODS Verification) */}
+      {/* SUB-TAB 5: PDA Parameters Governance & Audit */}
       {activeSubTab === "governance" && (
         <div className="space-y-6">
           {/* Header Card & Audit Summary */}
@@ -1646,11 +1673,11 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-emerald-400" />
                   <h3 className="font-bold text-base">
-                    Gobernanza & Auditoría de Parámetros del Modelo PDA (ODS)
+                    Gobernanza & Auditoría de Parámetros del Modelo PDA
                   </h3>
                 </div>
                 <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-                  Auditoría formal de trazabilidad matemática sobre la hoja <span className="font-mono text-slate-200">PDA_set30_rev2014_v1.ods</span>.
+                  Auditoría formal de trazabilidad matemática sobre el modelo canónico agronómico.
                   Los parámetros están clasificados según su rigor determinista para evitar asunciones no verificadas.
                 </p>
               </div>
@@ -1695,7 +1722,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <span className="text-xl font-bold font-mono text-emerald-400 mt-0.5 block">
                   {parameterStats.confirmed}
                 </span>
-                <span className="text-[10px] text-slate-400">Fórmulas ODS exactas</span>
+                <span className="text-[10px] text-slate-400">Modelos Canónicos Validados</span>
               </div>
 
               <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/10">
@@ -1731,7 +1758,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
                 <input
                   type="text"
-                  placeholder="Buscar clave, nombre o celda..."
+                  placeholder="Buscar clave, nombre o procedencia..."
                   value={governanceSearch}
                   onChange={(e) => setGovernanceSearch(e.target.value)}
                   className={`text-xs pl-8 pr-3 py-1.5 rounded-md border w-64 ${
@@ -1766,7 +1793,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 }`}
               >
                 <option value="ALL">Todos los Estados de Validación</option>
-                <option value="CONFIRMADO">CONFIRMADO (Fórmula Exacta ODS)</option>
+                <option value="CONFIRMADO">CONFIRMADO (Modelo Canónico Validado)</option>
                 <option value="REQUIERE_VALIDACION">REQUIERE_VALIDACION (Calibración en Campo)</option>
                 <option value="CONFIGURABLE">CONFIGURABLE (Parámetro Libre)</option>
               </select>
@@ -1789,7 +1816,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                   <th className="p-3">Nombre & Descripción</th>
                   <th className="p-3">Valor Actual</th>
                   <th className="p-3">Unidad</th>
-                  <th className="p-3">Hoja / Celdas ODS</th>
+                  <th className="p-3">Dominio & Procedencia</th>
                   <th className="p-3 text-center">Acción</th>
                 </tr>
               </thead>
@@ -1829,7 +1856,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                       <td className="p-3 text-slate-400 font-mono">{param.unit}</td>
                       <td className="p-3 font-mono text-[11px] text-slate-300">
                         <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
-                          {param.sourceSheet}!{param.sourceCells}
+                          {param.provenanceDoc || `${param.category} • ${param.validity || "Vigente"}`}
                         </span>
                       </td>
                       <td className="p-3 text-center">
@@ -1867,6 +1894,15 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
         </div>
       )}
 
+      {/* SUB-TAB 7: PDA Reports & Audit */}
+      {activeSubTab === "reports" && (
+        <ReportsCenterView
+          context={reportContext}
+          theme={theme}
+          onOpenFormulas={() => setIsFormulaModalOpen(true)}
+        />
+      )}
+
       {/* PARAMETER EDIT MODAL */}
       {editingParam && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
@@ -1899,9 +1935,9 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
               </div>
 
               <div>
-                <span className="text-slate-400 block mb-1">Referencia ODS:</span>
+                <span className="text-slate-400 block mb-1">Procedencia Documental:</span>
                 <span className="font-mono text-emerald-400">
-                  {editingParam.sourceSheet}!{editingParam.sourceCells}
+                  {editingParam.provenanceDoc || `${editingParam.category} (Modelo Canónico)`}
                 </span>
               </div>
 
@@ -1972,19 +2008,23 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                   Fórmula Matemática Auditada:
                 </span>
                 <p className="font-mono bg-slate-950 p-3 rounded-lg border border-slate-800 text-emerald-400 mt-1 text-xs break-all">
-                  {selectedTrace.formula}
+                  {selectedTrace.formulaExpression || selectedTrace.formula || "Cálculo determinista interno"}
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-2.5 rounded bg-slate-950 border border-slate-800/60">
-                  <span className="text-slate-500 block text-[10px] uppercase">Hoja Origen ODS:</span>
-                  <span className="font-mono font-bold text-slate-200">{selectedTrace.sourceSheet}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase">Identificador de Fórmula:</span>
+                  <span className="font-mono font-bold text-slate-200">
+                    {selectedTrace.formulaId || selectedTrace.formulaName || "CÁLCULO_INTERNO"}
+                  </span>
                 </div>
 
                 <div className="p-2.5 rounded bg-slate-950 border border-slate-800/60">
-                  <span className="text-slate-500 block text-[10px] uppercase">Celdas / Coordenadas:</span>
-                  <span className="font-mono font-bold text-slate-200">{selectedTrace.sourceCells}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase">Tipo de Modelo:</span>
+                  <span className="font-mono font-bold text-emerald-400">
+                    {selectedTrace.modelType || "PDA_VALIDATED"} (v{selectedTrace.modelVersion || "1.0.0"})
+                  </span>
                 </div>
               </div>
 

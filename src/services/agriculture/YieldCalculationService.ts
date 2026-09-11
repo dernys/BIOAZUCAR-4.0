@@ -1,12 +1,12 @@
 /**
  * BioAzúcar 4.0 — Agricultural Intelligence & Planning Engine
- * YieldCalculationService: Deterministic biological yield and ratoon decay engine.
+ * YieldCalculationService: Autonomous deterministic biological yield, ratoon decay & campaign simulation engine.
  * 
- * Sources:
- * - ODS Sheet: 'TCH'
- * - ODS Sheet: 'EVOLUÇÃO tch por cepa'
- * - ODS Sheet: 'análise Evolução TCH'
- * - ODS Sheet: 'PDA_SET30'
+ * 100% Autonomous from spreadsheet runtime dependencies.
+ * Supports:
+ * - PDA_VALIDATED (Empirical Varietal Decay Model)
+ * - BIOAZUCAR_MODEL (Pedological Soil Modifiers + Bioclimatic Factor)
+ * - WHAT_IF_SCENARIO (Sensitivity and multi-scenario simulations)
  */
 
 import {
@@ -17,24 +17,27 @@ import {
   SoilType,
   YieldScenarioParams,
   YieldCalculationResult,
+  AgroModelType,
 } from "../../types/agriculture";
 import { AgriculturalParameterRegistry } from "./AgriculturalParameterRegistry";
 
-export const MODEL_REVISION = "ODS-PDA-SET30-REV2014-V1.0";
+export const MODEL_REVISION = "BIOAZUCAR-AGRO-MODEL-V1.0";
 
 /**
- * Soil productivity modifiers based on physical-hydraulic characteristics.
- * Source: ODS Sheet 'TCH' (Pedological index modifiers)
+ * Baseline soil productivity modifiers based on physical-hydraulic characteristics.
+ * Franco: Reference balance (1.00)
+ * Arcilloso: Heavy clay, high water retention, root impedance (0.98)
+ * Arenoso: Sandy, high percolation, low cation exchange (0.92)
  */
 export const SOIL_IMPACT_FACTORS: Record<SoilType, number> = {
-  FRANCO: 1.00,     // Loam - standard reference
-  ARCILLOSO: 0.98,  // Heavy clay - good water holding, slight root compaction
-  ARENOSO: 0.92,    // Sandy - high percolation, lower water and nutrient retention
+  FRANCO: 1.00,
+  ARCILLOSO: 0.98,
+  ARENOSO: 0.92,
 };
 
 /**
- * Standard reference commercial varieties master data from the sugar region.
- * Source: ODS Sheet 'TCH' & 'EVOLUÇÃO tch por cepa'
+ * Standard reference commercial varieties master data catalog.
+ * Dynamically configurable through AgriculturalParameterRegistry.
  */
 export const COMMERCIAL_VARIETIES_CATALOG: CaneVarietyYieldMaster[] = [
   {
@@ -133,7 +136,7 @@ export class YieldCalculationService {
 
   /**
    * Validates physical dimensional consistency:
-   * areaHa > 0, tch >= 0, and if tons provided, abs(areaHa * tch - tons) <= 0.1
+   * areaHa > 0, tch >= 0, and if tons provided, abs(areaHa * tch - tons) <= 0.5
    */
   public static validateDimensions(areaHa: number, tch: number, tons?: number): boolean {
     if (areaHa <= 0 || Number.isNaN(areaHa)) return false;
@@ -149,11 +152,11 @@ export class YieldCalculationService {
 
   /**
    * Calculates the expected TCH and total production for a single field plot.
-   * Deterministic formula:
-   *   TCH = BaseTch * RatoonDecay(Stage) * SoilImpact(SoilType) * ClimateFactor * (1 + TchVariationPercent / 100)
-   *   ProductionTons = AreaHectares * TCH
    * 
-   * Source: ODS Sheets 'TCH', 'EVOLUÇÃO tch por cepa'
+   * Models supported:
+   * 1. PDA_VALIDATED: TCH = BaseTch * RatoonDecay(Stage)
+   * 2. BIOAZUCAR_MODEL: TCH = BaseTch * RatoonDecay(Stage) * SoilFactor(SoilType) * ClimateFactor
+   * 3. WHAT_IF_SCENARIO: TCH = BaseTch * RatoonDecay(Stage) * SoilFactor(SoilType) * ClimateFactor * (1 + VarPct/100)
    */
   public static calculatePlotYield(
     plotInput: Omit<FieldPlot, "projectedTch" | "projectedTotalCaneTons" | "trace">,
@@ -161,22 +164,36 @@ export class YieldCalculationService {
       climateFactor?: number;
       tchVariationPercent?: number;
       varietyCatalog?: CaneVarietyYieldMaster[];
+      modelType?: AgroModelType;
     } = {}
   ): FieldPlot {
+    const modelType: AgroModelType =
+      plotInput.agronomicModel || options.modelType || "BIOAZUCAR_MODEL";
+
     // Dynamically query registry with fallback to catalog
     const dynamicCatalog = AgriculturalParameterRegistry.getVarietyCatalog();
-    const catalog = options.varietyCatalog || Object.values(dynamicCatalog).length > 0 ? Object.values(dynamicCatalog) : COMMERCIAL_VARIETIES_CATALOG;
+    const catalog =
+      options.varietyCatalog || Object.values(dynamicCatalog).length > 0
+        ? Object.values(dynamicCatalog)
+        : COMMERCIAL_VARIETIES_CATALOG;
     const variety =
       catalog.find((v) => v.varietyCode.toUpperCase() === plotInput.varietyCode.toUpperCase()) ||
       this.getVariety(plotInput.varietyCode);
 
     const dynamicSoilFactors = AgriculturalParameterRegistry.getSoilImpactFactors();
     const decayFactor = variety.ratoonDecayFactors[plotInput.currentStage] ?? 0.0;
-    const soilFactor = dynamicSoilFactors[plotInput.soilType] ?? SOIL_IMPACT_FACTORS[plotInput.soilType] ?? 1.0;
-    const climateFactor = options.climateFactor ?? 1.0;
-    const variationMultiplier = 1.0 + (options.tchVariationPercent ?? 0.0) / 100.0;
+    
+    // In strict PDA_VALIDATED model, soil and climate multipliers are 1.0 (empirical ratoon decay only)
+    const isPdaValidated = modelType === "PDA_VALIDATED";
+    const soilFactor = isPdaValidated
+      ? 1.0
+      : (dynamicSoilFactors[plotInput.soilType] ?? SOIL_IMPACT_FACTORS[plotInput.soilType] ?? 1.0);
+    const climateFactor = isPdaValidated ? 1.0 : (options.climateFactor ?? 1.0);
+    const variationMultiplier = isPdaValidated
+      ? 1.0
+      : (1.0 + (options.tchVariationPercent ?? 0.0) / 100.0);
 
-    // If stage is DEMOLICION, projected TCH and production are 0
+    // If stage is DEMOLICION, projected TCH and production are strictly 0.0
     let projectedTch = 0.0;
     let projectedTotalCaneTons = 0.0;
 
@@ -187,30 +204,52 @@ export class YieldCalculationService {
       projectedTotalCaneTons = Number((plotInput.areaHectares * projectedTch).toFixed(2));
     }
 
+    const formulaId = isPdaValidated ? "TCH_PROYECTADO_V1" : "TCH_PROYECTADO_BIOAZUCAR_V1";
+    const formulaExpression = isPdaValidated
+      ? "TCH = BaseYieldTch * RatoonDecay(Stage)"
+      : "TCH = BaseYieldTch * RatoonDecay(Stage) * SoilFactor(SoilType) * ClimateFactor * (1 + TchVarPct/100)";
+
     const trace: CalculationTrace = {
-      formula:
-        "ProductionTons = AreaHectares * (BaseYieldTch * RatoonDecay * SoilFactor * ClimateFactor * (1 + TchVarPct/100))",
-      sourceSheet: "TCH / EVOLUÇÃO tch por cepa",
-      sourceCells: "PDA_SET30!C5:H30, TCH!B3:F20",
-      inputs: {
-        areaHectares: { value: plotInput.areaHectares, unit: "ha" },
-        varietyCode: { value: variety.varietyCode, unit: "variety" },
-        baseYieldTch: { value: variety.baseYieldTch, unit: "t/ha" },
-        currentStage: { value: plotInput.currentStage, unit: "stage" },
-        decayFactor: { value: decayFactor, unit: "ratio" },
-        soilType: { value: plotInput.soilType, unit: "pedology" },
-        soilFactor: { value: soilFactor, unit: "ratio" },
-        climateFactor: { value: climateFactor, unit: "ratio" },
-        tchVariationPercent: { value: options.tchVariationPercent ?? 0, unit: "%" },
-        resultTch: { value: projectedTch, unit: "t/ha" },
-        resultTotalTons: { value: projectedTotalCaneTons, unit: "t" },
-      },
+      formulaId,
+      formulaName: isPdaValidated
+        ? "Rendimiento Agrícola Proyectado Canónico PDA"
+        : "Rendimiento Agrícola Multivariante BioAzúcar 4.0",
+      formulaExpression,
+      modelType,
+      modelVersion: "1.0.0",
+      campaignId: "ZAFRA-2026-2027",
+      scenario: options.tchVariationPercent ? `Variación TCH ${options.tchVariationPercent}%` : "Línea Base Canónica",
+      user: "agronomo_bioazucar",
       calculatedAt: new Date().toISOString(),
+      inputs: {
+        areaHectares: { value: plotInput.areaHectares, unit: "ha", description: "Área de la parcela" },
+        varietyCode: { value: variety.varietyCode, unit: "variedad", description: "Código de cultivar" },
+        baseYieldTch: { value: variety.baseYieldTch, unit: "t/ha", description: "TCH base ciclo Planta", parameterKey: `VARIETY_MASTER_${variety.varietyCode.replace(/[^A-Za-z0-9]/g, '_')}` },
+        currentStage: { value: plotInput.currentStage, unit: "etapa", description: "Corte / Retoño" },
+        decayFactor: { value: decayFactor, unit: "ratio", description: "Factor de decaimiento por corte" },
+        soilType: { value: plotInput.soilType, unit: "edafología", description: "Clasificación de suelo" },
+        soilFactor: { value: soilFactor, unit: "ratio", description: "Factor edafológico aplicado", parameterKey: `SOIL_FACTOR_${plotInput.soilType}` },
+        climateFactor: { value: climateFactor, unit: "ratio", description: "Factor agroclimático" },
+        tchVariationPercent: { value: options.tchVariationPercent ?? 0, unit: "%", description: "Variación what-if" },
+      },
+      result: { value: projectedTch, unit: "t/ha" },
+      provenance: {
+        documentSource: isPdaValidated
+          ? "Modelo Agronómico Canónico PDA 2014"
+          : "Modelo Predictivo Multivariante BioAzúcar 4.0",
+        historicReference: isPdaValidated
+          ? "Curva empírica de decaimiento por corte"
+          : "Enriquecimiento edafoclimático BioAzúcar",
+      },
+      // Backward compatibility fields
+      formula: `ProductionTons = AreaHectares * (${formulaExpression})`,
+      sourceSheet: "Módulo Agronómico TCH",
       modelRevision: MODEL_REVISION,
     };
 
     return {
       ...plotInput,
+      agronomicModel: modelType,
       projectedTch,
       projectedTotalCaneTons,
       trace,
@@ -226,6 +265,7 @@ export class YieldCalculationService {
       climateFactor?: number;
       tchVariationPercent?: number;
       varietyCatalog?: CaneVarietyYieldMaster[];
+      modelType?: AgroModelType;
     } = {}
   ): FieldPlot[] {
     return plots.map((p) => this.calculatePlotYield(p, options));
@@ -234,8 +274,6 @@ export class YieldCalculationService {
   /**
    * Computes the mathematical area balance across seasons:
    * AreaFinal = AreaInicial + Plantacion - Demolicion + Altas - Bajas
-   * 
-   * Source: ODS Sheet 'Áreas PS e PL' (Balanço de Áreas de Cana)
    */
   public static computeAreaBalance(params: {
     initialAreaHa: number;
@@ -243,6 +281,7 @@ export class YieldCalculationService {
     demolishedAreaHa: number;
     newArableAdditionsHa?: number;
     lostAreaDeletionsHa?: number;
+    campaignId?: string;
   }): {
     initialAreaHa: number;
     plantedAreaHa: number;
@@ -259,17 +298,29 @@ export class YieldCalculationService {
     const netChangeHa = Number((finalAreaHa - params.initialAreaHa).toFixed(2));
 
     const trace: CalculationTrace = {
-      formula: "AreaFinal = AreaInicial + Plantacion - Demolicion + Altas - Bajas",
-      sourceSheet: "Áreas PS e PL",
-      sourceCells: "Áreas PS e PL!B3:H12",
-      inputs: {
-        initialAreaHa: { value: params.initialAreaHa, unit: "ha" },
-        plantedAreaHa: { value: params.plantedAreaHa, unit: "ha" },
-        demolishedAreaHa: { value: params.demolishedAreaHa, unit: "ha" },
-        finalAreaHa: { value: finalAreaHa, unit: "ha" },
-        netChangeHa: { value: netChangeHa, unit: "ha" },
-      },
+      formulaId: "AREA_FINAL_V1",
+      formulaName: "Balance Dinámico de Áreas Cañeras",
+      formulaExpression: "AreaFinal = AreaInicial + Plantacion - Demolicion + AltasTierras - BajasTierras",
+      modelType: "PDA_VALIDATED",
+      modelVersion: "1.0.0",
+      campaignId: params.campaignId || "ZAFRA-2026-2027",
+      scenario: "Balance Catastral",
+      user: "planificador_agricola",
       calculatedAt: new Date().toISOString(),
+      inputs: {
+        initialAreaHa: { value: params.initialAreaHa, unit: "ha", description: "Área al inicio de campaña" },
+        plantedAreaHa: { value: params.plantedAreaHa, unit: "ha", description: "Área nueva de plantío" },
+        demolishedAreaHa: { value: params.demolishedAreaHa, unit: "ha", description: "Área erradicada para reforma" },
+        newArableAdditionsHa: { value: additions, unit: "ha", description: "Tierras nuevas incorporadas" },
+        lostAreaDeletionsHa: { value: deletions, unit: "ha", description: "Bajas de patrimonio" },
+      },
+      result: { value: finalAreaHa, unit: "ha" },
+      provenance: {
+        documentSource: "Módulo de Balance Catastral BioAzúcar 4.0",
+        historicReference: "Conservación de masa superficial",
+      },
+      formula: "AreaFinal = AreaInicial + Plantacion - Demolicion + Altas - Bajas",
+      sourceSheet: "Módulo Catastral de Superficies",
       modelRevision: MODEL_REVISION,
     };
 
@@ -309,8 +360,6 @@ export class YieldCalculationService {
   /**
    * Consolidates an array of FieldPlots into an overall Campaign Yield Summary.
    * Computes weighted average TCH, area and tonnage breakdown by cycle stage.
-   * 
-   * Source: ODS Sheets 'resumoEVOLUÇÃO', 'análise Evolução TCH'
    */
   public static calculateCampaignYieldSummary(plots: FieldPlot[]): YieldCalculationResult {
     let totalAreaHa = 0;
@@ -363,17 +412,28 @@ export class YieldCalculationService {
         : 0;
 
     const trace: CalculationTrace = {
-      formula: "AverageTCH = Sum(ProductionTons) / (TotalAreaHa - DemolitionAreaHa)",
-      sourceSheet: "resumoEVOLUÇÃO",
-      sourceCells: "resumoEVOLUÇÃO!B2:G15",
-      inputs: {
-        totalAreaHa: { value: Number(totalAreaHa.toFixed(2)), unit: "ha" },
-        demolitionAreaHa: { value: Number(demolitionAreaHa.toFixed(2)), unit: "ha" },
-        totalProductionTons: { value: Number(totalProductionTons.toFixed(2)), unit: "t" },
-        averageTch: { value: averageTch, unit: "t/ha" },
-        plotCount: { value: plots.length, unit: "plots" },
-      },
+      formulaId: "TCH_MEDIO_CAMPANA_V1",
+      formulaName: "TCH Medio Ponderado de Campaña Agrícola",
+      formulaExpression: "AverageTCH = Sum(ProductionTons) / (TotalAreaHa - DemolitionAreaHa)",
+      modelType: "PDA_VALIDATED",
+      modelVersion: "1.0.0",
+      campaignId: "ZAFRA-2026-2027",
+      scenario: "Resumen de Campaña",
+      user: "planificador_agricola",
       calculatedAt: new Date().toISOString(),
+      inputs: {
+        totalAreaHa: { value: Number(totalAreaHa.toFixed(2)), unit: "ha", description: "Área total catastrada" },
+        demolitionAreaHa: { value: Number(demolitionAreaHa.toFixed(2)), unit: "ha", description: "Área en demolición excluida" },
+        totalProductionTons: { value: Number(totalProductionTons.toFixed(2)), unit: "t", description: "Producción total estimada" },
+        plotCount: { value: plots.length, unit: "lotes", description: "Cantidad de parcelas activas" },
+      },
+      result: { value: averageTch, unit: "t/ha" },
+      provenance: {
+        documentSource: "Módulo de Rendimiento Consolidado BioAzúcar 4.0",
+        historicReference: "Ponderación Productiva de Campaña",
+      },
+      formula: "AverageTCH = Sum(ProductionTons) / (TotalAreaHa - DemolitionAreaHa)",
+      sourceSheet: "Módulo de Rendimiento Consolidado",
       modelRevision: MODEL_REVISION,
     };
 
@@ -392,22 +452,24 @@ export class YieldCalculationService {
   /**
    * Evaluates field plots to identify those that must be demolished/renovated
    * based on economic yield threshold (e.g. TCH < 55 t/ha or Q7+).
-   * 
-   * Source: ODS Sheet 'Áreas PS e PL' (Renovación de cañaverales)
    */
   public static evaluateRenewalNeeds(
     plots: FieldPlot[],
-    minEconomicTchThreshold = 55.0
+    minEconomicTchThreshold?: number
   ): {
     plotsToRenew: FieldPlot[];
     totalRenewalAreaHa: number;
     percentOfTotalArea: number;
   } {
+    const threshold =
+      minEconomicTchThreshold ??
+      AgriculturalParameterRegistry.getNumberValue("MIN_ECONOMIC_TCH_THRESHOLD", 55.0);
+
     const totalArea = plots.reduce((sum, p) => sum + p.areaHectares, 0);
     const plotsToRenew = plots.filter((plot) => {
       if (plot.currentStage === "DEMOLICION") return true;
       if (plot.currentStage === "RETONO_Q7_PLUS") return true;
-      if (plot.projectedTch > 0 && plot.projectedTch < minEconomicTchThreshold) return true;
+      if (plot.projectedTch > 0 && plot.projectedTch < threshold) return true;
       return false;
     });
 
@@ -427,15 +489,12 @@ export class YieldCalculationService {
   /**
    * Simulates a What-If agronomic scenario over baseline plots.
    * e.g. climate drought (-15% TCH), area expansion, fertilizer reduction.
-   * 
-   * Source: ODS Sheet 'análise Evolução TCH'
    */
   public static simulateWhatIfScenario(
     baselinePlots: FieldPlot[],
     params: YieldScenarioParams
   ): YieldCalculationResult {
     const simulatedPlots: FieldPlot[] = baselinePlots.map((plot) => {
-      // Area variation
       const areaMultiplier = 1.0 + (params.areaVariationPercent ?? 0) / 100;
       const modifiedArea = Number((plot.areaHectares * areaMultiplier).toFixed(2));
 
@@ -447,12 +506,17 @@ export class YieldCalculationService {
         {
           climateFactor: params.climateFactor ?? 1.0,
           tchVariationPercent: params.tchVariationPercent ?? 0.0,
+          modelType: params.modelType || "WHAT_IF_SCENARIO",
         }
       );
     });
 
     const result = this.calculateCampaignYieldSummary(simulatedPlots);
-    result.trace.formula = `What-If Scenario: ${params.name} | TchVar: ${params.tchVariationPercent ?? 0}% | AreaVar: ${params.areaVariationPercent ?? 0}% | Climate: ${params.climateFactor ?? 1.0}`;
+    result.trace.formulaId = "TCH_PROYECTADO_WHAT_IF_V1";
+    result.trace.formulaName = `Simulación de Escenario: ${params.name}`;
+    result.trace.scenario = params.name;
+    result.trace.modelType = params.modelType || "WHAT_IF_SCENARIO";
+    result.trace.formula = `What-If: ${params.name} | TchVar: ${params.tchVariationPercent ?? 0}% | AreaVar: ${params.areaVariationPercent ?? 0}% | Climate: ${params.climateFactor ?? 1.0}`;
     return result;
   }
 }

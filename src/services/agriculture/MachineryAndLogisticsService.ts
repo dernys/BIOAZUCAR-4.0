@@ -2,13 +2,7 @@
  * BioAzúcar 4.0 — Agricultural Intelligence & Planning Engine
  * MachineryAndLogisticsService: Machinery dimensioning, fleet balance and CCT logistics.
  * 
- * Sources:
- * - ODS Sheet: 'Equipamentos PS_CALCULOS'
- * - ODS Sheet: 'Equipamentos PS_COMPRAS'
- * - ODS Sheet: 'EQUIPAos_RESUMO'
- * - ODS Sheet: 'COLHEITA'
- * - ODS Sheet: 'CCT_pessoas'
- * - ODS Sheet: 'Equipamentos_base/DIN'
+ * 100% Autonomous from spreadsheet runtime dependencies.
  */
 
 import {
@@ -28,10 +22,10 @@ import { AgriculturalParameterRegistry } from "./AgriculturalParameterRegistry";
 export const BENCHMARK_ACQUISITION_PRICES_USD: Record<EquipmentCategory, number> = {
   TRACTOR_PESADO: 190000.0,
   TRACTOR_MEDIO: 125000.0,
-  TRACTOR_LIGERO: 80000.0,
+  TRACTOR_LIGERO: 85000.0,
   COSECHADORA_COMBINADA: 450000.0,
-  TRACTOR_TRANSBORDO: 145000.0,
-  CAMION_CANERO_RODOVIARIO: 185000.0,
+  TRACTOR_TRANSBORDO: 165000.0,
+  CAMION_CANERO_RODOVIARIO: 210000.0,
   IMPLEMENTO_AGRICOLA: 35000.0,
 };
 
@@ -53,25 +47,23 @@ export class MachineryAndLogisticsService {
    *   RequiredUnits = Ceil( WorkloadHours / (CalendarDays * DailyOperatingHours * Availability) )
    *   DeficitUnits = Max( 0, RequiredUnits - AvailableUnits )
    *   TotalCapex = DeficitUnits * UnitPriceUSD
-   * 
-   * Source: ODS Sheet 'Equipamentos PS_CALCULOS', 'Equipamentos PS_COMPRAS'
    */
   public static calculateFleetBalanceItem(params: {
     category: EquipmentCategory;
     description: string;
     totalWorkloadHours: number;
     workingWindowDays: number;
-    dailyOperatingHours?: number;         // default from registry
-    mechanicalAvailabilityRatio?: number; // default from registry
+    dailyOperatingHours?: number;
+    mechanicalAvailabilityRatio?: number;
     fleetAvailableUnits: number;
     customUnitPriceUSD?: number;
   }): MachineryFleetBalanceItem {
     const dailyHours =
       params.dailyOperatingHours ??
-      AgriculturalParameterRegistry.getParameterValue<number>("HOURS_PER_DAY_SOIL_PREP", 16);
+      AgriculturalParameterRegistry.getNumberValue("HOURS_PER_DAY_SOIL_PREP", 16.0);
     const availability =
       params.mechanicalAvailabilityRatio ??
-      AgriculturalParameterRegistry.getParameterValue<number>("EQUIPMENT_AVAILABILITY_SOIL_PREP", 0.85);
+      AgriculturalParameterRegistry.getNumberValue("EQUIPMENT_AVAILABILITY_SOIL_PREP", 0.85);
     const unitPrice =
       params.customUnitPriceUSD ?? this.getEquipmentUnitPrice(params.category);
 
@@ -85,23 +77,34 @@ export class MachineryAndLogisticsService {
     const totalAcquisitionCapexUSD = Number((fleetDeficitUnits * unitPrice).toFixed(2));
 
     const trace: CalculationTrace = {
-      formula:
-        "Required = Ceil(Hours / (Days * DailyHours * Avail)); Deficit = Max(0, Req - Avail); Capex = Deficit * Price",
-      sourceSheet: "Equipamentos PS_CALCULOS / Equipamentos PS_COMPRAS",
-      sourceCells: "Equipamentos PS_CALCULOS!D4:K20",
-      inputs: {
-        category: { value: params.category, unit: "category" },
-        workloadHours: { value: params.totalWorkloadHours, unit: "h" },
-        workingWindowDays: { value: params.workingWindowDays, unit: "days" },
-        dailyHours: { value: dailyHours, unit: "h/day" },
-        availability: { value: availability, unit: "ratio" },
-        requiredUnits: { value: fleetRequiredUnits, unit: "units" },
-        availableUnits: { value: params.fleetAvailableUnits, unit: "units" },
-        deficitUnits: { value: fleetDeficitUnits, unit: "units" },
-        unitPriceUSD: { value: unitPrice, unit: "USD" },
-        capexUSD: { value: totalAcquisitionCapexUSD, unit: "USD" },
-      },
+      formulaId: "FLOTA_REQUERIDA_V1",
+      formulaName: "Dimensionamiento de Flota Requerida de Maquinaria",
+      formulaExpression: "RequiredUnits = Ceil( WorkloadHours / (CalendarDays * DailyHours * Avail) ); Deficit = Max(0, Req - Avail)",
+      modelType: "PDA_VALIDATED",
+      modelVersion: "1.0.0",
+      campaignId: "ZAFRA-2026-2027",
+      scenario: "Plan de Mecanización",
+      user: "jefatura_maquinaria",
       calculatedAt: new Date().toISOString(),
+      inputs: {
+        category: { value: params.category, unit: "categoría", description: "Tipo de activo mecánico" },
+        workloadHours: { value: params.totalWorkloadHours, unit: "h", description: "Horas de labor necesarias" },
+        workingWindowDays: { value: params.workingWindowDays, unit: "días", description: "Ventana temporal de preparación" },
+        dailyHours: { value: dailyHours, unit: "h/día", description: "Jornada operativa diaria", parameterKey: "HOURS_PER_DAY_SOIL_PREP" },
+        availability: { value: availability, unit: "ratio", description: "Disponibilidad mecánica", parameterKey: "EQUIPMENT_AVAILABILITY_SOIL_PREP" },
+        requiredUnits: { value: fleetRequiredUnits, unit: "unidades", description: "Flota teórica necesaria" },
+        availableUnits: { value: params.fleetAvailableUnits, unit: "unidades", description: "Parque existente" },
+        deficitUnits: { value: fleetDeficitUnits, unit: "unidades", description: "Déficit neto a adquirir" },
+        unitPriceUSD: { value: unitPrice, unit: "USD", description: "Precio benchmark de compra" },
+        capexUSD: { value: totalAcquisitionCapexUSD, unit: "USD", description: "Inversión CAPEX estimada" },
+      },
+      result: { value: fleetRequiredUnits, unit: "unidades" },
+      provenance: {
+        documentSource: "Módulo de Maquinaria y Tracción BioAzúcar 4.0",
+        historicReference: "Dimensionamiento Teórico de Flota",
+      },
+      formula: "Required = Ceil(Hours / (Days * DailyHours * Avail)); Deficit = Max(0, Req - Avail); Capex = Deficit * Price",
+      sourceSheet: "Módulo de Maquinaria",
       modelRevision: MODEL_REVISION,
     };
 
@@ -123,7 +126,6 @@ export class MachineryAndLogisticsService {
 
   /**
    * Consolidates the fleet balance items into an overall Machinery Fleet Plan.
-   * Source: ODS Sheet 'EQUIPAos_RESUMO', 'res equip EAC'
    */
   public static consolidateFleetPlan(params: {
     tenantId: string;
@@ -147,17 +149,28 @@ export class MachineryAndLogisticsService {
     );
 
     const trace: CalculationTrace = {
-      formula:
-        "TotalCapex = Sum(ItemCapex); TotalDeficit = Sum(ItemDeficit); TotalRequired = Sum(ItemRequired)",
-      sourceSheet: "EQUIPAos_RESUMO",
-      sourceCells: "EQUIPAos_RESUMO!C3:J15",
-      inputs: {
-        totalRequired: { value: totalFleetRequired, unit: "units" },
-        totalAvailable: { value: totalFleetAvailable, unit: "units" },
-        totalDeficit: { value: totalFleetDeficit, unit: "units" },
-        totalCapexUSD: { value: totalAcquisitionCapexUSD, unit: "USD" },
-      },
+      formulaId: "DEFICIT_FLOTA_V1",
+      formulaName: "Consolidación de Plan de Flota y CAPEX",
+      formulaExpression: "TotalCapex = Sum(ItemCapex); TotalDeficit = Sum(ItemDeficit); TotalRequired = Sum(ItemRequired)",
+      modelType: "PDA_VALIDATED",
+      modelVersion: "1.0.0",
+      campaignId: params.campaignId,
+      scenario: "Consolidación CAPEX",
+      user: "jefatura_maquinaria",
       calculatedAt: new Date().toISOString(),
+      inputs: {
+        totalRequired: { value: totalFleetRequired, unit: "unidades", description: "Flota total necesaria" },
+        totalAvailable: { value: totalFleetAvailable, unit: "unidades", description: "Flota propia disponible" },
+        totalDeficit: { value: totalFleetDeficit, unit: "unidades", description: "Déficit consolidado" },
+        totalCapexUSD: { value: totalAcquisitionCapexUSD, unit: "USD", description: "Inversión total requerida" },
+      },
+      result: { value: totalAcquisitionCapexUSD, unit: "USD" },
+      provenance: {
+        documentSource: "Módulo de Flota y Activos de Capital BioAzúcar 4.0",
+        historicReference: "Consolidación de Parque Mecanizado",
+      },
+      formula: "TotalCapex = Sum(ItemCapex); TotalDeficit = Sum(ItemDeficit); TotalRequired = Sum(ItemRequired)",
+      sourceSheet: "Módulo de Maquinaria",
       modelRevision: MODEL_REVISION,
     };
 
@@ -176,54 +189,44 @@ export class MachineryAndLogisticsService {
   /**
    * Calculates the full logistics cycle for Cane Cutting, Loading and Transport (CCT).
    * Determines the required road truck fleet to guarantee the daily mill grinding rate.
-   * 
-   * Deterministic formula:
-   *   TransitTime = (Distance / SpeedEmpty) + (Distance / SpeedLoaded)
-   *   TotalCycleTime = TransitTime + InFieldLoad + MillUnload + Queues
-   *   TripsPerDay = (24 * OperatingFactor) / TotalCycleTime
-   *   DailyCapacityPerTruck = TripsPerDay * PayloadTons
-   *   RequiredTrucks = Ceil( DailyHarvestDemandTons / DailyCapacityPerTruck )
-   * 
-   * Source: ODS Sheets 'COLHEITA', 'CCT_pessoas'
    */
   public static calculateTransportCycle(params: {
     roundTripDistanceKm: number;
     dailyHarvestDemandTons: number;
-    averageSpeedEmptyKmH?: number;       // default 45 km/h
-    averageSpeedLoadedKmH?: number;      // default 32 km/h
-    loadingInFieldTimeHours?: number;    // default 0.45 h (27 min)
-    unloadingAtMillTimeHours?: number;   // default 0.35 h (21 min)
-    fieldQueueTimeHours?: number;        // default 0.15 h
-    millWeighbridgeQueueTimeHours?: number; // default 0.20 h
-    payloadTonsPerTruck?: number;        // default 45.0 t (Bi-tren cañero)
-    dailyUtilizationFactor?: number;     // default 0.80 (80% 24h utilization = 19.2 operating hours)
+    averageSpeedEmptyKmH?: number;
+    averageSpeedLoadedKmH?: number;
+    loadingInFieldTimeHours?: number;
+    unloadingAtMillTimeHours?: number;
+    fieldQueueTimeHours?: number;
+    millWeighbridgeQueueTimeHours?: number;
+    payloadTonsPerTruck?: number;
+    dailyUtilizationFactor?: number;
   }): CctTransportCycleCalculation {
     const speedEmpty =
       params.averageSpeedEmptyKmH ??
-      AgriculturalParameterRegistry.getParameterValue<number>("CCT_SPEED_EMPTY_KM_H", 45.0);
+      AgriculturalParameterRegistry.getNumberValue("CCT_SPEED_EMPTY_KM_H", 45.0);
     const speedLoaded =
       params.averageSpeedLoadedKmH ??
-      AgriculturalParameterRegistry.getParameterValue<number>("CCT_SPEED_LOADED_KM_H", 32.0);
+      AgriculturalParameterRegistry.getNumberValue("CCT_SPEED_LOADED_KM_H", 32.0);
     const loadTime =
       params.loadingInFieldTimeHours ??
-      AgriculturalParameterRegistry.getParameterValue<number>("CCT_LOADING_IN_FIELD_HOURS", 0.45);
+      AgriculturalParameterRegistry.getNumberValue("CCT_LOADING_IN_FIELD_HOURS", 0.45);
     const unloadTime =
       params.unloadingAtMillTimeHours ??
-      AgriculturalParameterRegistry.getParameterValue<number>("CCT_UNLOADING_AT_MILL_HOURS", 0.35);
+      AgriculturalParameterRegistry.getNumberValue("CCT_UNLOADING_AT_MILL_HOURS", 0.35);
     const fieldQueue =
       params.fieldQueueTimeHours ??
-      AgriculturalParameterRegistry.getParameterValue<number>("CCT_FIELD_QUEUE_HOURS", 0.15);
+      AgriculturalParameterRegistry.getNumberValue("CCT_FIELD_QUEUE_HOURS", 0.15);
     const millQueue =
       params.millWeighbridgeQueueTimeHours ??
-      AgriculturalParameterRegistry.getParameterValue<number>("CCT_MILL_QUEUE_HOURS", 0.20);
+      AgriculturalParameterRegistry.getNumberValue("CCT_WEIGHBRIDGE_QUEUE_HOURS", 0.20);
     const payload =
       params.payloadTonsPerTruck ??
-      AgriculturalParameterRegistry.getParameterValue<number>("CCT_TRUCK_PAYLOAD_TONS", 45.0);
+      AgriculturalParameterRegistry.getNumberValue("CCT_TRUCK_PAYLOAD_TONS", 45.0);
     const utilization =
       params.dailyUtilizationFactor ??
-      AgriculturalParameterRegistry.getParameterValue<number>("CCT_UTILIZATION_FACTOR", 0.80);
+      AgriculturalParameterRegistry.getNumberValue("CCT_UTILIZATION_FACTOR", 0.80);
 
-    // One-way distance is roundTrip / 2
     const oneWayDistance = params.roundTripDistanceKm / 2.0;
     const emptyTransit = oneWayDistance / speedEmpty;
     const loadedTransit = oneWayDistance / speedLoaded;
@@ -248,23 +251,36 @@ export class MachineryAndLogisticsService {
         : 1;
 
     const trace: CalculationTrace = {
-      formula:
-        "Transit = (Dist/SpeedEmpty) + (Dist/SpeedLoaded); Cycle = Transit + Load + Unload + Queues; Capacity = (24*Util/Cycle) * Payload; Trucks = Ceil(DailyDemand / Capacity)",
-      sourceSheet: "COLHEITA / CCT_pessoas",
-      sourceCells: "COLHEITA!C6:J30, CCT_pessoas!D4:H18",
-      inputs: {
-        roundTripDistanceKm: { value: params.roundTripDistanceKm, unit: "km" },
-        speedEmptyKmH: { value: speedEmpty, unit: "km/h" },
-        speedLoadedKmH: { value: speedLoaded, unit: "km/h" },
-        transitTimeHours: { value: transitTimeHours, unit: "h" },
-        totalCycleTimeHours: { value: totalCycleTimeHours, unit: "h" },
-        tripsPerDay: { value: effectiveTripsPerTruckDay, unit: "trips/day" },
-        payloadTons: { value: payload, unit: "t" },
-        dailyCapacityPerTruckTons: { value: dailyCapacityPerTruckTons, unit: "t/day" },
-        dailyHarvestDemandTons: { value: params.dailyHarvestDemandTons, unit: "t/day" },
-        trucksRequired: { value: trucksRequiredForDailyDemand, unit: "trucks" },
-      },
+      formulaId: "FLOTA_CAMIONES_V1",
+      formulaName: "Flota Requerida de Camiones Cañeros (CCT)",
+      formulaExpression: "Transit = (Dist/SpeedEmpty) + (Dist/SpeedLoaded); Cycle = Transit + Load + Unload + Queues; Capacity = (24*Util/Cycle) * Payload; Trucks = Ceil(DailyDemand / Capacity)",
+      modelType: "PDA_VALIDATED",
+      modelVersion: "1.0.0",
+      campaignId: "ZAFRA-2026-2027",
+      scenario: "Ciclo Logístico CCT",
+      user: "superintendencia_cct",
       calculatedAt: new Date().toISOString(),
+      inputs: {
+        roundTripDistanceKm: { value: params.roundTripDistanceKm, unit: "km", description: "Distancia redonda campo-fábrica" },
+        speedEmptyKmH: { value: speedEmpty, unit: "km/h", description: "Velocidad retorno vacío", parameterKey: "CCT_SPEED_EMPTY_KM_H" },
+        speedLoadedKmH: { value: speedLoaded, unit: "km/h", description: "Velocidad con carga", parameterKey: "CCT_SPEED_LOADED_KM_H" },
+        transitTimeHours: { value: transitTimeHours, unit: "h", description: "Tiempo rodoviario neto" },
+        loadingTime: { value: loadTime, unit: "h", description: "Tiempo de alce en campo", parameterKey: "CCT_LOADING_IN_FIELD_HOURS" },
+        unloadingTime: { value: unloadTime, unit: "h", description: "Tiempo descarga en mesa", parameterKey: "CCT_UNLOADING_AT_MILL_HOURS" },
+        totalCycleTimeHours: { value: totalCycleTimeHours, unit: "h", description: "Duración de ciclo completo" },
+        tripsPerDay: { value: effectiveTripsPerTruckDay, unit: "viajes/día", description: "Viajes diarios por camión" },
+        payloadTons: { value: payload, unit: "t", description: "Capacidad útil por viaje", parameterKey: "CCT_TRUCK_PAYLOAD_TONS" },
+        dailyCapacityPerTruckTons: { value: dailyCapacityPerTruckTons, unit: "t/día", description: "Capacidad diaria por unidad" },
+        dailyHarvestDemandTons: { value: params.dailyHarvestDemandTons, unit: "t/día", description: "Demanda de molienda fábrica" },
+        trucksRequired: { value: trucksRequiredForDailyDemand, unit: "camiones", description: "Camiones bi-tren requeridos" },
+      },
+      result: { value: trucksRequiredForDailyDemand, unit: "camiones" },
+      provenance: {
+        documentSource: "Módulo Logístico CCT BioAzúcar 4.0",
+        historicReference: "Ciclo Cinemático CCT",
+      },
+      formula: "Transit = (Dist/SpeedEmpty) + (Dist/SpeedLoaded); Cycle = Transit + Load + Unload + Queues; Capacity = (24*Util/Cycle) * Payload; Trucks = Ceil(DailyDemand / Capacity)",
+      sourceSheet: "Módulo CCT Logística",
       modelRevision: MODEL_REVISION,
     };
 
