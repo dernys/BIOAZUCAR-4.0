@@ -258,6 +258,15 @@ export interface AlarmEvent {
   status?: "ACTIVE" | "ACKNOWLEDGED" | "CLEARED";
 }
 
+export type CaneBatchStatus =
+  | "RECEPCIONADO"
+  | "EN_BASCULA"
+  | "EN_PATIO"
+  | "EN_MUESTREO"
+  | "EN_MOLIENDA"
+  | "PROCESADO"
+  | "RECHAZADO";
+
 export interface CaneBatch {
   id: string;
   tenantId?: string;
@@ -290,8 +299,9 @@ export interface CaneBatch {
   arrivalDateTime: string;
   weighedDateTime?: string;
   millingDateTime?: string;
-  status: "EN_PATIO" | "EN_MUESTREO" | "EN_MOLIENDA" | "PROCESADO" | "RECHAZADO";
+  status: CaneBatchStatus;
   sugarYieldEstimated: number; // Toneladas azúcar estimadas
+  weighingProvenance?: "MEASURED_SCALE" | "SIMULATED_SCALE" | "CALCULATED" | "IMPORTED";
   // Data Governance
   dataClassification?: "OPERATIONAL_DATA" | "CONFIDENTIAL_FINANCIAL" | "MASTER_DATA" | "AUDIT_RECORD";
   dataOrigin?: "SCADA" | "LIMS" | "MANUAL" | "CALCULATED" | "SYSTEM" | "USER_ENTRY";
@@ -336,6 +346,7 @@ export interface WorkOrder {
   createdDate: string;
   dueDate: string;
   estimatedHours: number;
+  estimatedDurationHours?: number;
   description: string;
   tasks: { id: string; text: string; done: boolean }[];
   // Data Governance
@@ -512,27 +523,28 @@ export type NetworkZoneType =
   | "ZONE_4_ENTERPRISE";
 
 export interface IndustrialDataPoint {
-  id: string;
+  id?: string;
   tag: string;
-  equipmentId: string;
+  equipmentId?: string;
   assetId?: string;
   siteId?: string;
-  areaId: string;
+  areaId?: string;
   tenantId?: string;
   value: number | string | boolean;
   unit: string;
-  dataType: "FLOAT" | "INTEGER" | "BOOLEAN" | "STRING";
-  source: DataSourceType;
-  protocol: ProtocolType;
+  dataType?: "FLOAT" | "INTEGER" | "BOOLEAN" | "STRING";
+  source?: DataSourceType;
+  protocol?: ProtocolType;
   quality: DataQuality;
   qualityReason?: string;
-  deviceTimestamp: string;
+  deviceTimestamp?: string;
+  timestamp?: string;
   sourceTimestamp?: string;
-  ingestionTimestamp: string;
-  sequence: number;
+  ingestionTimestamp?: string;
+  sequence?: number;
   sequenceNumber?: number;
-  isHistorical: boolean;
-  isSimulated: boolean;
+  isHistorical?: boolean;
+  isSimulated?: boolean;
   provenance?: "SIMULATED_PROCESS_MODEL" | "OBSERVED_OT" | string;
   securityClearanceLevel?: number;
   engMin?: number;

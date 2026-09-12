@@ -153,6 +153,48 @@ export const CANONICAL_AGRICULTURAL_PARAMETERS: AgriculturalParameter[] = [
     changeReason: "Línea base canónica auditada",
     validationStatus: "PDA_VALIDATED",
   },
+  {
+    id: "param-var-c323-68",
+    tenantId: "DEFAULT",
+    category: "VARIEDAD",
+    name: "Variedad C323-68 (Maduración Media / Rústica)",
+    key: "VARIETY_MASTER_C323_68",
+    value: {
+      varietyCode: "C323-68",
+      name: "C323-68 (Cultivar Comercial Rústico / Alta Pureza)",
+      cycleLengthMonths: 14,
+      baseYieldTch: 95.0,
+      polPercent: 14.2,
+      fiberPercent: 13.5,
+      purityPercent: 86.0,
+      maturity: "MEDIA",
+      ratoonDecayFactors: {
+        PLANTA: 1.0,
+        SOCA: 0.88,
+        RETONO_Q2: 0.81,
+        RETONO_Q3: 0.74,
+        RETONO_Q4: 0.68,
+        RETONO_Q5: 0.62,
+        RETONO_Q6: 0.56,
+        RETONO_Q7_PLUS: 0.50,
+        DEMOLICION: 0.00,
+      },
+    },
+    unit: "object",
+    type: "object",
+    description: "Variedad comercial rústica con excelente respuesta a cortes sucesivos y buena extracción de jugo.",
+    version: "1.0.0",
+    status: "PDA_VALIDATED",
+    validity: "Zafra Vigente 2026/2027",
+    effectiveFrom: "2026-01-01T00:00:00.000Z",
+    provenanceDoc: "Catálogo Variedades de Caña - Línea Base Agronómica",
+    historicReference: "Modelo Canónico BioAzúcar 4.0",
+    createdBy: "Ingeniería Agronómica BioAzúcar",
+    updatedBy: "Sistema BioAzúcar 4.0",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+    changeReason: "Inclusión de variedad comercial canónica C323-68",
+    validationStatus: "PDA_VALIDATED",
+  },
 
   // 2. Soil Impact Factors (BioAzúcar Multi-variable Pedological Model)
   {
@@ -1369,6 +1411,8 @@ export class AgriculturalParameterRegistry {
       FRANCO: this.getNumberValue("SOIL_FACTOR_FRANCO", 1.00),
       ARCILLOSO: this.getNumberValue("SOIL_FACTOR_ARCILLOSO", 0.98),
       ARENOSO: this.getNumberValue("SOIL_FACTOR_ARENOSO", 0.92),
+      FERRALITICO_ROJO: this.getNumberValue("SOIL_FACTOR_FERRALITICO_ROJO", 1.05),
+      HUMIFERO: this.getNumberValue("SOIL_FACTOR_HUMIFERO", 1.02),
     };
   }
 }

@@ -30,7 +30,7 @@ import {
   CaneGrowthStage,
   SoilType,
 } from "../../types/agriculture";
-import { WorkOrder, WorkOrderStatus } from "../../types";
+import { WorkOrder, WorkOrderStatus, CaneBatchStatus } from "../../types";
 
 export interface AgronomicValidationError {
   field: string;
@@ -53,6 +53,13 @@ export class AgronomicValidationService {
   /**
    * 1. CAMPAIGN VALIDATION
    */
+  public static validateAgriculturalCampaign(
+    raw: any,
+    existingCampaigns: AgriculturalCampaign[] = []
+  ): AgronomicValidationResult<AgriculturalCampaign> {
+    return AgronomicValidationService.validateCampaign(raw, existingCampaigns);
+  }
+
   public static validateCampaign(
     raw: any,
     existingCampaigns: AgriculturalCampaign[] = []
@@ -1082,23 +1089,31 @@ export class AgronomicValidationService {
     }
 
     const validTransitions: Record<FieldPlotStatus, FieldPlotStatus[]> = {
-      REGISTERED: ["VALIDATED", "EN_PREPARACION", "PLANTADO"],
-      VALIDATED: ["PLANNED", "EN_PREPARACION", "PLANTADO", "REGISTERED", "VEGETACION"],
-      PLANNED: ["READY_FOR_HARVEST", "EN_PREPARACION", "VALIDATED", "VEGETACION", "MADURACION"],
-      READY_FOR_HARVEST: ["HARVESTING", "PLANNED", "MADURACION"],
+      REGISTERED: ["VALIDATED", "EN_PREPARACION", "PREPARACION_SUELO", "PLANTADO", "PLANIFICADO"],
+      VALIDATED: ["PLANNED", "PLANIFICADO", "EN_PREPARACION", "PREPARACION_SUELO", "PLANTADO", "REGISTERED", "VEGETACION"],
+      PLANNED: ["READY_FOR_HARVEST", "EN_PREPARACION", "PREPARACION_SUELO", "VALIDATED", "VEGETACION", "MADURACION", "EN_CORTE"],
+      PLANIFICADO: ["PREPARACION_SUELO", "EN_PREPARACION", "VALIDATED", "SIEMBRA", "PLANNED", "VEGETACION", "MADURACION", "READY_FOR_HARVEST"],
+      PREPARACION_SUELO: ["SIEMBRA", "PLANTADO", "CRECIMIENTO_VEGETATIVO", "VEGETACION", "VALIDATED", "PLANIFICADO"],
+      SIEMBRA: ["CRECIMIENTO_VEGETATIVO", "VEGETACION", "PLANIFICADO"],
+      CRECIMIENTO_VEGETATIVO: ["MADURACION", "ESTIMACION_RENDIMIENTO", "PLANIFICADO"],
+      ESTIMACION_RENDIMIENTO: ["PROGRAMADO_COSECHA", "READY_FOR_HARVEST", "MADURACION"],
+      PROGRAMADO_COSECHA: ["EN_CORTE", "HARVESTING", "READY_FOR_HARVEST"],
+      EN_CORTE: ["COSECHADO", "HARVESTED", "SOCA_REBROTE"],
+      READY_FOR_HARVEST: ["HARVESTING", "COSECHADO", "HARVESTED", "EN_CORTE", "PLANNED", "MADURACION"],
       HARVESTING: ["HARVESTED", "COSECHADO", "READY_FOR_HARVEST"],
-      HARVESTED: ["DISPATCHED"],
-      COSECHADO: ["DISPATCHED"],
-      DISPATCHED: ["RECEIVED"],
+      HARVESTED: ["DISPATCHED", "COSECHADO", "SOCA_REBROTE"],
+      COSECHADO: ["DISPATCHED", "SOCA_REBROTE", "PREPARACION_SUELO"],
+      SOCA_REBROTE: ["CRECIMIENTO_VEGETATIVO", "VEGETACION", "PREPARACION_SUELO"],
+      DISPATCHED: ["RECEIVED", "COSECHADO"],
       RECEIVED: ["PROCESSED"],
       PROCESSED: ["CLOSED"],
-      CLOSED: ["REGISTERED"], // Allowed only when starting a new planting/renovation cycle
+      CLOSED: ["REGISTERED", "PLANIFICADO"],
       // Legacy phenological mappings
       VEGETACION: ["MADURACION", "READY_FOR_HARVEST", "PLANNED", "VALIDATED"],
       MADURACION: ["READY_FOR_HARVEST", "HARVESTING", "COSECHADO", "PLANNED"],
-      EN_PREPARACION: ["PLANTADO", "VALIDATED", "PLANNED"],
-      PLANTADO: ["VEGETACION", "VALIDATED", "PLANNED"],
-      CRECIMIENTO: ["VEGETACION", "MADURACION", "PLANNED", "VALIDATED"],
+      EN_PREPARACION: ["PLANTADO", "VALIDATED", "PLANNED", "PREPARACION_SUELO"],
+      PLANTADO: ["VEGETACION", "VALIDATED", "PLANNED", "CRECIMIENTO_VEGETATIVO"],
+      CRECIMIENTO: ["VEGETACION", "MADURACION", "PLANNED", "VALIDATED", "CRECIMIENTO_VEGETATIVO"],
     };
 
     const allowedTargets = validTransitions[currentStatus] || [];
@@ -1439,5 +1454,50 @@ export class AgronomicValidationService {
       errors,
       warnings,
     };
+  }
+
+  /**
+   * 13. CANEBATCH INDUSTRIAL LIFECYCLE STATE MACHINE VALIDATOR
+   * Enforces:
+   * EN_PATIO → EN_MUESTREO | EN_MOLIENDA | RECHAZADO
+   * EN_MUESTREO → EN_PATIO | EN_MOLIENDA | RECHAZADO
+   * EN_MOLIENDA → PROCESADO | RECHAZADO
+   * PROCESADO → Terminal state (no further transitions)
+   * RECHAZADO → Terminal state (no further transitions)
+   */
+  public static validateCaneBatchLifecycleTransition(
+    currentStatus: CaneBatchStatus,
+    targetStatus: CaneBatchStatus
+  ): { allowed: boolean; reason?: string } {
+    if (currentStatus === targetStatus) {
+      return { allowed: true };
+    }
+
+    if (currentStatus === "PROCESADO" || currentStatus === "RECHAZADO") {
+      return {
+        allowed: false,
+        reason: `Violación de trazabilidad industrial: El lote de caña está en estado terminal '${currentStatus}' y no puede ser modificado a '${targetStatus}'.`,
+      };
+    }
+
+    const validTransitions: Record<CaneBatchStatus, CaneBatchStatus[]> = {
+      RECEPCIONADO: ["EN_BASCULA", "EN_PATIO", "RECHAZADO"],
+      EN_BASCULA: ["EN_PATIO", "EN_MUESTREO", "RECHAZADO"],
+      EN_PATIO: ["EN_MUESTREO", "EN_MOLIENDA", "RECHAZADO"],
+      EN_MUESTREO: ["EN_PATIO", "EN_MOLIENDA", "RECHAZADO"],
+      EN_MOLIENDA: ["PROCESADO", "RECHAZADO"],
+      PROCESADO: [],
+      RECHAZADO: [],
+    };
+
+    const allowedTargets = validTransitions[currentStatus] || [];
+    if (!allowedTargets.includes(targetStatus)) {
+      return {
+        allowed: false,
+        reason: `Transición de estado prohibida en lote de caña: no es posible pasar de '${currentStatus}' a '${targetStatus}'. Estados válidos: [${allowedTargets.join(", ")}].`,
+      };
+    }
+
+    return { allowed: true };
   }
 }

@@ -478,10 +478,11 @@ app.post(
   rateLimiter(45),
   async (req, res) => {
     try {
-      const { type, telemetry, tenant } = req.body;
+      const { type, telemetry, tenant, isSimulated, dataOrigin } = req.body;
       const ai = getGenAI();
       const nominalTch = tenant?.nominalTch || 450;
       const currentTch = telemetry?.tch || nominalTch;
+      const resolvedOrigin = dataOrigin || (isSimulated || telemetry?.isSimulated ? "SIMULATED" : "REAL_OT");
 
       if (!ai) {
         if (type === "PRODUCTION") {
@@ -517,6 +518,8 @@ app.post(
               confidenceScore: 95,
               riskOfThroughputDrop: "LOW",
               riskExplanation: "Alimentación estable de caña fresca con materia extraña en rango aceptable (< 4.5%).",
+              dataOrigin: resolvedOrigin,
+              isSimulated: resolvedOrigin === "SIMULATED",
             },
             isAiGenerated: false,
           });
@@ -531,7 +534,7 @@ app.post(
               timestamp: new Date().toISOString(),
               bagasseGeneratedRateTph: Math.round(currentTch * 0.28 * 10) / 10,
               bagasseBoilerConsumptionTph: Math.round(steamFlow * 0.46 * 10) / 10,
-              bagasseSurplusStorageTph: Math.round((currentTch * 0.28 - steamFlow * 0.46) * 10) / 10,
+              bagasseSurplusStorageTph: Math.max(0, Math.round((currentTch * 0.28 - steamFlow * 0.46) * 10) / 10),
               bagasseStockDaysRemaining: 18.5,
               bagasseMoistureCurrent: telemetry?.bagasseMoisture || 48.8,
               bagasseMoistureForecast: 48.2,
@@ -556,6 +559,8 @@ app.post(
               projectedRevenue24hUSD: Math.round(exportMW * 23.5 * (telemetry?.spotPriceMWh || 78.5)),
               energyEfficiencyIndexPercent: 88.2,
               confidenceScore: 96,
+              dataOrigin: resolvedOrigin,
+              isSimulated: resolvedOrigin === "SIMULATED",
             },
             isAiGenerated: false,
           });
@@ -590,14 +595,16 @@ app.post(
   rateLimiter(30),
   async (req, res) => {
     try {
-      const { queryType, telemetry, alarms, tenant } = req.body;
+      const { queryType, telemetry, alarms, tenant, batches, isSimulated, dataOrigin } = req.body;
       const ai = getGenAI();
+      const resolvedOrigin = dataOrigin || (isSimulated || telemetry?.isSimulated ? "SIMULATED" : "REAL_OT");
 
       if (!ai) {
         // Fallback to physics engine
         return res.json({
           analysis: null,
           isAiGenerated: false,
+          dataOrigin: resolvedOrigin,
           note: "Evaluado mediante motor analítico termodinámico local",
         });
       }
@@ -607,6 +614,9 @@ Pregunta / Incidente: "${queryType}"
 Ingenio: "${tenant?.name || 'BioAzúcar'}"
 Telemetría actual: ${JSON.stringify(telemetry || {})}
 Alarmas recientes: ${JSON.stringify(alarms || [])}
+Lotes de caña recientes: ${JSON.stringify(batches ? batches.slice(0, 5) : [])}
+ORIGEN DE DATOS AUDITADO: ${resolvedOrigin}
+ADVERTENCIA DE INTEGRIDAD: Si el origen de datos es SIMULATED, indica explícitamente en el executiveSummary que se trata de datos de Gemelo Digital / Simulación y no de instrumentación OT en vivo.
 
 Realiza un análisis causal riguroso aplicando balances de masa de Hugot, leyes de inversión térmica Spencer-Meade y norma ASME PTC 4.
 Responde en JSON con la siguiente estructura:
@@ -639,7 +649,9 @@ Responde en JSON con la siguiente estructura:
   "correctiveActions": ["Acción 1", "Acción 2"],
   "preventiveActions": ["Acción preventiva 1", "Acción preventiva 2"],
   "financialImpactEstimatedUSD": "$X,XXX USD",
-  "isAiGenerated": true
+  "isAiGenerated": true,
+  "dataOrigin": "${resolvedOrigin}",
+  "isSimulated": ${resolvedOrigin === "SIMULATED"}
 }`;
 
       const response = await ai.models.generateContent({
@@ -649,7 +661,7 @@ Responde en JSON con la siguiente estructura:
       });
 
       const parsed = JSON.parse(response.text || "{}");
-      return res.json({ analysis: parsed, isAiGenerated: true });
+      return res.json({ analysis: { ...parsed, dataOrigin: resolvedOrigin, isSimulated: resolvedOrigin === "SIMULATED" }, isAiGenerated: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Error en RCA" });
     }

@@ -47,6 +47,7 @@ import {
 } from "../data/mockIndustrialData";
 import { INITIAL_SYSTEM_CONFIGS, PREDEFINED_USERS } from "./authService";
 import { DEFAULT_ROLES } from "./rbacService";
+import { AgronomicValidationService } from "./agriculture/AgronomicValidationService";
 
 // Collection Names
 export function formatIndustrialTimestamp(date: Date = new Date()): string {
@@ -1298,6 +1299,18 @@ export async function updateCaneBatchInDb(
   updates: Partial<CaneBatch>,
   actor?: UserAccount
 ): Promise<void> {
+  // Enforce CaneBatch lifecycle transition state machine
+  if (updates.status) {
+    const existing = INITIAL_BATCHES.find((b) => b.id === batchId);
+    if (existing && existing.status && existing.status !== updates.status) {
+      const check = AgronomicValidationService.validateCaneBatchLifecycleTransition(existing.status, updates.status);
+      if (!check.allowed) {
+        throw new Error(check.reason || `Transición de estado prohibida en lote ${batchId}: de '${existing.status}' a '${updates.status}'.`);
+      }
+      existing.status = updates.status;
+    }
+  }
+
   try {
     const docRef = doc(db, COLLECTIONS.CANE_BATCHES, batchId);
     await updateDoc(docRef, updates);
@@ -1419,6 +1432,18 @@ export async function updateWorkOrderInDb(
   updates: Partial<WorkOrder>,
   actor?: UserAccount
 ): Promise<void> {
+  // Enforce WorkOrder lifecycle state machine
+  if (updates.status) {
+    const existing = INITIAL_WORK_ORDERS.find((w) => w.id === woId);
+    if (existing && existing.status && existing.status !== updates.status) {
+      const check = AgronomicValidationService.validateWorkOrderLifecycleTransition(existing.status, updates.status);
+      if (!check.allowed) {
+        throw new Error(check.reason || `Transición inválida de orden de trabajo ${woId}: de '${existing.status}' a '${updates.status}'.`);
+      }
+      existing.status = updates.status;
+    }
+  }
+
   try {
     const docRef = doc(db, COLLECTIONS.WORK_ORDERS, woId);
     await updateDoc(docRef, updates);

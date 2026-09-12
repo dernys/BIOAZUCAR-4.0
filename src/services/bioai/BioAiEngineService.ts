@@ -57,6 +57,8 @@ export class BioAiEngineService {
           type: "PRODUCTION",
           telemetry,
           tenant: activeTenant,
+          isSimulated: telemetry.isSimulated ?? false,
+          dataOrigin: telemetry.provenance || (telemetry.isSimulated ? "SIMULATED" : "REAL_OT"),
         }),
       });
 
@@ -146,6 +148,8 @@ export class BioAiEngineService {
           type: "ENERGY",
           telemetry,
           tenant: activeTenant,
+          isSimulated: telemetry.isSimulated ?? false,
+          dataOrigin: telemetry.provenance || (telemetry.isSimulated ? "SIMULATED" : "REAL_OT"),
         }),
       });
 
@@ -314,6 +318,9 @@ export class BioAiEngineService {
           telemetry,
           alarms: alarms.slice(0, 5),
           tenant: activeTenant,
+          batches: _batches ? _batches.slice(0, 10) : [],
+          isSimulated: telemetry.isSimulated ?? false,
+          dataOrigin: telemetry.provenance || (telemetry.isSimulated ? "SIMULATED" : "REAL_OT"),
         }),
       });
 

@@ -89,7 +89,7 @@ export interface ProductionPredictions {
   riskExplanation?: string;
   isSimulated?: boolean;
   provenance?: string;
-  origin?: "REAL" | "SIMULATED" | "PREDICTED" | "DEFAULT";
+  origin?: "REAL" | "SIMULATED" | "PREDICTED" | "DEFAULT" | "CALCULATED" | "MIXED" | "IMPORTED" | string;
   dataQualityAudit?: {
     passed: boolean;
     score: number;
@@ -135,7 +135,7 @@ export interface EnergyPredictions {
   confidenceScore: number;
   isSimulated?: boolean;
   provenance?: string;
-  origin?: "REAL" | "SIMULATED" | "PREDICTED" | "DEFAULT";
+  origin?: "REAL" | "SIMULATED" | "PREDICTED" | "DEFAULT" | "CALCULATED" | "MIXED" | "IMPORTED" | string;
   dataQualityAudit?: {
     passed: boolean;
     score: number;

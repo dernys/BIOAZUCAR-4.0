@@ -1,6 +1,14 @@
 import { IndustrialDataPoint, DataQuality } from "../../types";
 
-export type DataOrigin = "REAL" | "SIMULATED" | "PREDICTED" | "DEFAULT";
+export type DataOrigin =
+  | "REAL"
+  | "REAL_OT"
+  | "REAL_USER"
+  | "SIMULATED"
+  | "CALCULATED"
+  | "DEFAULT"
+  | "IMPORTED"
+  | "PREDICTED";
 
 export interface DataQualityAuditResult {
   isValid: boolean;
@@ -89,6 +97,13 @@ export class IndustrialDataQualityGate {
   /**
    * Audit an industrial data point against quality and governance rules
    */
+  public auditPoint(
+    point: IndustrialDataPoint,
+    isProductionEnvironment: boolean = false
+  ): DataQualityAuditResult {
+    return this.audit(point, isProductionEnvironment);
+  }
+
   public audit(
     point: IndustrialDataPoint,
     isProductionEnvironment: boolean = false
@@ -117,9 +132,11 @@ export class IndustrialDataQualityGate {
     }
 
     // 3. Timestamp skew and clock drift check
-    const deviceTime = new Date(point.deviceTimestamp).getTime();
-    const ingestTime = new Date(point.ingestionTimestamp).getTime();
-    const latencyMs = Math.abs(ingestTime - deviceTime);
+    const rawDeviceTime = point.deviceTimestamp || point.timestamp;
+    const rawIngestTime = point.ingestionTimestamp || point.timestamp || new Date().toISOString();
+    const deviceTime = rawDeviceTime ? new Date(rawDeviceTime).getTime() : NaN;
+    const ingestTime = rawIngestTime ? new Date(rawIngestTime).getTime() : NaN;
+    const latencyMs = (!isNaN(deviceTime) && !isNaN(ingestTime)) ? Math.abs(ingestTime - deviceTime) : 0;
 
     if (isNaN(deviceTime)) {
       score -= 30;

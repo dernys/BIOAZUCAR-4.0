@@ -19,12 +19,17 @@ export type DataClassification =
  * Data Origin / Provenance
  */
 export type DataOrigin =
+  | "REAL_OT"
+  | "REAL_USER"
+  | "SIMULATED"
+  | "CALCULATED"
+  | "DEFAULT"
+  | "IMPORTED"
   | "USER_ENTRY"
   | "FIELD_MEASUREMENT"
   | "ERP"
   | "SCADA"
   | "IMPORT"
-  | "CALCULATED"
   | "SYSTEM_DEFAULT";
 
 /**
@@ -98,7 +103,7 @@ export type CaneGrowthStage =
   | "RETONO_Q7_PLUS"// Retoño 7+ (aged cane, high fiber, low yield)
   | "DEMOLICION";   // Scheduled for demolition / soil renovation
 
-export type SoilType = "ARCILLOSO" | "FRANCO" | "ARENOSO";
+export type SoilType = "ARCILLOSO" | "FRANCO" | "ARENOSO" | "FERRALITICO_ROJO" | "HUMIFERO";
 
 export type MaturityType = "TEMPRANA" | "MEDIA" | "TARDIA";
 
@@ -113,6 +118,15 @@ export type FieldPlotStatus =
   | "RECEIVED"
   | "PROCESSED"
   | "CLOSED"
+  // Phenological & Operational lifecycle stages:
+  | "PLANIFICADO"
+  | "PREPARACION_SUELO"
+  | "SIEMBRA"
+  | "CRECIMIENTO_VEGETATIVO"
+  | "ESTIMACION_RENDIMIENTO"
+  | "PROGRAMADO_COSECHA"
+  | "EN_CORTE"
+  | "SOCA_REBROTE"
   // Legacy / Phenological compatibility statuses:
   | "VEGETACION"
   | "MADURACION"
@@ -280,6 +294,11 @@ export interface FieldPlot {
   tenantId: string;
   code: string;                     // e.g. "LOTE-N04", "CAMPO-012"
   uebName: string;                  // Agricultural unit / division name
+  blockSector?: string;
+  cycleType?: string;
+  cutNumber?: number;
+  expectedTch?: number;
+  drainageCondition?: string;
   areaHectares: number;             // Surface area in ha
   areaUnit?: "ha";
   varietyCode: string;              // Foreign key to CaneVarietyYieldMaster
@@ -524,12 +543,22 @@ export interface ClosedLoopFeedbackSummary {
   sugarVsPlanDeviationPercent: number;
   // Granular variances
   variances: PlanVsActualVarianceItem[];
+  // Physical flow summary metrics
+  plannedHarvestTons?: number;
+  actualHarvestTons?: number;
+  actualIndustrialYieldPercent?: number;
+  agriculturalOpexPlannedUSD?: number;
+  agriculturalOpexActualUSD?: number;
+  opexDeviationPercent?: number;
+  recordedAt?: string;
   // Closed-loop feedback to PDA
-  replanFeedback: {
-    recommendedTchCorrectionPercent: number;
-    effectiveRecoveryYieldPercent: number;
-    nextCycleRecommendation: string;
-  };
+  replanFeedback:
+    | string
+    | {
+        recommendedTchCorrectionPercent: number;
+        effectiveRecoveryYieldPercent: number;
+        nextCycleRecommendation: string;
+      };
 }
 
 /**
@@ -548,9 +577,14 @@ export interface AgriculturalCampaign {
   dailyHarvestRequirementTons: number; // projectedTotalCaneTons / effectiveHarvestDays (t/day)
   averageTchCampaign: number;       // Weighted average TCH (t/ha)
   sugarTargetTons: number;          // Target sugar production (t)
-  status: "DRAFT" | "ACTIVE" | "ARCHIVED";
+  status: "DRAFT" | "ACTIVE" | "ARCHIVED" | "APROBADA";
   createdAt: string;
   updatedAt: string;
+  // Operational setpoints & capacity
+  nominalMillingTch?: number;
+  plannedTotalGrossCaneTons?: number;
+  totalNetAreaHectares?: number;
+  budgetOpexUSD?: number;
   // Units contract
   areaUnit?: "ha";
   millingUnit?: "t";

@@ -33,6 +33,8 @@ export const SOIL_IMPACT_FACTORS: Record<SoilType, number> = {
   FRANCO: 1.00,
   ARCILLOSO: 0.98,
   ARENOSO: 0.92,
+  FERRALITICO_ROJO: 1.05,
+  HUMIFERO: 1.02,
 };
 
 /**
