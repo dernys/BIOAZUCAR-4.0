@@ -261,6 +261,13 @@ export interface AlarmEvent {
 export interface CaneBatch {
   id: string;
   tenantId?: string;
+  campaignId?: string;                 // Temporal root anchor
+  plotId?: string;                     // Trace back to field plot
+  harvestOrderId?: string;             // Trace back to harvest order
+  dispatchId?: string;                 // Trace back to road dispatch
+  truckId?: string;
+  weighingTicketId?: string;
+  receptionId?: string;
   batchCode: string;
   truckPlate: string;
   driverName?: string;
@@ -281,27 +288,63 @@ export interface CaneBatch {
   canePaymentIndexUSD?: number; // Liquidación ($ USD / t)
   cutDateTime: string;
   arrivalDateTime: string;
+  weighedDateTime?: string;
   millingDateTime?: string;
   status: "EN_PATIO" | "EN_MUESTREO" | "EN_MOLIENDA" | "PROCESADO" | "RECHAZADO";
   sugarYieldEstimated: number; // Toneladas azúcar estimadas
+  // Data Governance
+  dataClassification?: "OPERATIONAL_DATA" | "CONFIDENTIAL_FINANCIAL" | "MASTER_DATA" | "AUDIT_RECORD";
+  dataOrigin?: "SCADA" | "LIMS" | "MANUAL" | "CALCULATED" | "SYSTEM" | "USER_ENTRY";
+  dataQuality?: "VALIDATED" | "UNVERIFIED" | "INCOMPLETE" | "ESTIMATED" | "DERIVED";
+  syncStatus?: "LOCAL_DRAFT" | "SYNCING" | "SYNCED" | "SYNC_ERROR" | "OFFLINE";
+  version?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+export type WorkOrderStatus =
+  | "DRAFT"
+  | "PLANNED"
+  | "APPROVED"
+  | "ASSIGNED"
+  | "DISPATCHED"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "VERIFIED"
+  | "CLOSED"
+  // Legacy Spanish statuses
+  | "PENDIENTE"
+  | "EN_PROCESO"
+  | "COMPLETADA"
+  | "CANCELADA";
 
 export interface WorkOrder {
   id: string;
   tenantId?: string;
+  campaignId?: string;                 // Temporal root anchor
+  plotId?: string;
+  requirementId?: string;              // Trace back to AgroWorkRequirement
+  operationCategory?: string;
   code: string;
   equipmentId: string;
   equipmentName: string;
   title: string;
   type: "PREVENTIVO" | "CORRECTIVO" | "PREDICTIVO" | "LUBRICACION";
   priority: "URGENTE" | "ALTA" | "MEDIA" | "BAJA";
-  status: "PENDIENTE" | "EN_PROCESO" | "COMPLETADA" | "CANCELADA";
+  status: WorkOrderStatus;
   assignedTo: string;
   createdDate: string;
   dueDate: string;
   estimatedHours: number;
   description: string;
   tasks: { id: string; text: string; done: boolean }[];
+  // Data Governance
+  dataClassification?: "OPERATIONAL_DATA" | "CONFIDENTIAL_FINANCIAL" | "MASTER_DATA" | "AUDIT_RECORD";
+  dataOrigin?: "SCADA" | "LIMS" | "MANUAL" | "CALCULATED" | "SYSTEM" | "USER_ENTRY";
+  dataQuality?: "VALIDATED" | "UNVERIFIED" | "INCOMPLETE" | "ESTIMATED" | "DERIVED";
+  syncStatus?: "LOCAL_DRAFT" | "SYNCING" | "SYNCED" | "SYNC_ERROR" | "OFFLINE";
+  version?: string;
+  updatedAt?: string;
 }
 
 export interface IIoTNode {

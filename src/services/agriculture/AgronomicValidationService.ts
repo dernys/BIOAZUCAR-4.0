@@ -18,12 +18,19 @@ import {
   AgriculturalEquipmentAsset,
   AgriculturalInputMaster,
   AgriculturalScenario,
+  FieldPlotStatus,
+  AgroWorkRequirement,
+  HarvestOrder,
+  HarvestExecutionEvent,
+  CaneDispatch,
+  FactoryWeighingAndReception,
   DataQuality,
   DataClassification,
   DataOrigin,
   CaneGrowthStage,
   SoilType,
 } from "../../types/agriculture";
+import { WorkOrder, WorkOrderStatus } from "../../types";
 
 export interface AgronomicValidationError {
   field: string;
@@ -417,6 +424,8 @@ export class AgronomicValidationService {
     const normalizedData: FieldPlot = {
       id: String(raw.id || `plot-${Date.now()}`),
       tenantId: String(raw.tenantId || "TENANT_AZUCAR_01"),
+      campaignId: raw.campaignId || (context as any)?.campaignId || undefined,
+      version: raw.version || "1.0.0",
       code,
       uebName,
       areaHectares: isNaN(areaHectares) ? 0 : areaHectares,
@@ -433,7 +442,7 @@ export class AgronomicValidationService {
       projectedTotalCaneTons: Number(raw.projectedTotalCaneTons) || 0,
       tonsUnit: "t",
       scheduledHarvestMonth: Number(raw.scheduledHarvestMonth) || 1,
-      status: raw.status || "CRECIMIENTO",
+      status: raw.status || "REGISTERED",
       agronomicModel: raw.agronomicModel || "BIOAZUCAR_MODEL",
       trace: raw.trace,
       dataClassification: "OPERATIONAL_DATA",
@@ -1047,6 +1056,380 @@ export class AgronomicValidationService {
       dataOrigin: raw?.dataOrigin || "USER_ENTRY",
       dataQuality,
       syncStatus: raw?.syncStatus || "LOCAL_DRAFT",
+    };
+
+    return {
+      isValid: errors.length === 0,
+      dataQuality,
+      normalizedData,
+      errors,
+      warnings,
+    };
+  }
+
+  /**
+   * 8. PLOT LIFECYCLE STATE MACHINE VALIDATOR
+   * Enforces strict operational progression:
+   * REGISTERED → VALIDATED → PLANNED → READY_FOR_HARVEST → HARVESTING → HARVESTED → DISPATCHED → RECEIVED → PROCESSED → CLOSED
+   * Rejects impossible transitions (e.g., direct jump from REGISTERED to DISPATCHED or CLOSED to HARVESTING).
+   */
+  public static validatePlotLifecycleTransition(
+    currentStatus: FieldPlotStatus,
+    targetStatus: FieldPlotStatus
+  ): { allowed: boolean; reason?: string } {
+    if (currentStatus === targetStatus) {
+      return { allowed: true };
+    }
+
+    const validTransitions: Record<FieldPlotStatus, FieldPlotStatus[]> = {
+      REGISTERED: ["VALIDATED", "EN_PREPARACION", "PLANTADO"],
+      VALIDATED: ["PLANNED", "EN_PREPARACION", "PLANTADO", "REGISTERED", "VEGETACION"],
+      PLANNED: ["READY_FOR_HARVEST", "EN_PREPARACION", "VALIDATED", "VEGETACION", "MADURACION"],
+      READY_FOR_HARVEST: ["HARVESTING", "PLANNED", "MADURACION"],
+      HARVESTING: ["HARVESTED", "COSECHADO", "READY_FOR_HARVEST"],
+      HARVESTED: ["DISPATCHED"],
+      COSECHADO: ["DISPATCHED"],
+      DISPATCHED: ["RECEIVED"],
+      RECEIVED: ["PROCESSED"],
+      PROCESSED: ["CLOSED"],
+      CLOSED: ["REGISTERED"], // Allowed only when starting a new planting/renovation cycle
+      // Legacy phenological mappings
+      VEGETACION: ["MADURACION", "READY_FOR_HARVEST", "PLANNED", "VALIDATED"],
+      MADURACION: ["READY_FOR_HARVEST", "HARVESTING", "COSECHADO", "PLANNED"],
+      EN_PREPARACION: ["PLANTADO", "VALIDATED", "PLANNED"],
+      PLANTADO: ["VEGETACION", "VALIDATED", "PLANNED"],
+      CRECIMIENTO: ["VEGETACION", "MADURACION", "PLANNED", "VALIDATED"],
+    };
+
+    const allowedTargets = validTransitions[currentStatus] || [];
+    if (!allowedTargets.includes(targetStatus)) {
+      return {
+        allowed: false,
+        reason: `Transición de estado prohibida en parcela: no es posible pasar de '${currentStatus}' a '${targetStatus}'. Estados válidos: [${allowedTargets.join(", ")}].`,
+      };
+    }
+
+    return { allowed: true };
+  }
+
+  /**
+   * 9. WORK ORDER (CMMS) LIFECYCLE STATE MACHINE VALIDATOR
+   * Enforces:
+   * DRAFT → PLANNED → APPROVED → ASSIGNED → DISPATCHED → IN_PROGRESS → COMPLETED → VERIFIED → CLOSED
+   * Strictly forbids closing orders that were never executed.
+   */
+  public static validateWorkOrderLifecycleTransition(
+    currentStatus: WorkOrderStatus,
+    targetStatus: WorkOrderStatus
+  ): { allowed: boolean; reason?: string } {
+    if (currentStatus === targetStatus) {
+      return { allowed: true };
+    }
+
+    // Unexecuted statuses can NEVER transition directly to CLOSED
+    const unexecutedStatuses: WorkOrderStatus[] = [
+      "DRAFT",
+      "PLANNED",
+      "APPROVED",
+      "ASSIGNED",
+      "DISPATCHED",
+      "PENDIENTE",
+    ];
+
+    if (unexecutedStatuses.includes(currentStatus) && targetStatus === "CLOSED") {
+      return {
+        allowed: false,
+        reason: `Violación de gobernanza CMMS: No se puede cerrar la orden de trabajo '${currentStatus}' sin previa ejecución, completado y verificación técnica.`,
+      };
+    }
+
+    const validTransitions: Record<WorkOrderStatus, WorkOrderStatus[]> = {
+      DRAFT: ["PLANNED", "CANCELADA"],
+      PLANNED: ["APPROVED", "DRAFT", "CANCELADA"],
+      APPROVED: ["ASSIGNED", "PLANNED", "CANCELADA"],
+      ASSIGNED: ["DISPATCHED", "APPROVED", "CANCELADA"],
+      DISPATCHED: ["IN_PROGRESS", "EN_PROCESO", "CANCELADA"],
+      IN_PROGRESS: ["COMPLETED", "COMPLETADA", "CANCELADA"],
+      COMPLETED: ["VERIFIED", "IN_PROGRESS", "CLOSED"],
+      VERIFIED: ["CLOSED"],
+      CLOSED: [], // Terminal state
+      // Legacy Spanish aliases
+      PENDIENTE: ["EN_PROCESO", "ASSIGNED", "CANCELADA"],
+      EN_PROCESO: ["COMPLETADA", "COMPLETED", "CANCELADA"],
+      COMPLETADA: ["VERIFIED", "CLOSED"],
+      CANCELADA: [],
+    };
+
+    const allowedTargets = validTransitions[currentStatus] || [];
+    if (!allowedTargets.includes(targetStatus)) {
+      return {
+        allowed: false,
+        reason: `Transición inválida en orden de trabajo: de '${currentStatus}' a '${targetStatus}'. Permitidos: [${allowedTargets.join(", ")}].`,
+      };
+    }
+
+    return { allowed: true };
+  }
+
+  /**
+   * 10. HARVEST ORDER VALIDATION
+   * Validates scheduled field cutting orders against campaign & plot baselines
+   */
+  public static validateHarvestOrder(
+    raw: any,
+    campaign?: AgriculturalCampaign,
+    plot?: FieldPlot
+  ): AgronomicValidationResult<HarvestOrder> {
+    const errors: AgronomicValidationError[] = [];
+    const warnings: AgronomicValidationError[] = [];
+
+    if (!raw || typeof raw !== "object") {
+      return {
+        isValid: false,
+        dataQuality: "INCOMPLETE",
+        normalizedData: raw as HarvestOrder,
+        errors: [{
+          field: "root",
+          value: raw,
+          rule: "Objeto de orden de cosecha requerido",
+          actionRequired: "Proporcione datos completos de la orden de cosecha.",
+        }],
+        warnings: [],
+      };
+    }
+
+    if (campaign && campaign.status && campaign.status !== "ACTIVE") {
+      errors.push({
+        field: "campaignId",
+        value: raw.campaignId,
+        rule: `La campaña '${campaign.name}' está en estado '${campaign.status}'. Solo zafras en estado 'ACTIVE' permiten emisión de órdenes de cosecha.`,
+        actionRequired: "Active la campaña o seleccione una campaña vigente.",
+      });
+    }
+
+    const plotId = String(raw.plotId || plot?.id || "").trim();
+    if (!plotId) {
+      errors.push({
+        field: "plotId",
+        value: raw.plotId,
+        rule: "El identificador de parcela es obligatorio",
+        actionRequired: "Vincule la orden a una parcela catastrada.",
+      });
+    }
+
+    const targetTons = Number(raw.targetHarvestTons ?? plot?.projectedTotalCaneTons);
+    if (isNaN(targetTons) || targetTons <= 0) {
+      errors.push({
+        field: "targetHarvestTons",
+        value: targetTons,
+        rule: "El tonelaje objetivo de cosecha debe ser un número positivo",
+        expectedUnit: "t",
+        actionRequired: "Calcule o asigne las toneladas estimadas a cosechar.",
+      });
+    }
+
+    const scheduledDate = String(raw.scheduledHarvestDate || new Date().toISOString().slice(0, 10)).trim();
+
+    let dataQuality: DataQuality = errors.length > 0 ? "INCOMPLETE" : "VALIDATED";
+
+    const normalizedData: HarvestOrder = {
+      id: String(raw.id || `ho-${Date.now()}`),
+      tenantId: String(raw.tenantId || campaign?.tenantId || plot?.tenantId || "TENANT_AZUCAR_01"),
+      campaignId: String(raw.campaignId || campaign?.id || plot?.campaignId || "CAMPAIGN_CURRENT"),
+      plotId,
+      plotCode: String(raw.plotCode || plot?.code || "LOTE_DESCONOCIDO"),
+      varietyCode: String(raw.varietyCode || plot?.varietyCode || "VARIEDAD_GENERAL"),
+      targetHarvestTons: isNaN(targetTons) ? 0 : targetTons,
+      scheduledHarvestDate: scheduledDate,
+      harvestFrontId: raw.harvestFrontId,
+      status: raw.status || "PLANNED",
+      dataClassification: "OPERATIONAL_DATA",
+      dataOrigin: "CALCULATED",
+      dataQuality,
+      syncStatus: raw.syncStatus || "LOCAL_DRAFT",
+      createdAt: raw.createdAt || new Date().toISOString(),
+      version: raw.version || "1.0.0",
+    };
+
+    return {
+      isValid: errors.length === 0,
+      dataQuality,
+      normalizedData,
+      errors,
+      warnings,
+    };
+  }
+
+  /**
+   * 11. CANE ROAD DISPATCH (CCT) VALIDATION
+   * Validates road transport ticket without inventing truck plates, drivers or weights
+   */
+  public static validateCaneDispatch(
+    raw: any
+  ): AgronomicValidationResult<CaneDispatch> {
+    const errors: AgronomicValidationError[] = [];
+    const warnings: AgronomicValidationError[] = [];
+
+    if (!raw || typeof raw !== "object") {
+      return {
+        isValid: false,
+        dataQuality: "INCOMPLETE",
+        normalizedData: raw as CaneDispatch,
+        errors: [{
+          field: "root",
+          value: raw,
+          rule: "Objeto de despacho de caña requerido",
+          actionRequired: "Proporcione datos completos de despacho de transporte.",
+        }],
+        warnings: [],
+      };
+    }
+
+    const truckPlate = String(raw.truckPlate || "").trim().toUpperCase();
+    if (!truckPlate || truckPlate === "PENDING_ASSIGNMENT") {
+      warnings.push({
+        field: "truckPlate",
+        value: raw.truckPlate,
+        rule: "Placa de camión no asignada",
+        actionRequired: "Asigne una unidad de transporte real registrada.",
+      });
+    }
+
+    const estimatedNetTons = Number(raw.estimatedNetTons);
+    if (isNaN(estimatedNetTons) || estimatedNetTons <= 0 || estimatedNetTons > 120) {
+      errors.push({
+        field: "estimatedNetTons",
+        value: raw.estimatedNetTons,
+        rule: "Las toneladas netas estimadas de carga deben estar entre 1 y 120 t",
+        expectedUnit: "t",
+        allowedRange: "1 - 120 t",
+        actionRequired: "Ingrese una carga válida de transporte vial.",
+      });
+    }
+
+    let dataQuality: DataQuality = errors.length > 0 ? "INCOMPLETE" : warnings.length > 0 ? "UNVERIFIED" : "VALIDATED";
+
+    const normalizedData: CaneDispatch = {
+      id: String(raw.id || `disp-${Date.now()}`),
+      tenantId: String(raw.tenantId || "TENANT_AZUCAR_01"),
+      campaignId: String(raw.campaignId || "CAMPAIGN_CURRENT"),
+      plotId: String(raw.plotId || "PLOT_UNKNOWN"),
+      harvestOrderId: String(raw.harvestOrderId || "HO_UNKNOWN"),
+      harvestEventId: raw.harvestEventId,
+      dispatchNumber: String(raw.dispatchNumber || `GUIA-${Date.now().toString().slice(-6)}`),
+      truckId: String(raw.truckId || "PENDING_ASSIGNMENT"),
+      truckPlate: truckPlate || "PENDING_ASSIGNMENT",
+      driverName: raw.driverName ? String(raw.driverName).trim() : undefined,
+      origin: String(raw.origin || "CAMPO_ORIGEN"),
+      dispatchTimestamp: raw.dispatchTimestamp || new Date().toISOString(),
+      estimatedNetTons: isNaN(estimatedNetTons) ? 0 : estimatedNetTons,
+      status: raw.status || "DISPATCHED",
+      dataClassification: "OPERATIONAL_DATA",
+      dataOrigin: "USER_ENTRY",
+      dataQuality,
+      syncStatus: raw.syncStatus || "LOCAL_DRAFT",
+      createdAt: raw.createdAt || new Date().toISOString(),
+      version: raw.version || "1.0.0",
+    };
+
+    return {
+      isValid: errors.length === 0,
+      dataQuality,
+      normalizedData,
+      errors,
+      warnings,
+    };
+  }
+
+  /**
+   * 12. FACTORY WEIGHING & RECEPTION VALIDATION
+   * Validates weighbridge scale weights: gross - tare = net
+   */
+  public static validateFactoryWeighingAndReception(
+    raw: any
+  ): AgronomicValidationResult<FactoryWeighingAndReception> {
+    const errors: AgronomicValidationError[] = [];
+    const warnings: AgronomicValidationError[] = [];
+
+    if (!raw || typeof raw !== "object") {
+      return {
+        isValid: false,
+        dataQuality: "INCOMPLETE",
+        normalizedData: raw as FactoryWeighingAndReception,
+        errors: [{
+          field: "root",
+          value: raw,
+          rule: "Objeto de pesaje y recepción de fábrica requerido",
+          actionRequired: "Proporcione datos completos de la báscula de ingenio.",
+        }],
+        warnings: [],
+      };
+    }
+
+    const gross = Number(raw.grossWeightTons);
+    const tare = Number(raw.tareWeightTons);
+
+    if (isNaN(gross) || gross <= 0) {
+      errors.push({
+        field: "grossWeightTons",
+        value: raw.grossWeightTons,
+        rule: "El peso bruto debe ser un valor numérico positivo medido en báscula",
+        expectedUnit: "t",
+        actionRequired: "Realice la pesada de entrada en báscula.",
+      });
+    }
+
+    if (isNaN(tare) || tare < 0) {
+      errors.push({
+        field: "tareWeightTons",
+        value: raw.tareWeightTons,
+        rule: "El peso tara debe ser un valor numérico mayor o igual a cero",
+        expectedUnit: "t",
+        actionRequired: "Realice la pesada de tara de salida en báscula.",
+      });
+    }
+
+    if (!isNaN(gross) && !isNaN(tare) && gross <= tare) {
+      errors.push({
+        field: "netWeightTons",
+        value: gross - tare,
+        rule: "El peso bruto debe ser estrictamente mayor que el peso tara",
+        actionRequired: "Verifique la calibración de la báscula y el pesaje del camión.",
+      });
+    }
+
+    const net = !isNaN(gross) && !isNaN(tare) ? Number((gross - tare).toFixed(2)) : 0;
+
+    let dataQuality: DataQuality = errors.length > 0 ? "INCOMPLETE" : "VALIDATED";
+
+    const normalizedData: FactoryWeighingAndReception = {
+      id: String(raw.id || `rec-${Date.now()}`),
+      tenantId: String(raw.tenantId || "TENANT_AZUCAR_01"),
+      campaignId: String(raw.campaignId || "CAMPAIGN_CURRENT"),
+      dispatchId: String(raw.dispatchId || "DISP_UNKNOWN"),
+      harvestOrderId: String(raw.harvestOrderId || "HO_UNKNOWN"),
+      plotId: String(raw.plotId || "PLOT_UNKNOWN"),
+      weighingTicketNumber: String(raw.weighingTicketNumber || `TICKET-${Date.now().toString().slice(-6)}`),
+      truckPlate: String(raw.truckPlate || "PENDING_ASSIGNMENT").trim().toUpperCase(),
+      grossWeightTons: isNaN(gross) ? 0 : gross,
+      tareWeightTons: isNaN(tare) ? 0 : tare,
+      netWeightTons: net,
+      labBrix: raw.labBrix !== undefined ? Number(raw.labBrix) : undefined,
+      labPol: raw.labPol !== undefined ? Number(raw.labPol) : undefined,
+      labPurity: raw.labPurity !== undefined ? Number(raw.labPurity) : undefined,
+      labFiber: raw.labFiber !== undefined ? Number(raw.labFiber) : undefined,
+      trashPercent: raw.trashPercent !== undefined ? Number(raw.trashPercent) : undefined,
+      weighingTimestamp: raw.weighingTimestamp || new Date().toISOString(),
+      scaleOperator: String(raw.scaleOperator || "OPERADOR_BASCULA"),
+      weighbridgeId: String(raw.weighbridgeId || "BASCULA_01"),
+      status: raw.status || "RECEIVED",
+      caneBatchId: raw.caneBatchId,
+      dataClassification: "OPERATIONAL_DATA",
+      dataOrigin: "SCADA",
+      dataQuality,
+      syncStatus: raw.syncStatus || "LOCAL_DRAFT",
+      createdAt: raw.createdAt || new Date().toISOString(),
+      version: raw.version || "1.0.0",
     };
 
     return {

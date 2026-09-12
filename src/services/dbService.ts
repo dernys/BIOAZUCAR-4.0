@@ -1242,16 +1242,16 @@ export function subscribeToCaneBatches(
     onUpdate(INITIAL_BATCHES);
     return () => {};
   }
-  const colRef = collection(db, COLLECTIONS.CANE_BATCHES);
+  const q = tenantId && tenantId !== "ALL"
+    ? query(collection(db, COLLECTIONS.CANE_BATCHES), where("tenantId", "==", tenantId))
+    : collection(db, COLLECTIONS.CANE_BATCHES);
   return onSnapshot(
-    colRef,
+    q,
     (snapshot) => {
       const list: CaneBatch[] = [];
       snapshot.forEach((d) => {
         const item = { ...d.data(), id: d.id } as CaneBatch;
-        if (!item.tenantId || item.tenantId === tenantId || tenantId === "ALL") {
-          list.push(item);
-        }
+        list.push(item);
       });
       list.sort((a, b) => (b.arrivalDateTime || "").localeCompare(a.arrivalDateTime || ""));
       onUpdate(list.length > 0 ? list : INITIAL_BATCHES);
@@ -1363,16 +1363,16 @@ export function subscribeToWorkOrders(
     onUpdate(INITIAL_WORK_ORDERS);
     return () => {};
   }
-  const colRef = collection(db, COLLECTIONS.WORK_ORDERS);
+  const q = tenantId && tenantId !== "ALL"
+    ? query(collection(db, COLLECTIONS.WORK_ORDERS), where("tenantId", "==", tenantId))
+    : collection(db, COLLECTIONS.WORK_ORDERS);
   return onSnapshot(
-    colRef,
+    q,
     (snapshot) => {
       const list: WorkOrder[] = [];
       snapshot.forEach((d) => {
         const item = { ...d.data(), id: d.id } as WorkOrder;
-        if (!item.tenantId || item.tenantId === tenantId || tenantId === "ALL") {
-          list.push(item);
-        }
+        list.push(item);
       });
       list.sort((a, b) => (b.createdDate || "").localeCompare(a.createdDate || ""));
       onUpdate(list.length > 0 ? list : INITIAL_WORK_ORDERS);
@@ -1484,16 +1484,16 @@ export function subscribeToEquipment(
     onUpdate(INITIAL_EQUIPMENT);
     return () => {};
   }
-  const colRef = collection(db, COLLECTIONS.EQUIPMENT);
+  const q = tenantId && tenantId !== "ALL"
+    ? query(collection(db, COLLECTIONS.EQUIPMENT), where("tenantId", "==", tenantId))
+    : collection(db, COLLECTIONS.EQUIPMENT);
   return onSnapshot(
-    colRef,
+    q,
     (snapshot) => {
       const list: EquipmentItem[] = [];
       snapshot.forEach((d) => {
         const item = { ...d.data(), id: d.id } as EquipmentItem;
-        if (!item.tenantId || item.tenantId === tenantId || tenantId === "ALL") {
-          list.push(item);
-        }
+        list.push(item);
       });
       onUpdate(list.length > 0 ? list : INITIAL_EQUIPMENT);
     },
@@ -1559,16 +1559,16 @@ export function subscribeToAlarms(
     onUpdate(INITIAL_ALARMS);
     return () => {};
   }
-  const colRef = collection(db, COLLECTIONS.ALARMS);
+  const q = tenantId && tenantId !== "ALL"
+    ? query(collection(db, COLLECTIONS.ALARMS), where("tenantId", "==", tenantId))
+    : collection(db, COLLECTIONS.ALARMS);
   return onSnapshot(
-    colRef,
+    q,
     (snapshot) => {
       const list: AlarmEvent[] = [];
       snapshot.forEach((d) => {
         const item = { ...d.data(), id: d.id } as AlarmEvent;
-        if (!item.tenantId || item.tenantId === tenantId || tenantId === "ALL") {
-          list.push(item);
-        }
+        list.push(item);
       });
       list.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
       onUpdate(list.length > 0 ? list : INITIAL_ALARMS);
@@ -1656,16 +1656,16 @@ export function subscribeToAuditLogs(
     return () => {};
   }
 
-  const colRef = collection(db, COLLECTIONS.AUDIT_LOGS);
+  const q = tenantId && tenantId !== "ALL"
+    ? query(collection(db, COLLECTIONS.AUDIT_LOGS), where("tenantId", "in", [tenantId, "GLOBAL"]))
+    : collection(db, COLLECTIONS.AUDIT_LOGS);
   return onSnapshot(
-    colRef,
+    q,
     (snapshot) => {
       const list: AuditLogEntry[] = [];
       snapshot.forEach((d) => {
         const item = { ...d.data(), id: d.id } as AuditLogEntry;
-        if (!item.tenantId || item.tenantId === "GLOBAL" || item.tenantId === tenantId || tenantId === "ALL") {
-          list.push(item);
-        }
+        list.push(item);
       });
       list.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
       onUpdate(list.length > 0 ? list : INITIAL_AUDIT_LOGS);
