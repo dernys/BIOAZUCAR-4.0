@@ -206,6 +206,13 @@ export interface AgriculturalCampaign {
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
   createdAt: string;
   updatedAt: string;
+  // UI aliases & canonical compatibility
+  targetMillingTons?: number;
+  targetSugarTons?: number;
+  plannedRenovationRatePercent?: number;
+  startDate?: string;
+  endDate?: string;
+  description?: string;
 }
 
 /**
@@ -240,6 +247,7 @@ export interface YieldCalculationResult {
  */
 export interface AgroOperationMaster {
   id: string;
+  tenantId?: string;
   category: AgroOperationCategory;
   name: string;                         // e.g. "Subsolado Profundo 50cm", "Plantío Mecanizado"
   standardTractorPowerHp: number;        // Required tractor power (HP)
@@ -248,6 +256,8 @@ export interface AgroOperationMaster {
   fuelConsumptionLitersPerHour: number; // Diesel consumption (L/h)
   targetCycle: "PRE_PLANTIO" | "PLANTA" | "SOCA_RETONO" | "ALL";
   operatorCount: number;                 // Personnel required per machine
+  status?: "ACTIVO" | "INACTIVO" | "ARCHIVADO";
+  description?: string;
 }
 
 /**
@@ -345,13 +355,26 @@ export interface AgriculturalEquipmentAsset {
   code: string;                       // e.g. "TR-210-04", "CH-350-01"
   name: string;
   category: EquipmentCategory;
-  powerHp: number;
-  acquisitionYear: number;
-  estimatedUsefulLifeYears: number;
-  accumulatedEngineHours: number;
-  mechanicalAvailabilityPercent: number; // e.g. 85.0
-  hourlyOperatingCostUSD: number;
-  status: "OPERATIONAL" | "MAINTENANCE" | "STANDBY" | "DECOMMISSIONED";
+  model?: string;
+  modelYear?: number;
+  engineHp?: number;
+  powerHp?: number;
+  acquisitionYear?: number;
+  estimatedUsefulLifeYears?: number;
+  nominalCapacity?: number;
+  capacityUnit?: string;
+  payloadCapacityTons?: number;
+  mechanicalAvailability?: number;
+  mechanicalAvailabilityPercent?: number; // e.g. 85.0
+  hourlyFuelConsumptionLiters?: number;
+  fuelConsumptionLitersPerHour?: number;
+  accumulatedHours?: number;
+  accumulatedEngineHours?: number;
+  hourlyOperatingCostUSD?: number;
+  status: "OPERATIONAL" | "MAINTENANCE" | "STANDBY" | "DECOMMISSIONED" | "ARCHIVED" | "OPERATIVO" | "MANTENIMIENTO";
+  notes?: string;
+  description?: string;
+  updatedAt?: string;
 }
 
 /**
@@ -534,7 +557,20 @@ export type PdaReportType =
   | "FUEL_DIESEL"
   | "COSTS_OPEX_CAPEX"
   | "CAMPAIGN_SCENARIO_COMPARISON"
-  | "FORMULAS_PARAMETERS_TRACE";
+  | "FORMULAS_PARAMETERS_TRACE"
+  | "CAMPAIGN_SUMMARY"
+  | "AGRICULTURAL_KPIS"
+  | "EXECUTION_VS_PLAN";
+
+export interface PdaReportFilterOptions {
+  campaignId?: string;
+  period?: string;
+  uebName?: string;
+  plotCode?: string;
+  varietyCode?: string;
+  operationCategory?: string;
+  scenarioId?: string;
+}
 
 export interface PdaReportKpi {
   label: string;
@@ -569,6 +605,116 @@ export interface PdaReportResult {
   columns: PdaReportColumn[];
   rows: Record<string, any>[];
   traceNotes?: string[];
+}
+
+/**
+ * Historical Audit Change Log (ISA-95 Level 4)
+ * qué cambió → valor anterior → valor nuevo → usuario → fecha → motivo → versión → campaña afectada
+ */
+export interface AgriculturalAuditChangeRecord {
+  id: string;
+  tenantId: string;
+  campaignId?: string;
+  entityType:
+    | "CAMPAIGN"
+    | "PLOT"
+    | "VARIETY"
+    | "OPERATION"
+    | "PARAMETER"
+    | "FORMULA"
+    | "EQUIPMENT"
+    | "INPUT"
+    | "PRICE"
+    | "SCENARIO";
+  entityId: string;
+  entityName?: string;
+  fieldChanged: string;
+  previousValue: any;
+  newValue: any;
+  user: string;
+  timestamp: string;
+  reason: string;
+  version: string;
+}
+
+/**
+ * Agricultural Input & Dosing Master Data (Insumos y Dosis)
+ */
+export interface AgriculturalInputMaster {
+  id: string;
+  tenantId: string;
+  code: string;
+  name: string;
+  category: "FERTILIZANTE" | "ENMIENDA" | "HERBICIDA" | "SUBPRODUCTO" | "COMBUSTIBLE" | "SEMILLA";
+  standardDosePerHa: number;
+  unit: string;
+  unitCostUSD: number;
+  targetCycle: "PREPARACION" | "PLANTACION" | "TRATOS_PLANTA" | "TRATOS_SOCA" | "GENERAL";
+  status: "ACTIVO" | "INACTIVO" | "ARCHIVADO";
+  description?: string;
+  supplier?: string;
+  activeIngredient?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Agricultural Scenario Master (Escenarios Agrícolas What-If)
+ */
+export interface AgriculturalScenario {
+  id: string;
+  tenantId: string;
+  campaignId: string;
+  name: string;
+  description: string;
+  climateFactor: number;
+  dieselPriceUSD: number;
+  sugarPriceUSDPerTon?: number;
+  avgTransportDistanceKm?: number;
+  millingCapacityTcd?: number;
+  isBaseline?: boolean;
+  estimatedOpexTotalUSD?: number;
+  cctDistanceKm?: number;
+  renewalTargetPercent?: number;
+  tchVariationPercent?: number;
+  areaVariationPercent?: number;
+  status?: "ACTIVO" | "ARCHIVADO";
+  createdAt?: string;
+  updatedAt?: string;
+  projectedTch?: number;
+  projectedProductionTons?: number;
+  projectedCostPerTonUSD?: number;
+  projectedTrucksRequired?: number;
+  trace?: CalculationTrace;
+}
+
+/**
+ * Agronomic Intelligent Alert & Recommendation
+ */
+export interface AgronomicAlert {
+  id: string;
+  type: "WARNING" | "CRITICAL" | "INFO" | "SUCCESS";
+  category: "RENDIMIENTO" | "SUELO" | "MAQUINARIA" | "LOGISTICA" | "COSTES" | "GOBERNANZA";
+  title: string;
+  description: string;
+  affectedEntityId?: string;
+  affectedEntityType?: string;
+  metricValue?: string | number;
+  threshold?: string | number;
+  recommendation: string;
+  timestamp: string;
+}
+
+/**
+ * Operational Execution Metric (Plan vs Real)
+ */
+export interface AgroPlanExecutionMetric {
+  category: "AREAS" | "PREPARACION" | "SIEMBRA" | "TRATAMIENTOS" | "COSECHA" | "COMBUSTIBLE" | "COSTES";
+  concept: string;
+  plannedValue: number;
+  executedValue: number;
+  unit: string;
+  deviationPercent: number;
+  status: "OPTIMO" | "ATENCION" | "CRITICO";
 }
 
 

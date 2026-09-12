@@ -49,6 +49,7 @@ import {
   Trash2,
   Download,
   Calculator,
+  History,
 } from "lucide-react";
 import {
   FieldPlot,
@@ -59,6 +60,12 @@ import {
   ValidationStatus,
   AgroParameterCategory,
   CaneVarietyYieldMaster,
+  AgriculturalEquipmentAsset,
+  AgriculturalInputMaster,
+  AgriculturalScenario,
+  AgriculturalAuditChangeRecord,
+  AgronomicAlert,
+  AgroOperationMaster,
 } from "../types/agriculture";
 import { CaneBatch, WorkOrder } from "../types";
 import {
@@ -90,6 +97,15 @@ import { CampaignModal } from "./agriculture/CampaignModal";
 import { ParameterModal } from "./agriculture/ParameterModal";
 import { FormulaViewerModal } from "./agriculture/FormulaViewerModal";
 import { ReportsCenterView } from "./agriculture/ReportsCenterView";
+import { AgronomicAlertsBanner } from "./agriculture/AgronomicAlertsBanner";
+import { CampaignManagementTab } from "./agriculture/CampaignManagementTab";
+import { InputsManagementTab } from "./agriculture/InputsManagementTab";
+import { ScenariosSimulationTab } from "./agriculture/ScenariosSimulationTab";
+import { AuditHistoryTab } from "./agriculture/AuditHistoryTab";
+import { EquipmentModal } from "./agriculture/EquipmentModal";
+import { InputModal } from "./agriculture/InputModal";
+import { ScenarioModal } from "./agriculture/ScenarioModal";
+import { OperationModal } from "./agriculture/OperationModal";
 
 interface AgriculturalPdaViewProps {
   theme?: "dark" | "light";
@@ -99,7 +115,18 @@ interface AgriculturalPdaViewProps {
   onWorkOrderCreated?: (wo: WorkOrder) => void;
 }
 
-type SubTab = "plots" | "varieties" | "operations" | "fleet_cct" | "economics" | "governance" | "reports";
+type SubTab =
+  | "campaigns"
+  | "plots"
+  | "varieties"
+  | "operations"
+  | "inputs"
+  | "fleet_cct"
+  | "economics"
+  | "scenarios"
+  | "governance"
+  | "audit"
+  | "reports";
 
 /**
  * Universal safe number formatter to prevent runtime undefined.toFixed() crashes
@@ -142,11 +169,45 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
   const [editingVariety, setEditingVariety] = useState<CaneVarietyYieldMaster | null>(null);
 
   const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+  const [editingCampaignModal, setEditingCampaignModal] = useState<AgriculturalCampaign | null>(null);
 
   const [isParamModalOpen, setIsParamModalOpen] = useState(false);
   const [editingParamCustom, setEditingParamCustom] = useState<AgriculturalParameter | null>(null);
 
   const [isFormulaModalOpen, setIsFormulaModalOpen] = useState(false);
+
+  // Additional CRUD modal and entity states
+  const [campaignsList, setCampaignsList] = useState<AgriculturalCampaign[]>(() =>
+    AgriculturalPersistenceService.getCampaigns(campaign.tenantId)
+  );
+
+  const [operations, setOperations] = useState<AgroOperationMaster[]>(() =>
+    AgriculturalPersistenceService.getOperations(campaign.tenantId)
+  );
+  const [isOperationModalOpen, setIsOperationModalOpen] = useState(false);
+  const [editingOperation, setEditingOperation] = useState<AgroOperationMaster | null>(null);
+
+  const [equipmentAssets, setEquipmentAssets] = useState<AgriculturalEquipmentAsset[]>(() =>
+    AgriculturalPersistenceService.getEquipmentAssets(campaign.tenantId)
+  );
+  const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState<AgriculturalEquipmentAsset | null>(null);
+
+  const [inputs, setInputs] = useState<AgriculturalInputMaster[]>(() =>
+    AgriculturalPersistenceService.getInputs(campaign.tenantId)
+  );
+  const [isInputModalOpen, setIsInputModalOpen] = useState(false);
+  const [editingInput, setEditingInput] = useState<AgriculturalInputMaster | null>(null);
+
+  const [scenarios, setScenarios] = useState<AgriculturalScenario[]>(() =>
+    AgriculturalPersistenceService.getScenarios(campaign.tenantId, campaign.id)
+  );
+  const [isScenarioModalOpen, setIsScenarioModalOpen] = useState(false);
+  const [editingScenario, setEditingScenario] = useState<AgriculturalScenario | null>(null);
+
+  const [auditRecords, setAuditRecords] = useState<AgriculturalAuditChangeRecord[]>(() =>
+    AgriculturalPersistenceService.getAuditHistory(campaign.tenantId)
+  );
 
   // Parameters governance state
   const [parameters, setParameters] = useState<AgriculturalParameter[]>(() =>
@@ -172,7 +233,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
   // Trace modal inspection
   const [selectedTrace, setSelectedTrace] = useState<CalculationTrace | null>(null);
 
-  // Subscribe to real-time parameters and plots
+  // Subscribe to real-time parameters, plots, and campaigns
   useEffect(() => {
     const unsubParams = AgriculturalPersistenceService.subscribeToParameters(
       campaign.tenantId,
@@ -188,9 +249,17 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
       }
     );
 
+    const unsubCampaigns = AgriculturalPersistenceService.subscribeToCampaigns(
+      campaign.tenantId,
+      (updatedCampaigns) => {
+        setCampaignsList(updatedCampaigns);
+      }
+    );
+
     return () => {
       unsubParams();
       unsubPlots();
+      unsubCampaigns();
     };
   }, [campaign.tenantId]);
 
@@ -372,6 +441,16 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
     economics,
   ]);
 
+  // Real-time Field Intelligence 4.0 Agronomic Alerts
+  const agronomicAlerts = useMemo<AgronomicAlert[]>(() => {
+    return AgriculturalPersistenceService.generateAgronomicAlerts({
+      plots,
+      campaign,
+      fleetDeficit: fleetPlan?.totalFleetDeficit || 0,
+      totalDieselConsumed: economics?.totalDieselConsumedLiters || 0,
+    });
+  }, [plots, campaign, fleetPlan?.totalFleetDeficit, economics?.totalDieselConsumedLiters]);
+
   // Plot CRUD handlers
   const handleSavePlot = async (savedPlot: FieldPlot) => {
     // Recalculate projected TCH and Tons with the latest variety & soil factors
@@ -451,15 +530,153 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
     }
   };
 
-  // Campaign Update handler
+  // Campaign CRUD and selection handlers
+  const handleSelectCampaign = (selected: AgriculturalCampaign) => {
+    setCampaign(selected);
+    AgriculturalPersistenceService.saveLocalCachedCampaign(selected);
+    setScenarios(AgriculturalPersistenceService.getScenarios(selected.tenantId, selected.id));
+    setNotificationMsg({
+      text: `Campaña activa cambiada a ${selected.name}`,
+      type: "info",
+    });
+    setTimeout(() => setNotificationMsg(null), 3500);
+  };
+
   const handleSaveCampaign = async (updatedCamp: AgriculturalCampaign) => {
     setCampaign(updatedCamp);
     await AgriculturalPersistenceService.saveCampaign(updatedCamp);
+    setCampaignsList(AgriculturalPersistenceService.getCampaigns(updatedCamp.tenantId));
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(updatedCamp.tenantId));
     setNotificationMsg({
-      text: `Configuración de Zafra actualizada (${updatedCamp.name}, ${updatedCamp.effectiveHarvestDays} días).`,
+      text: `Configuración de Zafra guardada (${updatedCamp.name}, ${updatedCamp.effectiveHarvestDays} días).`,
       type: "success",
     });
     setTimeout(() => setNotificationMsg(null), 4000);
+  };
+
+  const handleArchiveCampaign = async (campId: string) => {
+    if (campId === campaign.id) {
+      if (!window.confirm("¿Está seguro de archivar la campaña activa actual?")) return;
+    }
+    await AgriculturalPersistenceService.archiveCampaign(campId, campaign.tenantId);
+    setCampaignsList(AgriculturalPersistenceService.getCampaigns(campaign.tenantId));
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+    setNotificationMsg({
+      text: `Campaña archivada de forma segura con registro de auditoría.`,
+      type: "info",
+    });
+    setTimeout(() => setNotificationMsg(null), 4000);
+  };
+
+  // Machinery Equipment Asset handlers
+  const handleSaveEquipment = async (asset: AgriculturalEquipmentAsset) => {
+    await AgriculturalPersistenceService.saveEquipmentAsset(asset);
+    setEquipmentAssets(AgriculturalPersistenceService.getEquipmentAssets(campaign.tenantId));
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+    setNotificationMsg({
+      text: `Activo de maquinaria ${asset.code} (${asset.name}) guardado.`,
+      type: "success",
+    });
+    setTimeout(() => setNotificationMsg(null), 4000);
+  };
+
+  const handleDeleteEquipment = async (assetId: string) => {
+    if (window.confirm("¿Confirma la eliminación del activo del parque de maquinaria?")) {
+      await AgriculturalPersistenceService.deleteEquipmentAsset(assetId, campaign.tenantId);
+      setEquipmentAssets(AgriculturalPersistenceService.getEquipmentAssets(campaign.tenantId));
+      setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+      setNotificationMsg({
+        text: "Activo de maquinaria eliminado del parque.",
+        type: "info",
+      });
+      setTimeout(() => setNotificationMsg(null), 4000);
+    }
+  };
+
+  // Inputs handlers
+  const handleSaveInput = async (input: AgriculturalInputMaster) => {
+    await AgriculturalPersistenceService.saveInput(input);
+    setInputs(AgriculturalPersistenceService.getInputs(campaign.tenantId));
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+    setNotificationMsg({
+      text: `Insumo agronómico ${input.code} (${input.name}) guardado con éxito.`,
+      type: "success",
+    });
+    setTimeout(() => setNotificationMsg(null), 4000);
+  };
+
+  const handleDeleteInput = async (inputId: string) => {
+    if (window.confirm("¿Confirma la desincorporación de este insumo del catálogo?")) {
+      await AgriculturalPersistenceService.deleteInput(inputId, campaign.tenantId);
+      setInputs(AgriculturalPersistenceService.getInputs(campaign.tenantId));
+      setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+      setNotificationMsg({
+        text: "Insumo desincorporado del catálogo.",
+        type: "info",
+      });
+      setTimeout(() => setNotificationMsg(null), 4000);
+    }
+  };
+
+  // Scenarios Simulation handlers
+  const handleSaveScenario = async (scen: AgriculturalScenario) => {
+    await AgriculturalPersistenceService.saveScenario(scen);
+    setScenarios(AgriculturalPersistenceService.getScenarios(campaign.tenantId, campaign.id));
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+    setNotificationMsg({
+      text: `Escenario ${scen.name} guardado correctamente.`,
+      type: "success",
+    });
+    setTimeout(() => setNotificationMsg(null), 4000);
+  };
+
+  const handleDeleteScenario = async (scenId: string) => {
+    if (window.confirm("¿Eliminar este escenario de simulación?")) {
+      await AgriculturalPersistenceService.deleteScenario(scenId, campaign.tenantId);
+      setScenarios(AgriculturalPersistenceService.getScenarios(campaign.tenantId, campaign.id));
+      setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+      setNotificationMsg({
+        text: "Escenario eliminado.",
+        type: "info",
+      });
+      setTimeout(() => setNotificationMsg(null), 4000);
+    }
+  };
+
+  const handleSetBaselineScenario = async (scenId: string) => {
+    await AgriculturalPersistenceService.setScenarioAsBaseline(scenId, campaign.tenantId, campaign.id);
+    setScenarios(AgriculturalPersistenceService.getScenarios(campaign.tenantId, campaign.id));
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+    setNotificationMsg({
+      text: "Escenario establecido como Línea Base Oficial de Zafra.",
+      type: "success",
+    });
+    setTimeout(() => setNotificationMsg(null), 4000);
+  };
+
+  // Operations handlers
+  const handleSaveOperation = async (op: AgroOperationMaster) => {
+    await AgriculturalPersistenceService.saveOperation(op);
+    setOperations(AgriculturalPersistenceService.getOperations(campaign.tenantId));
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+    setNotificationMsg({
+      text: `Labor mecanizada ${op.name} (${op.id}) guardada.`,
+      type: "success",
+    });
+    setTimeout(() => setNotificationMsg(null), 4000);
+  };
+
+  const handleDeleteOperation = async (opId: string) => {
+    if (window.confirm("¿Eliminar o desincorporar esta labor mecanizada?")) {
+      await AgriculturalPersistenceService.deleteOperation(opId, campaign.tenantId);
+      setOperations(AgriculturalPersistenceService.getOperations(campaign.tenantId));
+      setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+      setNotificationMsg({
+        text: "Labor mecanizada desincorporada.",
+        type: "info",
+      });
+      setTimeout(() => setNotificationMsg(null), 4000);
+    }
   };
 
   // Custom Parameter Save handler
@@ -467,6 +684,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
     await AgriculturalPersistenceService.saveParameter(savedParam);
     AgriculturalParameterRegistry.registerCustomParameter(savedParam);
     setParameters(AgriculturalParameterRegistry.getAllParameters());
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
     setNotificationMsg({
       text: `Parámetro ${savedParam.key} guardado (${savedParam.value} ${savedParam.unit}).`,
       type: "success",
@@ -741,16 +959,23 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
         </div>
       </div>
 
+      {/* Real-time Field Intelligence 4.0 Agronomic Alerts Banner */}
+      <AgronomicAlertsBanner alerts={agronomicAlerts} theme={theme} />
+
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2 overflow-x-auto">
         {[
-          { id: "plots", label: "Catastro de Lotes & Cosecha", icon: Wheat },
-          { id: "varieties", label: "Variedades & Decaimiento", icon: Sprout },
-          { id: "operations", label: "Preparación, Siembra & Tratos", icon: Tractor },
+          { id: "campaigns", label: "Campañas & Zafra", icon: Calendar, badge: campaign.status },
+          { id: "plots", label: "Catastro de Lotes", icon: Wheat, badge: plots.length },
+          { id: "varieties", label: "Variedades & Curvas", icon: Sprout, badge: varieties.length },
+          { id: "operations", label: "Operaciones & Labores", icon: Tractor, badge: operations.length },
+          { id: "inputs", label: "Insumos & Dosis", icon: Layers, badge: inputs.length },
           { id: "fleet_cct", label: "Flota & Logística CCT", icon: Truck },
           { id: "economics", label: "Agro-Economía & CAPEX", icon: DollarSign },
-          { id: "governance", label: "Gestor de Fórmulas & Parámetros", icon: ShieldCheck },
-          { id: "reports", label: "Centro de Reportes PDA (13)", icon: FileSpreadsheet },
+          { id: "scenarios", label: "Escenarios What-If", icon: Sliders, badge: scenarios.length },
+          { id: "governance", label: "Gobernanza de Fórmulas", icon: ShieldCheck, badge: parameterStats.requiresVal > 0 ? `${parameterStats.requiresVal} req` : undefined },
+          { id: "audit", label: "Auditoría ISA-95", icon: History, badge: auditRecords.length },
+          { id: "reports", label: "Centro de Reportes PDA (16)", icon: FileSpreadsheet },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -758,7 +983,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
             <button
               key={`tab-${tab.id}`}
               onClick={() => setActiveSubTab(tab.id as SubTab)}
-              className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition whitespace-nowrap ${
+              className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition whitespace-nowrap ${
                 isActive
                   ? isLight
                     ? "bg-emerald-600 text-white shadow-xs"
@@ -770,15 +995,38 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
             >
               <Icon className="w-4 h-4" />
               <span>{tab.label}</span>
-              {tab.id === "governance" && parameterStats.requiresVal > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  {parameterStats.requiresVal}
+              {tab.badge !== undefined && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                  isActive
+                    ? "bg-black/30 text-white"
+                    : "bg-slate-800 text-slate-400"
+                }`}>
+                  {tab.badge}
                 </span>
               )}
             </button>
           );
         })}
       </div>
+
+      {/* SUB-TAB: Campaigns & Harvest Planning */}
+      {activeSubTab === "campaigns" && (
+        <CampaignManagementTab
+          campaigns={campaignsList}
+          activeCampaignId={campaign.id}
+          onSelectCampaign={handleSelectCampaign}
+          onCreateCampaign={() => {
+            setEditingCampaignModal(null);
+            setIsCampaignModalOpen(true);
+          }}
+          onEditCampaign={(camp) => {
+            setEditingCampaignModal(camp);
+            setIsCampaignModalOpen(true);
+          }}
+          onArchiveCampaign={handleArchiveCampaign}
+          theme={theme}
+        />
+      )}
 
       {/* SUB-TAB 1: Field Plots & Biological Decay */}
       {activeSubTab === "plots" && (
@@ -1158,18 +1406,96 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
       {/* SUB-TAB 2: Operations, Planting & Industrial By-products */}
       {activeSubTab === "operations" && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-900/60">
+          {/* Operations Master Header & CMMS Integration */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-xl border border-slate-800 bg-slate-900/60">
             <div>
-              <h4 className="text-xs font-bold text-slate-200">Plan Operativo Mecanizado</h4>
-              <p className="text-[11px] text-slate-400">Planificación de maquinaria pesada, siembra y reciclaje de subproductos industriales.</p>
+              <h4 className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <Tractor className="w-4 h-4 text-emerald-400" />
+                <span>Catálogo de Operaciones & Labores Mecanizadas</span>
+              </h4>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Labores canónicas, rendimiento nominal (h/ha), consumo de diésel (L/ha) y despacho automático a CMMS.
+              </p>
             </div>
-            <button
-              onClick={handleGenerateWorkOrders}
-              className="px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 text-xs font-semibold flex items-center gap-1.5 transition"
-            >
-              <Tractor className="w-3.5 h-3.5" />
-              <span>Emitir Órdenes CMMS para Maquinaria</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setEditingOperation(null);
+                  setIsOperationModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Registrar Labor</span>
+              </button>
+              <button
+                onClick={handleGenerateWorkOrders}
+                className="px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 text-xs font-semibold flex items-center gap-1.5 transition"
+              >
+                <Tractor className="w-3.5 h-3.5" />
+                <span>Emitir Órdenes CMMS</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Master Operations Catalog Table */}
+          <div className={`overflow-x-auto rounded-xl border ${
+            isLight ? "bg-white border-slate-200" : "bg-slate-900 border-slate-800"
+          }`}>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className={`border-b font-semibold ${isLight ? "bg-slate-100/70 border-slate-200 text-slate-700" : "bg-slate-950 border-slate-800 text-slate-300"}`}>
+                  <th className="p-3">Código Labor</th>
+                  <th className="p-3">Nombre Operación</th>
+                  <th className="p-3">Categoría</th>
+                  <th className="p-3">Rendimiento (h/ha)</th>
+                  <th className="p-3">Diésel (L/ha)</th>
+                  <th className="p-3">Equipo Requerido</th>
+                  <th className="p-3">Etapa</th>
+                  <th className="p-3 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/40">
+                {operations.map((op) => (
+                  <tr key={`op-${op.id}`} className="hover:bg-slate-800/30 transition">
+                    <td className="p-3 font-mono font-bold text-emerald-400">{op.id}</td>
+                    <td className="p-3 font-semibold text-slate-200">{op.name}</td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">
+                        {op.category}
+                      </span>
+                    </td>
+                    <td className="p-3 font-mono">{safeFixed(op.standardHoursPerHa, 2)} h/ha</td>
+                    <td className="p-3 font-mono font-bold text-amber-400">{safeFixed(op.standardDieselLitersPerHa, 1)} L/ha</td>
+                    <td className="p-3 text-slate-400">{op.requiredEquipmentCategory}</td>
+                    <td className="p-3 text-slate-400">
+                      {op.targetStage === "ALL" ? "Todas" : op.targetStage}
+                    </td>
+                    <td className="p-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingOperation(op);
+                            setIsOperationModalOpen(true);
+                          }}
+                          className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                          title="Editar Labor"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteOperation(op.id)}
+                          className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                          title="Eliminar Labor"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1328,6 +1654,23 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
         </div>
       )}
 
+      {/* SUB-TAB: Inputs Master & Dosages */}
+      {activeSubTab === "inputs" && (
+        <InputsManagementTab
+          inputs={inputs}
+          onCreateInput={() => {
+            setEditingInput(null);
+            setIsInputModalOpen(true);
+          }}
+          onEditInput={(inp) => {
+            setEditingInput(inp);
+            setIsInputModalOpen(true);
+          }}
+          onDeleteInput={handleDeleteInput}
+          theme={theme}
+        />
+      )}
+
       {/* SUB-TAB 3: Fleet Balance & CCT Road Transport */}
       {activeSubTab === "fleet_cct" && (
         <div className="space-y-6">
@@ -1463,6 +1806,111 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <br />
                 Demanda Diaria Molienda: <span className="font-bold">{safeFixed(campaignSummary.dailyHarvestRequirementTons, 0)} t/día</span>
               </div>
+            </div>
+          </div>
+
+          {/* Physical Machinery Equipment Assets Inventory */}
+          <div className={`p-5 rounded-xl border ${isLight ? "bg-white border-slate-200" : "bg-slate-900 border-slate-800"}`}>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-bold text-sm flex items-center gap-2">
+                  <Tractor className="w-4 h-4 text-emerald-400" />
+                  <span>Parque & Fichas Técnicas de Maquinaria Agrícola ({equipmentAssets.length})</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Inventario individualizado de cosechadoras, tractores, camiones bi-tren y sembradoras con control de horómetros y estado
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingEquipment(null);
+                  setIsEquipmentModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Registrar Maquinaria</span>
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className={`border-b font-semibold ${isLight ? "bg-slate-100/70 border-slate-200 text-slate-700" : "bg-slate-950 border-slate-800 text-slate-300"}`}>
+                    <th className="p-3">Código</th>
+                    <th className="p-3">Equipo / Modelo</th>
+                    <th className="p-3">Categoría</th>
+                    <th className="p-3">Capacidad Nominal</th>
+                    <th className="p-3">Disp. Mecánica</th>
+                    <th className="p-3">Consumo Diésel</th>
+                    <th className="p-3">Horómetro Acum.</th>
+                    <th className="p-3">Estado</th>
+                    <th className="p-3 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40">
+                  {equipmentAssets.map((asset) => (
+                    <tr key={`asset-${asset.id}`} className="hover:bg-slate-800/30 transition">
+                      <td className="p-3 font-mono font-bold text-emerald-400">{asset.code}</td>
+                      <td className="p-3 font-semibold text-slate-200">
+                        {asset.name}
+                        {asset.model && <span className="text-[10px] text-slate-400 block font-normal">{asset.model}</span>}
+                      </td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">
+                          {asset.category}
+                        </span>
+                      </td>
+                      <td className="p-3 font-mono">
+                        {asset.nominalCapacity} {asset.capacityUnit}
+                      </td>
+                      <td className="p-3 font-mono">
+                        {safeFixed(asset.mechanicalAvailability * 100, 0)}%
+                      </td>
+                      <td className="p-3 font-mono text-amber-400 font-semibold">
+                        {asset.fuelConsumptionLitersPerHour} L/h
+                      </td>
+                      <td className="p-3 font-mono text-slate-300">
+                        {asset.accumulatedHours?.toLocaleString() || 0} h
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            asset.status === "OPERATIVO"
+                              ? "bg-emerald-500/20 text-emerald-400"
+                              : asset.status === "MANTENIMIENTO"
+                              ? "bg-amber-500/20 text-amber-400"
+                              : "bg-slate-800 text-slate-400"
+                          }`}
+                        >
+                          {asset.status}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => {
+                              setEditingEquipment(asset);
+                              setIsEquipmentModalOpen(true);
+                            }}
+                            className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                            title="Editar Ficha Técnica"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteEquipment(asset.id)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                            title="Eliminar Activo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1661,6 +2109,25 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* SUB-TAB: Agricultural Scenarios & What-If Matrix */}
+      {activeSubTab === "scenarios" && (
+        <ScenariosSimulationTab
+          scenarios={scenarios}
+          activeCampaign={campaign}
+          onCreateScenario={() => {
+            setEditingScenario(null);
+            setIsScenarioModalOpen(true);
+          }}
+          onEditScenario={(scen) => {
+            setEditingScenario(scen);
+            setIsScenarioModalOpen(true);
+          }}
+          onDeleteScenario={handleDeleteScenario}
+          onSetBaseline={handleSetBaselineScenario}
+          theme={theme}
+        />
       )}
 
       {/* SUB-TAB 5: PDA Parameters Governance & Audit */}
@@ -1894,6 +2361,14 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
         </div>
       )}
 
+      {/* SUB-TAB: Audit & ISA-95 Traceability Logs */}
+      {activeSubTab === "audit" && (
+        <AuditHistoryTab
+          auditRecords={auditRecords}
+          theme={theme}
+        />
+      )}
+
       {/* SUB-TAB 7: PDA Reports & Audit */}
       {activeSubTab === "reports" && (
         <ReportsCenterView
@@ -2094,9 +2569,60 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
       {/* CAMPAIGN & HARVEST SEASON CONFIGURATION MODAL */}
       <CampaignModal
         isOpen={isCampaignModalOpen}
-        onClose={() => setIsCampaignModalOpen(false)}
+        onClose={() => {
+          setIsCampaignModalOpen(false);
+          setEditingCampaignModal(null);
+        }}
         onSave={handleSaveCampaign}
-        initialCampaign={campaign}
+        initialCampaign={editingCampaignModal || campaign}
+      />
+
+      {/* EQUIPMENT & MACHINERY ASSET MODAL */}
+      <EquipmentModal
+        isOpen={isEquipmentModalOpen}
+        onClose={() => {
+          setIsEquipmentModalOpen(false);
+          setEditingEquipment(null);
+        }}
+        onSave={handleSaveEquipment}
+        initialAsset={editingEquipment}
+        theme={theme}
+      />
+
+      {/* INPUTS MASTER & DOSAGE MODAL */}
+      <InputModal
+        isOpen={isInputModalOpen}
+        onClose={() => {
+          setIsInputModalOpen(false);
+          setEditingInput(null);
+        }}
+        onSave={handleSaveInput}
+        initialInput={editingInput}
+        theme={theme}
+      />
+
+      {/* SCENARIOS & WHAT-IF SIMULATION MODAL */}
+      <ScenarioModal
+        isOpen={isScenarioModalOpen}
+        onClose={() => {
+          setIsScenarioModalOpen(false);
+          setEditingScenario(null);
+        }}
+        onSave={handleSaveScenario}
+        initialScenario={editingScenario}
+        theme={theme}
+      />
+
+      {/* OPERATIONS & CULTURAL LABORS MODAL */}
+      <OperationModal
+        isOpen={isOperationModalOpen}
+        onClose={() => {
+          setIsOperationModalOpen(false);
+          setEditingOperation(null);
+        }}
+        onSave={handleSaveOperation}
+        initialOperation={editingOperation}
+        theme={theme}
       />
 
       {/* PARAMETER DETAILED MANAGEMENT MODAL */}

@@ -141,7 +141,11 @@ export async function bootstrapDatabaseWithAdminSdk(): Promise<{ success: boolea
 
     return await Promise.race([runBootstrap(), timeoutPromise]);
   } catch (err: any) {
-    console.warn("⚠️ [SERVER BOOTSTRAP] Skipped or offline:", err.message);
-    return { success: false, message: err.message };
+    if (err?.message?.includes("PERMISSION_DENIED") || err?.code === 7) {
+      console.info("ℹ️ [SERVER BOOTSTRAP] Server-side Admin SDK credentials not provisioned in container; utilizing client-side authenticated Firestore persistence.");
+    } else {
+      console.warn("⚠️ [SERVER BOOTSTRAP] Skipped or offline:", err?.message || err);
+    }
+    return { success: false, message: err?.message || String(err) };
   }
 }

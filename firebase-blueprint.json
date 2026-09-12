@@ -204,6 +204,162 @@
         "ipAddress": { "type": "string", "description": "Source IP address" }
       },
       "required": ["timestamp", "userRole", "action", "module", "status"]
+    },
+    "agricultural_parameters": {
+      "title": "Agricultural Parameters & Governance (ODS PDA)",
+      "description": "Agronomic formulas, operational benchmarks, decay curves, and thresholds",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "category": { "type": "string" },
+        "name": { "type": "string" },
+        "key": { "type": "string" },
+        "value": { "type": "number" },
+        "unit": { "type": "string" },
+        "version": { "type": "string" },
+        "status": { "type": "string" },
+        "effectiveFrom": { "type": "string" }
+      },
+      "required": ["tenantId", "name", "key", "unit", "version"]
+    },
+    "agricultural_plots": {
+      "title": "Agricultural Field Plot Entity",
+      "description": "Individual cane field parcel, variety, stage, TCH yield and logistics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "code": { "type": "string" },
+        "uebName": { "type": "string" },
+        "areaHectares": { "type": "number" },
+        "varietyCode": { "type": "string" },
+        "currentStage": { "type": "string" },
+        "soilType": { "type": "string" },
+        "distanceToMillKm": { "type": "number" },
+        "historicalAverageTch": { "type": "number" },
+        "projectedTch": { "type": "number" },
+        "projectedTotalCaneTons": { "type": "number" },
+        "scheduledHarvestMonth": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["tenantId", "code", "areaHectares", "varietyCode", "currentStage", "status"]
+    },
+    "agricultural_campaigns": {
+      "title": "Agricultural Campaign / Zafra Operational Plan",
+      "description": "Zafra horizon, harvest days, cane targets, sugar budget and renewal target",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "name": { "type": "string" },
+        "calendarDays": { "type": "number" },
+        "effectiveHarvestDays": { "type": "number" },
+        "totalAreaHectares": { "type": "number" },
+        "renewalTargetPercent": { "type": "number" },
+        "projectedTotalCaneTons": { "type": "number" },
+        "sugarTargetTons": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["tenantId", "name", "effectiveHarvestDays", "projectedTotalCaneTons", "status"]
+    },
+    "agricultural_varieties": {
+      "title": "Cane Variety Master Data & Retention Curves",
+      "description": "Commercial cane varieties, maturation period, base TCH and decay",
+      "type": "object",
+      "properties": {
+        "varietyCode": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "name": { "type": "string" },
+        "baseYieldTch": { "type": "number" },
+        "polPercent": { "type": "number" },
+        "fiberPercent": { "type": "number" },
+        "purityPercent": { "type": "number" },
+        "maturity": { "type": "string" }
+      },
+      "required": ["varietyCode", "name", "baseYieldTch", "polPercent", "maturity"]
+    },
+    "agricultural_operations": {
+      "title": "Agricultural Standard Operations Catalog",
+      "description": "Field labor, soil prep, mechanical capacity and diesel consumption",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "category": { "type": "string" },
+        "name": { "type": "string" },
+        "standardTractorPowerHp": { "type": "number" },
+        "standardImplement": { "type": "string" },
+        "effectiveCapacityHaPerHour": { "type": "number" },
+        "fuelConsumptionLitersPerHour": { "type": "number" },
+        "targetCycle": { "type": "string" }
+      },
+      "required": ["category", "name", "effectiveCapacityHaPerHour", "fuelConsumptionLitersPerHour"]
+    },
+    "agricultural_equipment": {
+      "title": "Agricultural Fleet & Machinery Asset",
+      "description": "Tractors, harvesters and infill equipment with hourly operating costs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "powerHp": { "type": "number" },
+        "hourlyOperatingCostUSD": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["code", "name", "category", "status"]
+    },
+    "agricultural_inputs": {
+      "title": "Agricultural Chemical & Biological Inputs",
+      "description": "Fertilizers, vinasse, filter cake, agrochemicals and unit dosages",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "unit": { "type": "string" },
+        "unitCostUSD": { "type": "number" },
+        "standardDosePerHa": { "type": "number" }
+      },
+      "required": ["code", "name", "category", "unit", "unitCostUSD"]
+    },
+    "agricultural_scenarios": {
+      "title": "Agricultural Simulation & What-If Scenarios",
+      "description": "Plurianual agronomic projections, climate factors and sensitivity analysis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "name": { "type": "string" },
+        "climateFactor": { "type": "number" },
+        "dieselPriceUSD": { "type": "number" },
+        "isBaseline": { "type": "boolean" }
+      },
+      "required": ["tenantId", "name"]
+    },
+    "agricultural_audit_trail": {
+      "title": "ISA-95 Level 4 Agricultural Audit Records",
+      "description": "Immutable audit trail of parameter calibration, plots and campaign modifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "fieldChanged": { "type": "string" },
+        "user": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "required": ["timestamp", "entityType", "entityId", "fieldChanged"]
     }
   },
   "firestore": {
@@ -246,6 +402,42 @@
     "/audit_logs/{logId}": {
       "schema": { "$ref": "#/entities/audit_logs" },
       "description": "IEC 62443 Security and SCADA audit logs"
+    },
+    "/agricultural_parameters/{paramId}": {
+      "schema": { "$ref": "#/entities/agricultural_parameters" },
+      "description": "Agronomic parameters and operational formulas"
+    },
+    "/agricultural_plots/{plotId}": {
+      "schema": { "$ref": "#/entities/agricultural_plots" },
+      "description": "Cane field plots and yield projections"
+    },
+    "/agricultural_campaigns/{campId}": {
+      "schema": { "$ref": "#/entities/agricultural_campaigns" },
+      "description": "Agricultural campaign horizons and budgets"
+    },
+    "/agricultural_varieties/{varId}": {
+      "schema": { "$ref": "#/entities/agricultural_varieties" },
+      "description": "Cane varieties catalog and decay retention parameters"
+    },
+    "/agricultural_operations/{opId}": {
+      "schema": { "$ref": "#/entities/agricultural_operations" },
+      "description": "Field machinery operations catalog and fuel norms"
+    },
+    "/agricultural_equipment/{eqId}": {
+      "schema": { "$ref": "#/entities/agricultural_equipment" },
+      "description": "Agricultural machinery and tractor fleet registry"
+    },
+    "/agricultural_inputs/{inputId}": {
+      "schema": { "$ref": "#/entities/agricultural_inputs" },
+      "description": "Fertilizers and biological inputs catalog"
+    },
+    "/agricultural_scenarios/{scenarioId}": {
+      "schema": { "$ref": "#/entities/agricultural_scenarios" },
+      "description": "What-If yield and plurianual simulation scenarios"
+    },
+    "/agricultural_audit_trail/{auditId}": {
+      "schema": { "$ref": "#/entities/agricultural_audit_trail" },
+      "description": "ISA-95 Level 4 Agronomic audit history"
     }
   }
 }

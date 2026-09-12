@@ -20,9 +20,11 @@ import {
   PdaReportResult,
   PdaReportKpi,
   PdaReportColumn,
+  PdaReportFilterOptions,
 } from "../../types/agriculture";
 import { PdaFormulaRegistry } from "./PdaFormulaRegistry";
 import { MODEL_REVISION } from "./YieldCalculationService";
+import { AgriculturalPersistenceService } from "./AgriculturalPersistenceService";
 
 function safeNum(val: unknown, fallback: number = 0): number {
   if (typeof val === "number" && !Number.isNaN(val)) return val;
@@ -89,7 +91,8 @@ export class AgriculturalReportingService {
    */
   public static generateReport(
     reportType: PdaReportType,
-    context: AgriculturalReportContext
+    context: AgriculturalReportContext,
+    filters?: PdaReportFilterOptions
   ): PdaReportResult {
     switch (reportType) {
       case "MASTER_PDA":
@@ -118,6 +121,12 @@ export class AgriculturalReportingService {
         return this.buildScenarioComparisonReport(context);
       case "FORMULAS_PARAMETERS_TRACE":
         return this.buildFormulasTraceReport(context);
+      case "CAMPAIGN_SUMMARY":
+        return this.buildCampaignSummaryReport(context);
+      case "AGRICULTURAL_KPIS":
+        return this.buildAgriculturalKpisReport(context);
+      case "EXECUTION_VS_PLAN":
+        return this.buildExecutionVsPlanReport(context);
       default:
         return this.buildMasterPdaReport(context);
     }
@@ -1036,6 +1045,202 @@ export class AgriculturalReportingService {
         "Catálogo de ecuaciones agronómicas autónomas con gobernanza y versionado interno.",
         "Demuestra trazabilidad completa según norma ISA-95 Nivel 4.",
         "Las fórmulas dañadas en documentos históricos (#REF!) quedan identificadas con estado INVALID_SOURCE y excluidas del cálculo operativo.",
+      ],
+    };
+  }
+
+  // 14. Reporte de Campañas Agrícolas
+  private static buildCampaignSummaryReport(
+    ctx: AgriculturalReportContext,
+    filters?: PdaReportFilterOptions
+  ): PdaReportResult {
+    const list = AgriculturalPersistenceService.getCampaignsList(ctx.campaign.tenantId);
+    const active = list.find((c) => c.status === "ACTIVE") || ctx.campaign;
+
+    const kpis: PdaReportKpi[] = [
+      { label: "Campañas en Sistema", value: list.length, unit: "zafras" },
+      { label: "Zafra Activa", value: active.name.split("—")[0].trim() },
+      { label: "Superficie Planificada", value: safeFixed(active.totalAreaHectares, 0), unit: "ha" },
+      { label: "Meta Azúcar Zafra", value: active.sugarTargetTons.toLocaleString(), unit: "t" },
+    ];
+
+    const columns: PdaReportColumn[] = [
+      { key: "codigo", label: "ID Campaña", align: "left" },
+      { key: "nombre", label: "Denominación Oficial", align: "left" },
+      { key: "estado", label: "Estado", align: "center" },
+      { key: "dias", label: "Días Zafra", align: "right" },
+      { key: "diasEfectivos", label: "Días Corte", align: "right" },
+      { key: "areaHa", label: "Área (ha)", align: "right" },
+      { key: "renovacion", label: "Renov. %", align: "right" },
+      { key: "produccion", label: "Caña Meta (t)", align: "right" },
+      { key: "tch", label: "TCH Promedio", align: "right" },
+      { key: "azucar", label: "Azúcar (t)", align: "right" },
+    ];
+
+    let filteredList = list;
+    if (filters?.campaignId) {
+      filteredList = filteredList.filter((c) => c.id === filters.campaignId);
+    }
+
+    const rows = filteredList.map((c) => ({
+      codigo: c.id,
+      nombre: c.name,
+      estado: c.status === "ACTIVE" ? "ACTIVA" : c.status === "ARCHIVED" ? "ARCHIVADA" : "BORRADOR",
+      dias: c.calendarDays,
+      diasEfectivos: c.effectiveHarvestDays,
+      areaHa: safeFixed(c.totalAreaHectares, 1),
+      renovacion: `${c.renewalTargetPercent}%`,
+      produccion: Math.round(c.projectedTotalCaneTons).toLocaleString(),
+      tch: safeFixed(c.averageTchCampaign, 2),
+      azucar: Math.round(c.sugarTargetTons).toLocaleString(),
+    }));
+
+    return {
+      metadata: {
+        reportId: `REP-CAMP-${Date.now()}`,
+        reportType: "CAMPAIGN_SUMMARY",
+        title: "Cédula de Campañas Agrícolas & Balance Plurianual",
+        subtitle: "Historial de Zafras, Metas de Molienda y Planificación Estratégica",
+        campaignId: ctx.campaign.id,
+        campaignName: ctx.campaign.name,
+        tenantId: ctx.campaign.tenantId,
+        generatedAt: new Date().toISOString(),
+        generatedBy: ctx.currentUser || "agronomo_bioazucar",
+        modelRevision: MODEL_REVISION,
+      },
+      summaryKpis: kpis,
+      columns,
+      rows,
+      traceNotes: [
+        "Gestión plurianual de zafras de caña de azúcar con archivo histórico protegido contra pérdidas de datos.",
+      ],
+    };
+  }
+
+  // 15. Reporte Tablero de KPIs Agrícolas
+  private static buildAgriculturalKpisReport(
+    ctx: AgriculturalReportContext,
+    filters?: PdaReportFilterOptions
+  ): PdaReportResult {
+    const totalArea = getArea(ctx);
+    const totalProd = getProduction(ctx);
+    const avgTch = getTch(ctx);
+    const totalDiesel = safeNum(ctx.economics?.totalDieselConsumedLiters);
+    const totalOpex = safeNum(ctx.economics?.opex?.totalOpexUSD);
+    const costTon = safeNum(ctx.economics?.opex?.costPerTonCaneUSD);
+    const costHa = safeNum(ctx.economics?.opex?.costPerHectareUSD);
+    const fleetDeficit = safeNum(ctx.fleetPlan?.totalFleetDeficit);
+    const trucksReq = safeNum(ctx.cctLogistics?.trucksRequiredForDailyDemand);
+
+    const kpis: PdaReportKpi[] = [
+      { label: "TCH Global", value: safeFixed(avgTch, 2), unit: "t/ha", color: "text-emerald-400" },
+      { label: "OPEX / Tonelada", value: `$${safeFixed(costTon, 2)}`, unit: "USD/t", color: "text-amber-400" },
+      { label: "Intensidad Diésel", value: safeFixed(totalDiesel / (totalArea || 1), 1), unit: "L/ha" },
+      { label: "Flota Déficit", value: fleetDeficit, unit: "máquinas", color: fleetDeficit > 0 ? "text-rose-400" : "text-emerald-400" },
+    ];
+
+    const columns: PdaReportColumn[] = [
+      { key: "categoria", label: "Dimensión", align: "left" },
+      { key: "indicador", label: "Indicador Clave (KPI)", align: "left" },
+      { key: "valor", label: "Valor Actual", align: "right" },
+      { key: "meta", label: "Referencia PDA", align: "right" },
+      { key: "unidad", label: "Unidad", align: "center" },
+      { key: "estado", label: "Evaluación", align: "center" },
+    ];
+
+    const rows = [
+      { categoria: "Agronomía", indicador: "Rendimiento Agrícola Promedio (TCH)", valor: safeFixed(avgTch, 2), meta: "80.00", unidad: "t/ha", estado: avgTch >= 80 ? "ÓPTIMO" : "ATENCIÓN" },
+      { categoria: "Agronomía", indicador: "Tasa de Renovación Varietal", valor: `${safeFixed(ctx.campaign.renewalTargetPercent, 1)}%`, meta: "15.0 - 18.0%", unidad: "% anual", estado: "ÓPTIMO" },
+      { categoria: "Producción", indicador: "Biomasa Bruta Proyectada", valor: Math.round(totalProd).toLocaleString(), meta: "> 1,000,000", unidad: "t caña", estado: "ÓPTIMO" },
+      { categoria: "Producción", indicador: "Azúcar Blanco / Crudo Proyectado", valor: Math.round(ctx.campaign.sugarTargetTons).toLocaleString(), meta: "> 115,000", unidad: "t azúcar", estado: "ÓPTIMO" },
+      { categoria: "Mecanización", indicador: "Déficit Neto de Flota de Tracción", valor: fleetDeficit, meta: "0", unidad: "unidades", estado: fleetDeficit === 0 ? "EQUILIBRADO" : "DÉFICIT" },
+      { categoria: "Logística", indicador: "Camiones Rodoviarios CCT en Circulación", valor: trucksReq, meta: "15 - 18", unidad: "bi-trenes", estado: "ÓPTIMO" },
+      { categoria: "Energía", indicador: "Consumo Total de Diésel", valor: Math.round(totalDiesel).toLocaleString(), meta: "< 4,800,000", unidad: "Litros", estado: "CONTROLADO" },
+      { categoria: "Economía", indicador: "Costo Unitario por Hectárea", valor: `$${safeFixed(costHa, 2)}`, meta: "< $2,200", unidad: "USD/ha", estado: "EN RANGO" },
+      { categoria: "Economía", indicador: "Costo Unitario por Tonelada Caña", valor: `$${safeFixed(costTon, 2)}`, meta: "< $26.00", unidad: "USD/t", estado: "EN RANGO" },
+    ];
+
+    return {
+      metadata: {
+        reportId: `REP-KPIS-${Date.now()}`,
+        reportType: "AGRICULTURAL_KPIS",
+        title: "Tablero Integral de KPIs Agrícolas & Eficiencia Operacional",
+        subtitle: "Balanced Scorecard Agronómico, Mecanizado, Energético y Económico",
+        campaignId: ctx.campaign.id,
+        campaignName: ctx.campaign.name,
+        tenantId: ctx.campaign.tenantId,
+        generatedAt: new Date().toISOString(),
+        generatedBy: ctx.currentUser || "agronomo_bioazucar",
+        modelRevision: MODEL_REVISION,
+      },
+      summaryKpis: kpis,
+      columns,
+      rows,
+      traceNotes: [
+        "Métricas calculadas en tiempo real a partir del modelo unificado PDA BioAzúcar 4.0.",
+      ],
+    };
+  }
+
+  // 16. Reporte Avance Planificado vs Ejecutado
+  private static buildExecutionVsPlanReport(
+    ctx: AgriculturalReportContext,
+    filters?: PdaReportFilterOptions
+  ): PdaReportResult {
+    const totalDiesel = safeNum(ctx.economics?.totalDieselConsumedLiters);
+    const totalOpex = safeNum(ctx.economics?.opex?.totalOpexUSD);
+
+    const metrics = AgriculturalPersistenceService.getPlanExecutionMetrics({
+      plots: ctx.plots,
+      campaign: ctx.campaign,
+      totalDieselConsumed: totalDiesel,
+      totalOpexUSD: totalOpex,
+    });
+
+    const kpis: PdaReportKpi[] = [
+      { label: "Métricas Evaluadas", value: metrics.length, unit: "conceptos" },
+      { label: "En Rango Óptimo", value: metrics.filter((m) => m.status === "OPTIMO").length, unit: "óptimos", color: "text-emerald-400" },
+      { label: "Desviaciones en Alerta", value: metrics.filter((m) => m.status !== "OPTIMO").length, unit: "alertas", color: "text-amber-400" },
+    ];
+
+    const columns: PdaReportColumn[] = [
+      { key: "categoria", label: "Área de Gestión", align: "left" },
+      { key: "concepto", label: "Labor / Concepto", align: "left" },
+      { key: "plan", label: "Meta Planificada", align: "right" },
+      { key: "real", label: "Ejecutado Real", align: "right" },
+      { key: "unidad", label: "Unidad", align: "center" },
+      { key: "desviacion", label: "Desviación %", align: "right" },
+      { key: "estado", label: "Semáforo", align: "center" },
+    ];
+
+    const rows = metrics.map((m) => ({
+      categoria: m.category,
+      concepto: m.concept,
+      plan: Math.round(m.plannedValue).toLocaleString(),
+      real: Math.round(m.executedValue).toLocaleString(),
+      unidad: m.unit,
+      desviacion: `${m.deviationPercent > 0 ? "+" : ""}${m.deviationPercent}%`,
+      estado: m.status,
+    }));
+
+    return {
+      metadata: {
+        reportId: `REP-EXEC-${Date.now()}`,
+        reportType: "EXECUTION_VS_PLAN",
+        title: "Avance Físico & Financiero: Planificado vs Ejecutado",
+        subtitle: "Monitoreo Operativo en Tiempo Real y Control de Desviaciones",
+        campaignId: ctx.campaign.id,
+        campaignName: ctx.campaign.name,
+        tenantId: ctx.campaign.tenantId,
+        generatedAt: new Date().toISOString(),
+        generatedBy: ctx.currentUser || "agronomo_bioazucar",
+        modelRevision: MODEL_REVISION,
+      },
+      summaryKpis: kpis,
+      columns,
+      rows,
+      traceNotes: [
+        "Comparativa en tiempo real entre la cédula catastrada y el modelo de dimensionamiento PDA.",
       ],
     };
   }

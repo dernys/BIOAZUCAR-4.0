@@ -176,31 +176,64 @@ service cloud.firestore {
     // 15. Agricultural Parameters & Governance (ODS PDA)
     match /agricultural_parameters/{paramId} {
       allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
-      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isResourceTenantMatch(resource));
     }
 
     // 16. Agricultural Field Plots
     match /agricultural_plots/{plotId} {
       allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
-      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isResourceTenantMatch(resource));
     }
 
     // 17. Agricultural Campaigns
     match /agricultural_campaigns/{campId} {
       allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
-      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isResourceTenantMatch(resource));
     }
 
     // 18. Agricultural Varieties Catalog
     match /agricultural_varieties/{varId} {
       allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
-      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isResourceTenantMatch(resource));
     }
 
     // 19. Agricultural Operations & Workloads
     match /agricultural_operations/{opId} {
       allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
-      allow write: if isAuthenticated() && isNewResourceTenantMatch();
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isResourceTenantMatch(resource));
+    }
+
+    // 20. Agricultural Fleet & Machinery Assets
+    match /agricultural_equipment/{eqId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isResourceTenantMatch(resource));
+    }
+
+    // 21. Agricultural Inputs & Byproducts Catalog
+    match /agricultural_inputs/{inputId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isResourceTenantMatch(resource));
+    }
+
+    // 22. Agricultural What-If Scenarios
+    match /agricultural_scenarios/{scenarioId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create, update: if isAuthenticated() && isNewResourceTenantMatch();
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isResourceTenantMatch(resource));
+    }
+
+    // 23. ISA-95 Level 4 Agricultural Audit Trail (Strict Append-Only)
+    match /agricultural_audit_trail/{auditId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create: if isAuthenticated() && isNewResourceTenantMatch();
+      allow update, delete: if false; // Inviolable append-only audit trail
     }
   }
 }

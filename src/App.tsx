@@ -24,6 +24,7 @@ import { BioAzucarCopilot } from "./copilot/components/BioAzucarCopilot";
 import { ExecutivePresentation } from "./components/ExecutivePresentation";
 import { IndustrialConnectionModal } from "./components/IndustrialConnectionModal";
 import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import {
   TelemetryData,
   UserRole,
@@ -649,11 +650,13 @@ export default function App() {
         )}
 
         {activeTab === "agricultural_pda" && (
-          <AgriculturalPdaView
-            theme={theme}
-            currentTenantName={activeTenant.name}
-            nominalMillTch={telemetry.tch}
-          />
+          <ErrorBoundary fallbackTitle="Error en el Módulo Agronómico (PDA)" theme={theme}>
+            <AgriculturalPdaView
+              theme={theme}
+              currentTenantName={activeTenant.name}
+              nominalMillTch={telemetry.tch}
+            />
+          </ErrorBoundary>
         )}
 
         {activeTab === "energy_dispatch" && (

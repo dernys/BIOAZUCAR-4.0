@@ -24,6 +24,12 @@ export const INITIAL_AGRICULTURAL_CAMPAIGN: AgriculturalCampaign = {
   status: "ACTIVE",
   createdAt: "2026-06-01T00:00:00.000Z",
   updatedAt: "2026-09-10T12:00:00.000Z",
+  targetMillingTons: 1045250.0,
+  targetSugarTons: 118000.0,
+  plannedRenovationRatePercent: 16.5,
+  startDate: "15 Nov 2026",
+  endDate: "18 Abr 2027",
+  description: "Campaña agronómica PDA 2026/2027 calibrada para molienda de 450 TCH y cogeneración eléctrica.",
 };
 
 /**

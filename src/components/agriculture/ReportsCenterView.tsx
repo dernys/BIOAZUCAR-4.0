@@ -137,6 +137,27 @@ const REPORT_CATALOG: ReportOption[] = [
     description: "Matriz de gobernanza ISA-95, procedencia del modelo, versiones y balance de ecuaciones.",
     domain: "Gobernanza & Trazabilidad de Modelos",
   },
+  {
+    type: "CAMPAIGN_SUMMARY",
+    title: "14. Cédula de Campañas & Historial Multizafra",
+    category: "MAESTRO",
+    description: "Visión plurianual de zafras agrícolas, estados activos/archivados, metas y balances globales.",
+    domain: "Gestión Estratégica Multizafra",
+  },
+  {
+    type: "AGRICULTURAL_KPIS",
+    title: "15. Tablero Integral de KPIs Agrícolas",
+    category: "MAESTRO",
+    description: "Balanced Scorecard agronómico, energético, mecanizado, logístico y de costes por tonelada.",
+    domain: "Cuadro de Mando Integral",
+  },
+  {
+    type: "EXECUTION_VS_PLAN",
+    title: "16. Avance Planificado vs Ejecutado (Real-Time)",
+    category: "OPERACIONES",
+    description: "Monitoreo en tiempo real de áreas preparadas, cosechadas, consumo de diésel y control OPEX.",
+    domain: "Supervisión Operacional en Vivo",
+  },
 ];
 
 export const ReportsCenterView: React.FC<ReportsCenterViewProps> = ({
@@ -148,6 +169,25 @@ export const ReportsCenterView: React.FC<ReportsCenterViewProps> = ({
   const [selectedReportType, setSelectedReportType] = useState<PdaReportType>("MASTER_PDA");
   const [filterCategory, setFilterCategory] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [selectedUeb, setSelectedUeb] = useState<string>("ALL");
+  const [selectedVariety, setSelectedVariety] = useState<string>("ALL");
+
+  // Available unique UEBs & Varieties for filtering
+  const availableUebs = useMemo(() => {
+    const set = new Set<string>();
+    context.plots.forEach((p) => {
+      if (p.uebName) set.add(p.uebName);
+    });
+    return Array.from(set);
+  }, [context.plots]);
+
+  const availableVarieties = useMemo(() => {
+    const set = new Set<string>();
+    context.plots.forEach((p) => {
+      if (p.varietyCode) set.add(p.varietyCode);
+    });
+    return Array.from(set);
+  }, [context.plots]);
 
   // Filtered reports catalogue
   const filteredCatalog = useMemo(() => {
@@ -162,10 +202,14 @@ export const ReportsCenterView: React.FC<ReportsCenterViewProps> = ({
     });
   }, [filterCategory, searchTerm]);
 
-  // Generate the active report with real data
+  // Generate the active report with real data and applied filters
   const currentReport: PdaReportResult = useMemo(() => {
-    return AgriculturalReportingService.generateReport(selectedReportType, context);
-  }, [selectedReportType, context]);
+    const filters = {
+      uebName: selectedUeb !== "ALL" ? selectedUeb : undefined,
+      varietyCode: selectedVariety !== "ALL" ? selectedVariety : undefined,
+    };
+    return AgriculturalReportingService.generateReport(selectedReportType, context, filters);
+  }, [selectedReportType, context, selectedUeb, selectedVariety]);
 
   // Export handlers
   const handleDownloadCsv = () => {
@@ -212,7 +256,7 @@ export const ReportsCenterView: React.FC<ReportsCenterViewProps> = ({
             <h2 className="text-lg font-bold">Centro de Reportes Agrícolas & Trazabilidad PDA</h2>
           </div>
           <p className="text-xs text-slate-400">
-            Generador determinístico de los 13 informes ejecutivos del Modelo Agrícola Canónico BioAzúcar 4.0 con datos vivos.
+            Generador determinístico de los 16 informes ejecutivos del Modelo Agrícola Canónico BioAzúcar 4.0 con datos vivos y auditoría continua.
           </p>
         </div>
 
@@ -271,10 +315,10 @@ export const ReportsCenterView: React.FC<ReportsCenterViewProps> = ({
 
       {/* Report Selector Grid & Filter Strip */}
       <div className={`p-4 rounded-xl border space-y-4 ${isLight ? "bg-white border-slate-200" : "bg-slate-900 border-slate-800"}`}>
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Filter className="w-4 h-4 text-slate-400" />
-            <span className="text-xs font-semibold text-slate-400">Filtrar por Categoría:</span>
+            <span className="text-xs font-semibold text-slate-400">Categoría:</span>
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
@@ -282,7 +326,7 @@ export const ReportsCenterView: React.FC<ReportsCenterViewProps> = ({
                 isLight ? "bg-slate-50 border-slate-300 text-slate-800" : "bg-slate-800 border-slate-700 text-slate-200"
               }`}
             >
-              <option value="ALL">Todas las Categorías (13)</option>
+              <option value="ALL">Todas las Categorías ({REPORT_CATALOG.length})</option>
               <option value="MAESTRO">Maestro PDA</option>
               <option value="CAMPO">Campo & Rendimientos</option>
               <option value="OPERACIONES">Labores & Siembra</option>
@@ -290,6 +334,48 @@ export const ReportsCenterView: React.FC<ReportsCenterViewProps> = ({
               <option value="ECONOMIA">Costes & Combustible</option>
               <option value="AUDITORIA">Auditoría & Escenarios</option>
             </select>
+
+            {/* Filter by UEB */}
+            {availableUebs.length > 0 && (
+              <>
+                <span className="text-xs font-semibold text-slate-400 ml-2">UEB:</span>
+                <select
+                  value={selectedUeb}
+                  onChange={(e) => setSelectedUeb(e.target.value)}
+                  className={`text-xs px-2.5 py-1.5 rounded-lg border outline-hidden ${
+                    isLight ? "bg-slate-50 border-slate-300 text-slate-800" : "bg-slate-800 border-slate-700 text-slate-200"
+                  }`}
+                >
+                  <option value="ALL">Todas las UEBs ({availableUebs.length})</option>
+                  {availableUebs.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            {/* Filter by Variety */}
+            {availableVarieties.length > 0 && (
+              <>
+                <span className="text-xs font-semibold text-slate-400 ml-2">Variedad:</span>
+                <select
+                  value={selectedVariety}
+                  onChange={(e) => setSelectedVariety(e.target.value)}
+                  className={`text-xs px-2.5 py-1.5 rounded-lg border outline-hidden ${
+                    isLight ? "bg-slate-50 border-slate-300 text-slate-800" : "bg-slate-800 border-slate-700 text-slate-200"
+                  }`}
+                >
+                  <option value="ALL">Todas las Variedades</option>
+                  {availableVarieties.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
 
           <div className="relative w-full sm:w-64">

@@ -19,33 +19,50 @@ export const CampaignModal: React.FC<CampaignModalProps> = ({
 }) => {
   const isLight = theme === "light";
 
-  const [name, setName] = useState(initialCampaign.name);
-  const [startDate, setStartDate] = useState(initialCampaign.startDate);
-  const [endDate, setEndDate] = useState(initialCampaign.endDate);
-  const [effectiveHarvestDays, setEffectiveHarvestDays] = useState<number>(initialCampaign.effectiveHarvestDays);
-  const [targetMillingTons, setTargetMillingTons] = useState<number>(initialCampaign.targetMillingTons);
-  const [targetSugarTons, setTargetSugarTons] = useState<number>(initialCampaign.targetSugarTons);
-  const [plannedRenovationRatePercent, setPlannedRenovationRatePercent] = useState<number>(
-    initialCampaign.plannedRenovationRatePercent
+  const safeNumber = (val: any, fallback = 0): number => {
+    if (val === null || val === undefined) return fallback;
+    const n = Number(val);
+    return isNaN(n) ? fallback : n;
+  };
+
+  const [name, setName] = useState(initialCampaign?.name || "Zafra BioAzúcar");
+  const [startDate, setStartDate] = useState(initialCampaign?.startDate || "15 Nov 2026");
+  const [endDate, setEndDate] = useState(initialCampaign?.endDate || "18 Abr 2027");
+  const [effectiveHarvestDays, setEffectiveHarvestDays] = useState<number>(
+    safeNumber(initialCampaign?.effectiveHarvestDays, 155)
   );
-  const [status, setStatus] = useState<AgriculturalCampaign["status"]>(initialCampaign.status);
+  const [targetMillingTons, setTargetMillingTons] = useState<number>(
+    safeNumber(initialCampaign?.targetMillingTons ?? initialCampaign?.projectedTotalCaneTons, 1045250)
+  );
+  const [targetSugarTons, setTargetSugarTons] = useState<number>(
+    safeNumber(initialCampaign?.targetSugarTons ?? initialCampaign?.sugarTargetTons, 118000)
+  );
+  const [plannedRenovationRatePercent, setPlannedRenovationRatePercent] = useState<number>(
+    safeNumber(initialCampaign?.plannedRenovationRatePercent ?? initialCampaign?.renewalTargetPercent, 16.5)
+  );
+  const [status, setStatus] = useState<AgriculturalCampaign["status"]>(initialCampaign?.status || "ACTIVE");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    setName(initialCampaign.name);
-    setStartDate(initialCampaign.startDate);
-    setEndDate(initialCampaign.endDate);
-    setEffectiveHarvestDays(initialCampaign.effectiveHarvestDays);
-    setTargetMillingTons(initialCampaign.targetMillingTons);
-    setTargetSugarTons(initialCampaign.targetSugarTons);
-    setPlannedRenovationRatePercent(initialCampaign.plannedRenovationRatePercent);
-    setStatus(initialCampaign.status);
+    if (initialCampaign) {
+      setName(initialCampaign.name || "Zafra BioAzúcar");
+      setStartDate(initialCampaign.startDate || "15 Nov 2026");
+      setEndDate(initialCampaign.endDate || "18 Abr 2027");
+      setEffectiveHarvestDays(safeNumber(initialCampaign.effectiveHarvestDays, 155));
+      setTargetMillingTons(safeNumber(initialCampaign.targetMillingTons ?? initialCampaign.projectedTotalCaneTons, 1045250));
+      setTargetSugarTons(safeNumber(initialCampaign.targetSugarTons ?? initialCampaign.sugarTargetTons, 118000));
+      setPlannedRenovationRatePercent(
+        safeNumber(initialCampaign.plannedRenovationRatePercent ?? initialCampaign.renewalTargetPercent, 16.5)
+      );
+      setStatus(initialCampaign.status || "ACTIVE");
+    }
     setErrorMsg(null);
   }, [initialCampaign, isOpen]);
 
   if (!isOpen) return null;
 
-  const dailyDemand = effectiveHarvestDays > 0 ? targetMillingTons / effectiveHarvestDays : 0;
+  const validDays = Math.max(1, safeNumber(effectiveHarvestDays, 1));
+  const dailyDemand = validDays > 0 ? safeNumber(targetMillingTons, 0) / validDays : 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,15 +79,28 @@ export const CampaignModal: React.FC<CampaignModalProps> = ({
       return;
     }
 
+    const milling = Number(targetMillingTons);
+    const sugar = Number(targetSugarTons);
+    const harvestDays = Number(effectiveHarvestDays);
+    const renoRate = Number(plannedRenovationRatePercent);
+
     const updated: AgriculturalCampaign = {
       ...initialCampaign,
       name: name.trim(),
       startDate,
       endDate,
-      effectiveHarvestDays: Number(effectiveHarvestDays),
-      targetMillingTons: Number(targetMillingTons),
-      targetSugarTons: Number(targetSugarTons),
-      plannedRenovationRatePercent: Number(plannedRenovationRatePercent),
+      effectiveHarvestDays: harvestDays,
+      calendarDays: initialCampaign?.calendarDays || harvestDays + 25,
+      totalAreaHectares: initialCampaign?.totalAreaHectares || 12500,
+      targetMillingTons: milling,
+      projectedTotalCaneTons: milling,
+      targetSugarTons: sugar,
+      sugarTargetTons: sugar,
+      plannedRenovationRatePercent: renoRate,
+      renewalTargetPercent: renoRate,
+      dailyHarvestRequirementTons: harvestDays > 0 ? milling / harvestDays : 0,
+      averageTchCampaign: initialCampaign?.averageTchCampaign || 83.62,
+      updatedAt: new Date().toISOString(),
       status,
     };
 
