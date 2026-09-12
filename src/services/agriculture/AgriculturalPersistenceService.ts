@@ -42,6 +42,7 @@ import {
   INITIAL_AGRICULTURAL_CAMPAIGN,
 } from "../../data/mockAgriculturalData";
 import { STANDARD_AGRO_OPERATIONS } from "./AgriculturalPlanningService";
+import { AgronomicValidationService } from "./AgronomicValidationService";
 
 export const AGRO_COLLECTIONS = {
   PARAMETERS: "agricultural_parameters",
@@ -70,35 +71,32 @@ const STORAGE_KEYS = {
 };
 
 export function normalizeCampaign(camp: any): AgriculturalCampaign {
-  if (!camp) return INITIAL_AGRICULTURAL_CAMPAIGN;
-  const milling = Number(camp.targetMillingTons ?? camp.projectedTotalCaneTons ?? 1045250);
-  const sugar = Number(camp.targetSugarTons ?? camp.sugarTargetTons ?? 118000);
-  const harvestDays = Math.max(1, Number(camp.effectiveHarvestDays ?? 155));
-  const renovation = Number(camp.plannedRenovationRatePercent ?? camp.renewalTargetPercent ?? 16.5);
-  const dailyRequirement = harvestDays > 0 ? milling / harvestDays : 0;
+  if (!camp) {
+    return {
+      id: `camp-${Date.now()}`,
+      tenantId: "TENANT_AZUCAR_01",
+      name: "Campaña sin definir",
+      calendarDays: 0,
+      effectiveHarvestDays: 0,
+      totalAreaHectares: 0,
+      renewalTargetPercent: 0,
+      projectedTotalCaneTons: 0,
+      dailyHarvestRequirementTons: 0,
+      averageTchCampaign: 0,
+      sugarTargetTons: 0,
+      status: "DRAFT",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      dataClassification: "CONFIGURATION",
+      dataOrigin: "SYSTEM_DEFAULT",
+      dataQuality: "INCOMPLETE",
+      syncStatus: "LOCAL_DRAFT",
+    };
+  }
 
-  return {
-    id: String(camp.id || `camp-${Date.now()}`),
-    tenantId: String(camp.tenantId || "TENANT_AZUCAR_01"),
-    name: String(camp.name || "Zafra BioAzúcar"),
-    calendarDays: Number(camp.calendarDays || harvestDays + 25),
-    effectiveHarvestDays: harvestDays,
-    totalAreaHectares: Number(camp.totalAreaHectares || 12500),
-    renewalTargetPercent: renovation,
-    projectedTotalCaneTons: milling,
-    dailyHarvestRequirementTons: Number(camp.dailyHarvestRequirementTons || dailyRequirement),
-    averageTchCampaign: Number(camp.averageTchCampaign || 83.62),
-    sugarTargetTons: sugar,
-    status: (camp.status === "ACTIVA" ? "ACTIVE" : camp.status === "PLANIFICADA" ? "DRAFT" : camp.status === "ARCHIVADA" ? "ARCHIVED" : (camp.status || "ACTIVE")),
-    createdAt: String(camp.createdAt || new Date().toISOString()),
-    updatedAt: String(camp.updatedAt || new Date().toISOString()),
-    targetMillingTons: milling,
-    targetSugarTons: sugar,
-    plannedRenovationRatePercent: renovation,
-    startDate: camp.startDate || "15 Nov 2026",
-    endDate: camp.endDate || "18 Abr 2027",
-    description: camp.description || "",
-  };
+  // Pure validation & normalization: no invented business values or fallbacks
+  const validation = AgronomicValidationService.validateCampaign(camp);
+  return validation.normalizedData;
 }
 
 export const INITIAL_AGRICULTURAL_CAMPAIGNS_LIST: AgriculturalCampaign[] = [
@@ -502,33 +500,87 @@ export class AgriculturalPersistenceService {
 
   /**
    * Save or update an agricultural parameter (persists to Firestore + Local Storage)
+   * Enforces versioning, audit logging, and explicit sync status (no silent fallback).
    */
-  public static async saveParameter(param: AgriculturalParameter): Promise<void> {
-    const updatedParam: AgriculturalParameter = {
-      ...param,
+  public static async saveParameter(
+    param: AgriculturalParameter,
+    user: string = "agronomo_param",
+    reason: string = "Actualización de parámetro agronómico"
+  ): Promise<AgriculturalParameter> {
+    const validated = AgronomicValidationService.validateParameter(param);
+    
+    // Versioning enforcement: deactivate any older active version for the same key
+    const currentLocal = this.getLocalCachedParameters();
+    const updatedLocal = currentLocal.map((existing) => {
+      if (
+        existing.key === validated.normalizedData.key &&
+        existing.id !== validated.normalizedData.id &&
+        existing.status === "ACTIVE"
+      ) {
+        return {
+          ...existing,
+          status: "ARCHIVED" as const,
+          effectiveTo: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return existing;
+    });
+
+    const paramToSave: AgriculturalParameter = {
+      ...validated.normalizedData,
       updatedAt: new Date().toISOString(),
+      syncStatus: "SYNCING",
     };
 
-    // Update in-memory registry immediately (Instant UI reactivity)
-    AgriculturalParameterRegistry.registerParameter(updatedParam);
-
-    // Save to local cache
-    const currentLocal = this.getLocalCachedParameters();
-    const idx = currentLocal.findIndex((p) => p.key === updatedParam.key);
-    if (idx >= 0) {
-      currentLocal[idx] = updatedParam;
+    const targetIdx = updatedLocal.findIndex((p) => p.key === paramToSave.key && p.id === paramToSave.id);
+    if (targetIdx >= 0) {
+      updatedLocal[targetIdx] = paramToSave;
     } else {
-      currentLocal.push(updatedParam);
+      updatedLocal.push(paramToSave);
     }
-    this.setLocalCachedParameters(currentLocal);
+    this.setLocalCachedParameters(updatedLocal);
+    AgriculturalParameterRegistry.registerParameter(paramToSave);
 
-    // Attempt Firestore persistence
     try {
-      const docRef = doc(db, AGRO_COLLECTIONS.PARAMETERS, updatedParam.id || `param-${updatedParam.key.toLowerCase()}`);
-      await setDoc(docRef, updatedParam, { merge: true });
-    } catch (err) {
-      console.warn("[AgroPersistence] Firestore write deferred for param:", updatedParam.key, err);
+      const docRef = doc(db, AGRO_COLLECTIONS.PARAMETERS, paramToSave.id || `param-${paramToSave.key.toLowerCase()}`);
+      await setDoc(docRef, {
+        ...paramToSave,
+        syncStatus: "SYNCED",
+        lastSyncAt: new Date().toISOString(),
+        syncError: null,
+      }, { merge: true });
+
+      paramToSave.syncStatus = "SYNCED";
+      paramToSave.lastSyncAt = new Date().toISOString();
+      paramToSave.syncError = undefined;
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Firestore write deferred for param:", paramToSave.key, err.message);
+      paramToSave.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
+      paramToSave.syncError = err.message || "Error al sincronizar con Firestore";
     }
+
+    // Refresh confirmed sync status in local cache
+    const confirmedIdx = updatedLocal.findIndex((p) => p.key === paramToSave.key && p.id === paramToSave.id);
+    if (confirmedIdx >= 0) {
+      updatedLocal[confirmedIdx] = paramToSave;
+      this.setLocalCachedParameters(updatedLocal);
+    }
+
+    await this.recordAuditChange({
+      tenantId: paramToSave.tenantId,
+      entityType: "PARAMETER",
+      entityId: paramToSave.id,
+      entityName: paramToSave.name,
+      fieldChanged: "VALOR_PARAMETRO",
+      previousValue: null,
+      newValue: { value: paramToSave.value, unit: paramToSave.unit, syncStatus: paramToSave.syncStatus },
+      user,
+      reason,
+      version: paramToSave.version,
+    });
+
+    return paramToSave;
   }
 
   /**
@@ -542,10 +594,16 @@ export class AgriculturalPersistenceService {
     try {
       for (const p of CANONICAL_AGRICULTURAL_PARAMETERS) {
         const docRef = doc(db, AGRO_COLLECTIONS.PARAMETERS, p.id);
-        await setDoc(docRef, { ...p, tenantId }, { merge: true });
+        await setDoc(docRef, {
+          ...p,
+          tenantId,
+          syncStatus: "SYNCED",
+          lastSyncAt: new Date().toISOString(),
+          syncError: null,
+        }, { merge: true });
       }
-    } catch (err) {
-      console.warn("[AgroPersistence] Firestore reset deferred to local cache:", err);
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Firestore reset deferred to local cache:", err.message);
     }
   }
 
@@ -679,22 +737,69 @@ export class AgriculturalPersistenceService {
     };
   }
 
-  public static async saveFieldPlot(plot: FieldPlot): Promise<void> {
+  public static async saveFieldPlot(
+    plot: FieldPlot,
+    user: string = "agronomo_campo",
+    reason: string = "Actualización de parcela"
+  ): Promise<FieldPlot> {
+    const validated = AgronomicValidationService.validateFieldPlot(plot);
+    const plotToSave: FieldPlot = {
+      ...validated.normalizedData,
+      updatedAt: new Date().toISOString(),
+      syncStatus: "SYNCING",
+    };
+
     const current = this.getLocalCachedPlots();
-    const idx = current.findIndex((p) => p.id === plot.id);
+    const idx = current.findIndex((p) => p.id === plotToSave.id);
+    const prev = idx >= 0 ? current[idx] : null;
+
     if (idx >= 0) {
-      current[idx] = plot;
+      current[idx] = plotToSave;
     } else {
-      current.push(plot);
+      current.push(plotToSave);
     }
     this.setLocalCachedPlots(current);
 
     try {
-      const docRef = doc(db, AGRO_COLLECTIONS.PLOTS, plot.id);
-      await setDoc(docRef, plot, { merge: true });
-    } catch (err) {
-      console.warn("[AgroPersistence] Firestore plot save fallback:", err);
+      const docRef = doc(db, AGRO_COLLECTIONS.PLOTS, plotToSave.id);
+      await setDoc(docRef, {
+        ...plotToSave,
+        syncStatus: "SYNCED",
+        lastSyncAt: new Date().toISOString(),
+        syncError: null,
+      }, { merge: true });
+
+      plotToSave.syncStatus = "SYNCED";
+      plotToSave.lastSyncAt = new Date().toISOString();
+      plotToSave.syncError = undefined;
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Firestore plot save deferred:", err.message);
+      plotToSave.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
+      plotToSave.syncError = err.message || "Error al sincronizar con Firestore";
     }
+
+    // Refresh confirmed status in local cache
+    const confirmedIdx = current.findIndex((p) => p.id === plotToSave.id);
+    if (confirmedIdx >= 0) {
+      current[confirmedIdx] = plotToSave;
+      this.setLocalCachedPlots(current);
+    }
+
+    await this.recordAuditChange({
+      tenantId: plotToSave.tenantId,
+      campaignId: "camp-2026-2027",
+      entityType: "PLOT",
+      entityId: plotToSave.id,
+      entityName: `${plotToSave.code} (${plotToSave.uebName})`,
+      fieldChanged: prev ? "ACTUALIZACION_LOTE" : "ALTA_LOTE",
+      previousValue: prev ? { area: prev.areaHectares, status: prev.status } : null,
+      newValue: { area: plotToSave.areaHectares, status: plotToSave.status, syncStatus: plotToSave.syncStatus },
+      user,
+      reason,
+      version: "1.0",
+    });
+
+    return plotToSave;
   }
 
   public static async deleteFieldPlot(plotId: string): Promise<void> {
@@ -704,27 +809,43 @@ export class AgriculturalPersistenceService {
     try {
       const docRef = doc(db, AGRO_COLLECTIONS.PLOTS, plotId);
       await deleteDoc(docRef);
-    } catch (err) {
-      console.warn("[AgroPersistence] Firestore plot delete fallback:", err);
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Firestore plot delete fallback:", err.message);
     }
   }
 
   /**
    * 3. INDUSTRIAL INTEGRATION: DISPATCH HARVEST PLOT TO SUGAR MILL (GENERATE CANEBATCH)
    * Converts a harvested cane plot into an operational CaneBatch entering factory reception / weighbridge.
+   * Eliminates hardcoded truck plates, tares, trash or lab values; leaves unverified values as PENDING.
    */
   public static async dispatchHarvestPlotToFactory(
     plot: FieldPlot,
     harvestTons: number,
-    currentUser: string = "agronomo_campo"
+    currentUser: string = "agronomo_campo",
+    dispatchDetails?: {
+      truckPlate?: string;
+      tareWeightTons?: number;
+      trashPercent?: number;
+      growerName?: string;
+      polPercent?: number;
+      fiberPercent?: number;
+      purityPercent?: number;
+    }
   ): Promise<CaneBatch> {
     const varietyCatalog = AgriculturalParameterRegistry.getVarietyCatalog();
     const variety = varietyCatalog[plot.varietyCode];
 
-    const pol = variety ? variety.polPercent : 14.5;
-    const fiber = variety ? variety.fiberPercent : 12.8;
-    const purity = variety ? variety.purityPercent : 88.0;
-    const brix = Number((pol / (purity / 100)).toFixed(2));
+    // Real lab or catalog master reference; if unknown, set to 0 without fabricating
+    const pol = dispatchDetails?.polPercent ?? (variety ? variety.polPercent : 0);
+    const fiber = dispatchDetails?.fiberPercent ?? (variety ? variety.fiberPercent : 0);
+    const purity = dispatchDetails?.purityPercent ?? (variety ? variety.purityPercent : 0);
+    const brix = purity > 0 ? Number((pol / (purity / 100)).toFixed(2)) : 0;
+
+    const truckPlate = dispatchDetails?.truckPlate?.trim() || "PENDING_ASSIGNMENT";
+    const tareWeightTons = dispatchDetails?.tareWeightTons !== undefined ? Number(dispatchDetails.tareWeightTons) : 0;
+    const trashPercent = dispatchDetails?.trashPercent !== undefined ? Number(dispatchDetails.trashPercent) : 0;
+    const growerName = dispatchDetails?.growerName?.trim() || (plot.uebName ? `UEB_${plot.uebName}` : "PENDING_ORIGIN");
 
     const timestamp = new Date().toISOString();
     const batchId = `batch-agro-${Date.now()}`;
@@ -733,22 +854,22 @@ export class AgriculturalPersistenceService {
     const newCaneBatch: CaneBatch = {
       id: batchId,
       batchCode,
-      truckPlate: `BIO-${Math.floor(100 + Math.random() * 900)}`,
-      farmOrigin: `${plot.uebName} — ${plot.code}`,
-      growerName: "Administración Central / UEB",
+      truckPlate,
+      farmOrigin: `${plot.uebName || "UEB_DESCONOCIDA"} — ${plot.code}`,
+      growerName,
       caneVariety: plot.varietyCode,
-      grossWeightTons: Number((harvestTons + 17.5).toFixed(2)), // Gross with truck tare
-      tareWeightTons: 17.5,
+      grossWeightTons: Number((harvestTons + tareWeightTons).toFixed(2)),
+      tareWeightTons,
       netWeightTons: Number(harvestTons.toFixed(2)),
       brixPercent: brix,
       polPercent: pol,
       purityPercent: purity,
       fiberPercent: fiber,
-      trashPercent: 5.2, // ~5% foreign matter
+      trashPercent,
       cutDateTime: timestamp,
       arrivalDateTime: timestamp,
       status: "EN_PATIO",
-      sugarYieldEstimated: Number((harvestTons * (pol / 100) * 0.88).toFixed(2)),
+      sugarYieldEstimated: pol > 0 ? Number((harvestTons * (pol / 100) * 0.88).toFixed(2)) : 0,
       tenantId: plot.tenantId || "TENANT_AZUCAR_01",
     };
 
@@ -756,8 +877,8 @@ export class AgriculturalPersistenceService {
     try {
       const batchRef = doc(db, COLLECTIONS.CANE_BATCHES, batchId);
       await setDoc(batchRef, newCaneBatch);
-    } catch (err) {
-      console.warn("[AgroPersistence] Direct CaneBatch save fallback to local:", err);
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Direct CaneBatch save fallback to local:", err.message);
     }
 
     // Update Plot status to COSECHADO
@@ -765,7 +886,7 @@ export class AgriculturalPersistenceService {
       ...plot,
       status: "COSECHADO",
     };
-    await this.saveFieldPlot(updatedPlot);
+    await this.saveFieldPlot(updatedPlot, currentUser, "Despacho a báscula y patio de caña");
 
     return newCaneBatch;
   }
@@ -773,26 +894,60 @@ export class AgriculturalPersistenceService {
   /**
    * 4. INDUSTRIAL INTEGRATION: GENERATE CMMS WORK ORDERS FOR AGRICULTURAL FLEET
    * Translates agricultural plans into real Maintenance & Field Work Orders.
+   * Dynamically selects operational equipment from the tenant's assets catalog or sets PENDING_ASSIGNMENT.
    */
   public static async generateAgriculturalWorkOrders(
     campaignId: string,
     operationType: "PREPARACION_SUELO" | "SIEMBRA" | "TRATOS_CULTURALES",
     description: string,
     assignedTechnician: string,
-    tenantId: string
+    tenantId: string,
+    requestedEquipmentId?: string
   ): Promise<WorkOrder> {
     const woId = `wo-agro-${Date.now()}`;
+
+    // Select operational asset from actual tenant equipment catalog
+    const availableEquipment = this.getEquipmentAssets(tenantId).filter(
+      (e) => e.status === "OPERATIONAL"
+    );
+
+    let selectedEquipment: AgriculturalEquipmentAsset | undefined;
+    if (requestedEquipmentId) {
+      selectedEquipment = availableEquipment.find((e) => e.id === requestedEquipmentId);
+    }
+
+    if (!selectedEquipment) {
+      if (operationType === "PREPARACION_SUELO") {
+        selectedEquipment = availableEquipment.find(
+          (e) => e.category === "TRACTOR_PESADO" || e.category === "TRACTOR_MEDIO"
+        );
+      } else if (operationType === "SIEMBRA") {
+        selectedEquipment = availableEquipment.find(
+          (e) => e.category === "IMPLEMENTO_AGRICOLA" || e.category === "TRACTOR_MEDIO"
+        );
+      } else {
+        selectedEquipment = availableEquipment.find(
+          (e) => e.category === "TRACTOR_LIGERO" || e.category === "TRACTOR_MEDIO"
+        );
+      }
+    }
+
+    const equipmentId = selectedEquipment ? selectedEquipment.id : "PENDING_ASSIGNMENT";
+    const equipmentName = selectedEquipment
+      ? `${selectedEquipment.code} — ${selectedEquipment.name}`
+      : "Sin Asignar (Pendiente de Catálogo)";
+
     const newWorkOrder: WorkOrder = {
       id: woId,
       code: `OT-AGRO-${Date.now().toString().slice(-4)}`,
-      equipmentId: operationType === "PREPARACION_SUELO" ? "TR-210-01" : "PL-02-01",
-      equipmentName: operationType === "PREPARACION_SUELO" ? "TRACTOR-PESADO-210" : "PLANTADORA-MEC-02",
+      equipmentId,
+      equipmentName,
       title: `Operación Agrícola: ${operationType.replace("_", " ")} — ${description}`,
-      description: `Orden de servicio mecanizada emitida desde el Plan de Desarrollo Agrícola (PDA). Campaña: ${campaignId}. Mantenimiento preventivo previo a jornada y registro de horómetro.`,
+      description: `Orden de servicio mecanizada emitida desde el Plan de Desarrollo Agrícola (PDA). Campaña: ${campaignId}. Activo asignado: ${equipmentName}.`,
       priority: "MEDIA",
-      status: "PENDIENTE",
+      status: selectedEquipment ? "PENDIENTE" : "PENDIENTE",
       type: "PREVENTIVO",
-      assignedTo: assignedTechnician,
+      assignedTo: assignedTechnician || "PENDING_OPERATOR",
       createdDate: new Date().toISOString().slice(0, 10),
       dueDate: new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 10),
       estimatedHours: 4.0,
@@ -800,7 +955,7 @@ export class AgriculturalPersistenceService {
         { id: "task-1", text: "Inspección de niveles de aceite y refrigerante motor", done: false },
         { id: "task-2", text: "Engrase de crucetas, cojinetes y puntos de articulación", done: false },
         { id: "task-3", text: "Revisión de presión y desgaste de neumáticos / orugas", done: false },
-        { id: "task-4", text: "Verificación de implemento agrícola y calibración de discos", done: false },
+        { id: "task-4", text: "Verificación de implemento agrícola y calibración de labores", done: false },
       ],
       tenantId,
     };
@@ -808,8 +963,8 @@ export class AgriculturalPersistenceService {
     try {
       const woRef = doc(db, COLLECTIONS.WORK_ORDERS, woId);
       await setDoc(woRef, newWorkOrder);
-    } catch (err) {
-      console.warn("[AgroPersistence] WorkOrder save fallback to local:", err);
+    } catch (err: any) {
+      console.warn("[AgroPersistence] WorkOrder save fallback to local:", err.message);
     }
 
     return newWorkOrder;
@@ -958,8 +1113,9 @@ export class AgriculturalPersistenceService {
     campaign: AgriculturalCampaign,
     user: string = "agronomo_planificador",
     reason: string = "Actualización de campaña agrícola"
-  ): Promise<void> {
-    const normalized = normalizeCampaign(campaign);
+  ): Promise<AgriculturalCampaign> {
+    const validated = AgronomicValidationService.validateCampaign(campaign);
+    const normalized = validated.normalizedData;
     const list = this.getCampaignsList(normalized.tenantId);
     const idx = list.findIndex((c) => c.id === normalized.id);
     const prev = idx >= 0 ? list[idx] : null;
@@ -967,6 +1123,7 @@ export class AgriculturalPersistenceService {
     const updatedCampaign: AgriculturalCampaign = {
       ...normalized,
       updatedAt: new Date().toISOString(),
+      syncStatus: "SYNCING",
     };
 
     if (idx >= 0) {
@@ -981,6 +1138,31 @@ export class AgriculturalPersistenceService {
       this.setLocalCachedCampaign(updatedCampaign);
     }
 
+    try {
+      const docRef = doc(db, AGRO_COLLECTIONS.CAMPAIGNS, normalized.id);
+      await setDoc(docRef, {
+        ...updatedCampaign,
+        syncStatus: "SYNCED",
+        lastSyncAt: new Date().toISOString(),
+        syncError: null,
+      }, { merge: true });
+
+      updatedCampaign.syncStatus = "SYNCED";
+      updatedCampaign.lastSyncAt = new Date().toISOString();
+      updatedCampaign.syncError = undefined;
+    } catch (err: any) {
+      console.info("[AgroPersistence] Campaign Firestore sync deferred:", err.message);
+      updatedCampaign.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
+      updatedCampaign.syncError = err.message || "Error al sincronizar con Firestore";
+    }
+
+    // Refresh confirmed status in local cache
+    const confirmedIdx = list.findIndex((c) => c.id === normalized.id);
+    if (confirmedIdx >= 0) {
+      list[confirmedIdx] = updatedCampaign;
+      this.setLocalCachedCampaignsList(list);
+    }
+
     // Record audit log
     await this.recordAuditChange({
       tenantId: normalized.tenantId,
@@ -990,18 +1172,13 @@ export class AgriculturalPersistenceService {
       entityName: normalized.name,
       fieldChanged: prev ? "ACTUALIZACION_CAMPANA" : "CREACION_CAMPANA",
       previousValue: prev ? { status: prev.status, totalArea: prev.totalAreaHectares, sugarTarget: prev.sugarTargetTons } : null,
-      newValue: { status: updatedCampaign.status, totalArea: updatedCampaign.totalAreaHectares, sugarTarget: updatedCampaign.sugarTargetTons },
+      newValue: { status: updatedCampaign.status, totalArea: updatedCampaign.totalAreaHectares, sugarTarget: updatedCampaign.sugarTargetTons, syncStatus: updatedCampaign.syncStatus },
       user,
       reason,
       version: "1.0",
     });
 
-    try {
-      const docRef = doc(db, AGRO_COLLECTIONS.CAMPAIGNS, normalized.id);
-      await setDoc(docRef, updatedCampaign, { merge: true });
-    } catch (err) {
-      console.info("[AgroPersistence] Campaign Firestore sync deferred:", err);
-    }
+    return updatedCampaign;
   }
 
   public static async archiveCampaign(
@@ -1122,14 +1299,16 @@ export class AgriculturalPersistenceService {
     operation: AgroOperationMaster,
     user: string = "agronomo_maquinaria",
     reason: string = "Configuración de labor mecanizada"
-  ): Promise<void> {
-    const list = this.getOperations(operation.tenantId);
-    const idx = list.findIndex((o) => o.id === operation.id);
+  ): Promise<AgroOperationMaster> {
+    const validated = AgronomicValidationService.validateOperation(operation);
+    const list = this.getOperations(validated.normalizedData.tenantId);
+    const idx = list.findIndex((o) => o.id === validated.normalizedData.id);
     const prev = idx >= 0 ? list[idx] : null;
 
     const opToSave: AgroOperationMaster = {
-      ...operation,
-      status: operation.status || "ACTIVO",
+      ...validated.normalizedData,
+      status: validated.normalizedData.status || "ACTIVO",
+      syncStatus: "SYNCING",
     };
 
     if (idx >= 0) {
@@ -1139,25 +1318,45 @@ export class AgriculturalPersistenceService {
     }
     this.setLocalCachedOperations(list);
 
+    try {
+      const docRef = doc(db, AGRO_COLLECTIONS.OPERATIONS, opToSave.id);
+      await setDoc(docRef, {
+        ...opToSave,
+        syncStatus: "SYNCED",
+        lastSyncAt: new Date().toISOString(),
+        syncError: null,
+      }, { merge: true });
+
+      opToSave.syncStatus = "SYNCED";
+      opToSave.lastSyncAt = new Date().toISOString();
+      opToSave.syncError = undefined;
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Operation save deferred:", err.message);
+      opToSave.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
+      opToSave.syncError = err.message || "Error al sincronizar con Firestore";
+    }
+
+    // Refresh confirmed status in local cache
+    const confirmedIdx = list.findIndex((o) => o.id === opToSave.id);
+    if (confirmedIdx >= 0) {
+      list[confirmedIdx] = opToSave;
+      this.setLocalCachedOperations(list);
+    }
+
     await this.recordAuditChange({
-      tenantId: operation.tenantId || "TENANT_AZUCAR_01",
+      tenantId: opToSave.tenantId || "TENANT_AZUCAR_01",
       entityType: "OPERATION",
-      entityId: operation.id,
-      entityName: operation.name,
+      entityId: opToSave.id,
+      entityName: opToSave.name,
       fieldChanged: prev ? "ACTUALIZACION_OPERACION" : "ALTA_OPERACION",
       previousValue: prev ? { cap: prev.effectiveCapacityHaPerHour, fuel: prev.fuelConsumptionLitersPerHour } : null,
-      newValue: { cap: opToSave.effectiveCapacityHaPerHour, fuel: opToSave.fuelConsumptionLitersPerHour },
+      newValue: { cap: opToSave.effectiveCapacityHaPerHour, fuel: opToSave.fuelConsumptionLitersPerHour, syncStatus: opToSave.syncStatus },
       user,
       reason,
       version: "1.0",
     });
 
-    try {
-      const docRef = doc(db, AGRO_COLLECTIONS.OPERATIONS, operation.id);
-      await setDoc(docRef, opToSave, { merge: true });
-    } catch (err) {
-      console.warn("[AgroPersistence] Operation save fallback:", err);
-    }
+    return opToSave;
   }
 
   public static async deleteOperationSafely(
@@ -1227,37 +1426,64 @@ export class AgriculturalPersistenceService {
     asset: AgriculturalEquipmentAsset,
     user: string = "jefe_taller_mecanizado",
     reason: string = "Actualización de ficha técnica de maquinaria"
-  ): Promise<void> {
-    const list = this.getEquipmentAssets(asset.tenantId);
-    const idx = list.findIndex((e) => e.id === asset.id);
+  ): Promise<AgriculturalEquipmentAsset> {
+    const validated = AgronomicValidationService.validateEquipment(asset);
+    const list = this.getEquipmentAssets(validated.normalizedData.tenantId);
+    const idx = list.findIndex((e) => e.id === validated.normalizedData.id);
     const prev = idx >= 0 ? list[idx] : null;
 
+    const assetToSave: AgriculturalEquipmentAsset = {
+      ...validated.normalizedData,
+      syncStatus: "SYNCING",
+      updatedAt: new Date().toISOString(),
+    };
+
     if (idx >= 0) {
-      list[idx] = asset;
+      list[idx] = assetToSave;
     } else {
-      list.push(asset);
+      list.push(assetToSave);
     }
     this.setLocalCachedEquipment(list);
 
+    try {
+      const docRef = doc(db, AGRO_COLLECTIONS.EQUIPMENT, assetToSave.id);
+      await setDoc(docRef, {
+        ...assetToSave,
+        syncStatus: "SYNCED",
+        lastSyncAt: new Date().toISOString(),
+        syncError: null,
+      }, { merge: true });
+
+      assetToSave.syncStatus = "SYNCED";
+      assetToSave.lastSyncAt = new Date().toISOString();
+      assetToSave.syncError = undefined;
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Equipment save deferred:", err.message);
+      assetToSave.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
+      assetToSave.syncError = err.message || "Error al sincronizar con Firestore";
+    }
+
+    // Refresh confirmed status in local cache
+    const confirmedIdx = list.findIndex((e) => e.id === assetToSave.id);
+    if (confirmedIdx >= 0) {
+      list[confirmedIdx] = assetToSave;
+      this.setLocalCachedEquipment(list);
+    }
+
     await this.recordAuditChange({
-      tenantId: asset.tenantId,
+      tenantId: assetToSave.tenantId,
       entityType: "EQUIPMENT",
-      entityId: asset.id,
-      entityName: `${asset.code} - ${asset.name}`,
+      entityId: assetToSave.id,
+      entityName: `${assetToSave.code} - ${assetToSave.name}`,
       fieldChanged: prev ? "ACTUALIZACION_ACTIVO" : "ALTA_ACTIVO",
       previousValue: prev ? { status: prev.status, avail: prev.mechanicalAvailabilityPercent, hours: prev.accumulatedEngineHours } : null,
-      newValue: { status: asset.status, avail: asset.mechanicalAvailabilityPercent, hours: asset.accumulatedEngineHours },
+      newValue: { status: assetToSave.status, avail: assetToSave.mechanicalAvailabilityPercent, hours: assetToSave.accumulatedEngineHours, syncStatus: assetToSave.syncStatus },
       user,
       reason,
       version: "1.0",
     });
 
-    try {
-      const docRef = doc(db, AGRO_COLLECTIONS.EQUIPMENT, asset.id);
-      await setDoc(docRef, asset, { merge: true });
-    } catch (err) {
-      console.warn("[AgroPersistence] Equipment save fallback:", err);
-    }
+    return assetToSave;
   }
 
   public static async deleteEquipmentAssetSafely(
@@ -1326,14 +1552,16 @@ export class AgriculturalPersistenceService {
     input: AgriculturalInputMaster,
     user: string = "encargado_insumos",
     reason: string = "Calibración de dosis agronómica"
-  ): Promise<void> {
-    const list = this.getInputs(input.tenantId);
-    const idx = list.findIndex((i) => i.id === input.id);
+  ): Promise<AgriculturalInputMaster> {
+    const validated = AgronomicValidationService.validateInput(input);
+    const list = this.getInputs(validated.normalizedData.tenantId);
+    const idx = list.findIndex((i) => i.id === validated.normalizedData.id);
     const prev = idx >= 0 ? list[idx] : null;
 
     const inputToSave: AgriculturalInputMaster = {
-      ...input,
-      status: input.status || "ACTIVO",
+      ...validated.normalizedData,
+      status: validated.normalizedData.status || "ACTIVO",
+      syncStatus: "SYNCING",
       updatedAt: new Date().toISOString(),
     };
 
@@ -1344,25 +1572,45 @@ export class AgriculturalPersistenceService {
     }
     this.setLocalCachedInputs(list);
 
+    try {
+      const docRef = doc(db, AGRO_COLLECTIONS.INPUTS, inputToSave.id);
+      await setDoc(docRef, {
+        ...inputToSave,
+        syncStatus: "SYNCED",
+        lastSyncAt: new Date().toISOString(),
+        syncError: null,
+      }, { merge: true });
+
+      inputToSave.syncStatus = "SYNCED";
+      inputToSave.lastSyncAt = new Date().toISOString();
+      inputToSave.syncError = undefined;
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Input save deferred:", err.message);
+      inputToSave.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
+      inputToSave.syncError = err.message || "Error al sincronizar con Firestore";
+    }
+
+    // Refresh confirmed status in local cache
+    const confirmedIdx = list.findIndex((i) => i.id === inputToSave.id);
+    if (confirmedIdx >= 0) {
+      list[confirmedIdx] = inputToSave;
+      this.setLocalCachedInputs(list);
+    }
+
     await this.recordAuditChange({
-      tenantId: input.tenantId,
+      tenantId: inputToSave.tenantId,
       entityType: "INPUT",
-      entityId: input.id,
-      entityName: `${input.code} - ${input.name}`,
+      entityId: inputToSave.id,
+      entityName: `${inputToSave.code} - ${inputToSave.name}`,
       fieldChanged: prev ? "ACTUALIZACION_INSUMO" : "ALTA_INSUMO",
       previousValue: prev ? { dose: prev.standardDosePerHa, price: prev.unitCostUSD } : null,
-      newValue: { dose: inputToSave.standardDosePerHa, price: inputToSave.unitCostUSD },
+      newValue: { dose: inputToSave.standardDosePerHa, price: inputToSave.unitCostUSD, syncStatus: inputToSave.syncStatus },
       user,
       reason,
       version: "1.0",
     });
 
-    try {
-      const docRef = doc(db, AGRO_COLLECTIONS.INPUTS, input.id);
-      await setDoc(docRef, inputToSave, { merge: true });
-    } catch (err) {
-      console.warn("[AgroPersistence] Input save fallback:", err);
-    }
+    return inputToSave;
   }
 
   public static async deleteInputSafely(
@@ -1435,13 +1683,15 @@ export class AgriculturalPersistenceService {
     scenario: AgriculturalScenario,
     user: string = "analista_agronomo",
     reason: string = "Ajuste de variables de simulación What-If"
-  ): Promise<void> {
-    const list = this.getScenarios(scenario.tenantId);
-    const idx = list.findIndex((s) => s.id === scenario.id);
+  ): Promise<AgriculturalScenario> {
+    const validated = AgronomicValidationService.validateScenario(scenario);
+    const list = this.getScenarios(validated.normalizedData.tenantId);
+    const idx = list.findIndex((s) => s.id === validated.normalizedData.id);
     const prev = idx >= 0 ? list[idx] : null;
 
     const scenToSave: AgriculturalScenario = {
-      ...scenario,
+      ...validated.normalizedData,
+      syncStatus: "SYNCING",
       updatedAt: new Date().toISOString(),
     };
 
@@ -1452,26 +1702,46 @@ export class AgriculturalPersistenceService {
     }
     this.setLocalCachedScenarios(list);
 
+    try {
+      const docRef = doc(db, AGRO_COLLECTIONS.SCENARIOS, scenToSave.id);
+      await setDoc(docRef, {
+        ...scenToSave,
+        syncStatus: "SYNCED",
+        lastSyncAt: new Date().toISOString(),
+        syncError: null,
+      }, { merge: true });
+
+      scenToSave.syncStatus = "SYNCED";
+      scenToSave.lastSyncAt = new Date().toISOString();
+      scenToSave.syncError = undefined;
+    } catch (err: any) {
+      console.warn("[AgroPersistence] Scenario save deferred:", err.message);
+      scenToSave.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
+      scenToSave.syncError = err.message || "Error al sincronizar con Firestore";
+    }
+
+    // Refresh confirmed status in local cache
+    const confirmedIdx = list.findIndex((s) => s.id === scenToSave.id);
+    if (confirmedIdx >= 0) {
+      list[confirmedIdx] = scenToSave;
+      this.setLocalCachedScenarios(list);
+    }
+
     await this.recordAuditChange({
-      tenantId: scenario.tenantId,
-      campaignId: scenario.campaignId,
+      tenantId: scenToSave.tenantId,
+      campaignId: scenToSave.campaignId,
       entityType: "SCENARIO",
-      entityId: scenario.id,
-      entityName: scenario.name,
+      entityId: scenToSave.id,
+      entityName: scenToSave.name,
       fieldChanged: prev ? "MODIFICACION_ESCENARIO" : "NUEVO_ESCENARIO",
       previousValue: prev ? { climate: prev.climateFactor, diesel: prev.dieselPriceUSD, tch: prev.projectedTch } : null,
-      newValue: { climate: scenToSave.climateFactor, diesel: scenToSave.dieselPriceUSD, tch: scenToSave.projectedTch },
+      newValue: { climate: scenToSave.climateFactor, diesel: scenToSave.dieselPriceUSD, tch: scenToSave.projectedTch, syncStatus: scenToSave.syncStatus },
       user,
       reason,
       version: "1.0",
     });
 
-    try {
-      const docRef = doc(db, AGRO_COLLECTIONS.SCENARIOS, scenario.id);
-      await setDoc(docRef, scenToSave, { merge: true });
-    } catch (err) {
-      console.warn("[AgroPersistence] Scenario save fallback:", err);
-    }
+    return scenToSave;
   }
 
   public static async deleteScenario(

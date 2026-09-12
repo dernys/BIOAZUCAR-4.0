@@ -170,21 +170,79 @@ export class YieldCalculationService {
     const modelType: AgroModelType =
       plotInput.agronomicModel || options.modelType || "BIOAZUCAR_MODEL";
 
+    const missingInputs: string[] = [];
+    if (!plotInput.varietyCode) missingInputs.push("varietyCode");
+    if (plotInput.areaHectares === undefined || plotInput.areaHectares === null || plotInput.areaHectares <= 0) {
+      missingInputs.push("areaHectares");
+    }
+    if (!plotInput.currentStage) missingInputs.push("currentStage");
+    if (!plotInput.soilType) missingInputs.push("soilType");
+
     // Dynamically query registry with fallback to catalog
     const dynamicCatalog = AgriculturalParameterRegistry.getVarietyCatalog();
     const catalog =
       options.varietyCatalog || Object.values(dynamicCatalog).length > 0
         ? Object.values(dynamicCatalog)
         : COMMERCIAL_VARIETIES_CATALOG;
-    const variety =
-      catalog.find((v) => v.varietyCode.toUpperCase() === plotInput.varietyCode.toUpperCase()) ||
-      this.getVariety(plotInput.varietyCode);
+    const variety = catalog.find(
+      (v) => v.varietyCode.toUpperCase() === (plotInput.varietyCode || "").toUpperCase()
+    );
+
+    if (!variety && plotInput.varietyCode) {
+      missingInputs.push(`varietyCode:${plotInput.varietyCode}_not_in_catalog`);
+    }
+
+    const isPdaValidated = modelType === "PDA_VALIDATED";
+    const formulaId = isPdaValidated ? "TCH_PROYECTADO_V1" : "TCH_PROYECTADO_BIOAZUCAR_V1";
+    const formulaExpression = isPdaValidated
+      ? "TCH = BaseYieldTch * RatoonDecay(Stage)"
+      : "TCH = BaseYieldTch * RatoonDecay(Stage) * SoilFactor(SoilType) * ClimateFactor * (1 + TchVarPct/100)";
+
+    // If critical inputs missing, return explicit INSUFFICIENT_DATA/MISSING_INPUT state without inventing numbers
+    if (missingInputs.length > 0 || !variety) {
+      const trace: CalculationTrace = {
+        formulaId,
+        formulaName: isPdaValidated
+          ? "Rendimiento Agrícola Proyectado Canónico PDA"
+          : "Rendimiento Agrícola Multivariante BioAzúcar 4.0",
+        formulaExpression,
+        modelType,
+        modelVersion: "1.0.0",
+        campaignId: "ZAFRA-2026-2027",
+        scenario: options.tchVariationPercent ? `Variación TCH ${options.tchVariationPercent}%` : "Línea Base Canónica",
+        user: "agronomo_bioazucar",
+        calculatedAt: new Date().toISOString(),
+        status: missingInputs.includes("areaHectares") ? "INVALID_INPUT" : "INSUFFICIENT_DATA",
+        missingInputs,
+        inputs: {
+          areaHectares: { value: plotInput.areaHectares ?? 0, unit: "ha", description: "Área de la parcela" },
+          varietyCode: { value: plotInput.varietyCode || "SIN_DEFINIR", unit: "variedad", description: "Código de cultivar" },
+          currentStage: { value: plotInput.currentStage || "SIN_DEFINIR", unit: "etapa", description: "Corte / Retoño" },
+          soilType: { value: plotInput.soilType || "SIN_DEFINIR", unit: "edafología", description: "Clasificación de suelo" },
+        },
+        result: { value: 0, unit: "t/ha" },
+        provenance: {
+          documentSource: "Cálculo Agronómico Interrumpido por Datos Faltantes",
+          historicReference: "No se interpolan ni inventan valores agronómicos",
+        },
+        formula: formulaExpression,
+        sourceSheet: "Módulo Agronómico TCH",
+        modelRevision: MODEL_REVISION,
+      };
+
+      return {
+        ...plotInput,
+        agronomicModel: modelType,
+        projectedTch: 0,
+        projectedTotalCaneTons: 0,
+        trace,
+      };
+    }
 
     const dynamicSoilFactors = AgriculturalParameterRegistry.getSoilImpactFactors();
     const decayFactor = variety.ratoonDecayFactors[plotInput.currentStage] ?? 0.0;
     
     // In strict PDA_VALIDATED model, soil and climate multipliers are 1.0 (empirical ratoon decay only)
-    const isPdaValidated = modelType === "PDA_VALIDATED";
     const soilFactor = isPdaValidated
       ? 1.0
       : (dynamicSoilFactors[plotInput.soilType] ?? SOIL_IMPACT_FACTORS[plotInput.soilType] ?? 1.0);
@@ -204,11 +262,6 @@ export class YieldCalculationService {
       projectedTotalCaneTons = Number((plotInput.areaHectares * projectedTch).toFixed(2));
     }
 
-    const formulaId = isPdaValidated ? "TCH_PROYECTADO_V1" : "TCH_PROYECTADO_BIOAZUCAR_V1";
-    const formulaExpression = isPdaValidated
-      ? "TCH = BaseYieldTch * RatoonDecay(Stage)"
-      : "TCH = BaseYieldTch * RatoonDecay(Stage) * SoilFactor(SoilType) * ClimateFactor * (1 + TchVarPct/100)";
-
     const trace: CalculationTrace = {
       formulaId,
       formulaName: isPdaValidated
@@ -221,6 +274,7 @@ export class YieldCalculationService {
       scenario: options.tchVariationPercent ? `Variación TCH ${options.tchVariationPercent}%` : "Línea Base Canónica",
       user: "agronomo_bioazucar",
       calculatedAt: new Date().toISOString(),
+      status: "COMPUTED",
       inputs: {
         areaHectares: { value: plotInput.areaHectares, unit: "ha", description: "Área de la parcela" },
         varietyCode: { value: variety.varietyCode, unit: "variedad", description: "Código de cultivar" },

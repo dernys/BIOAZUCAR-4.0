@@ -6,6 +6,83 @@
  */
 
 /**
+ * Data Governance Classification (Mandatory Governance)
+ */
+export type DataClassification =
+  | "MASTER_DATA"       // Variedades, Maquinaria, Catálogo de Operaciones, Insumos
+  | "CONFIGURATION"     // Parámetros agronómicos, factores de suelo, umbrales
+  | "OPERATIONAL_DATA"   // Estado de parcelas, órdenes de trabajo, despachos
+  | "OBSERVED_DATA"      // Mediciones de campo, análisis de laboratorio LIMS, pesajes báscula
+  | "DERIVED_DATA";      // TCH proyectado, balance de flota, requerimiento diario
+
+/**
+ * Data Origin / Provenance
+ */
+export type DataOrigin =
+  | "USER_ENTRY"
+  | "FIELD_MEASUREMENT"
+  | "ERP"
+  | "SCADA"
+  | "IMPORT"
+  | "CALCULATED"
+  | "SYSTEM_DEFAULT";
+
+/**
+ * Data Quality Governance Status
+ */
+export type DataQuality =
+  | "COMPLETE"
+  | "INCOMPLETE"
+  | "UNVERIFIED"
+  | "VALIDATED"
+  | "APPROVED"
+  | "REJECTED";
+
+/**
+ * Persistence & Explicit Offline Synchronization Status
+ */
+export type SyncStatus =
+  | "LOCAL_DRAFT"
+  | "SYNCING"
+  | "SYNCED"
+  | "SYNC_ERROR"
+  | "OFFLINE";
+
+/**
+ * Calculation Execution Status (No invented numbers on missing data)
+ */
+export type CalculationStatus =
+  | "COMPUTED"
+  | "MISSING_INPUT"
+  | "INVALID_INPUT"
+  | "INSUFFICIENT_DATA";
+
+/**
+ * Standard Agronomic Engineering Units
+ */
+export type AgroUnit =
+  | "ha"
+  | "t"
+  | "t/ha"
+  | "kg/ha"
+  | "L/ha"
+  | "m3/ha"
+  | "km"
+  | "%"
+  | "USD"
+  | "USD/t"
+  | "USD/L"
+  | "USD/kg"
+  | "horas"
+  | "ha/h"
+  | "L/h"
+  | "días"
+  | "HP"
+  | "ratio"
+  | "object"
+  | "unit";
+
+/**
  * Cane Growth Stage / Vegetative Cycle
  * Represents the chronological cutting cycle from initial planting to demolition.
  * Source: ODS Sheets 'EVOLUÇÃO tch por cepa', 'TCH', 'PDA_SET30'
@@ -51,7 +128,9 @@ export type ParameterValidationStatus =
   | "PDA_VERIFIED"
   | "CURRENT_ASSUMPTION"
   | "REQUIERE_VALIDACION"
-  | "INVALID_SOURCE";
+  | "INVALID_SOURCE"
+  | "ACTIVE"
+  | "ARCHIVED";
 
 export type ValidationStatus = "CONFIRMADO" | "REQUIERE_VALIDACION" | "CONFIGURABLE";
 
@@ -84,7 +163,7 @@ export interface AgriculturalParameter {
   name: string;
   key: string;
   value: number | string | boolean | Record<string, any>;
-  unit: string;
+  unit: AgroUnit | string;
   type?: ParameterValueType;
   description?: string;
   version: string;             // e.g. "1.0.0"
@@ -99,6 +178,13 @@ export interface AgriculturalParameter {
   updatedAt?: string;
   changeReason?: string;
   notes?: string;
+  // Governance & Quality
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
+  syncStatus?: SyncStatus;
+  syncError?: string;
+  lastSyncAt?: string;
   // Backward compatibility fields (non-operative metadata)
   source?: string;
   sourceSheet?: string;
@@ -122,18 +208,21 @@ export interface CalculationTrace {
   scenario?: string;
   user?: string;
   calculatedAt: string;
-  inputs: Record<string, { value: number | string | boolean; unit: string; description?: string; parameterKey?: string; source?: string; validationStatus?: ParameterValidationStatus }>;
+  status?: CalculationStatus;
+  missingInputs?: string[];
+  inputs: Record<string, { value: number | string | boolean; unit: AgroUnit | string; description?: string; parameterKey?: string; source?: string; validationStatus?: ParameterValidationStatus }>;
   parameters?: Array<{
     key: string;
     value: any;
-    unit: string;
+    unit: AgroUnit | string;
+    version?: string;
     status?: ParameterValidationStatus;
     category?: AgroParameterCategory;
     provenanceDoc?: string;
     validationStatus?: ParameterValidationStatus;
     sourceSheet?: string;
   }>;
-  result?: { value: number | string; unit: string };
+  result?: { value: number | string; unit: AgroUnit | string };
   provenance?: {
     documentSource?: string;
     historicReference?: string;
@@ -160,6 +249,13 @@ export interface CaneVarietyYieldMaster {
   maturity: MaturityType;
   // Decay factors relative to Planta (1.00)
   ratoonDecayFactors: Record<CaneGrowthStage, number>;
+  // Governance
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
+  syncStatus?: SyncStatus;
+  syncError?: string;
+  lastSyncAt?: string;
 }
 
 /**
@@ -173,18 +269,31 @@ export interface FieldPlot {
   code: string;                     // e.g. "LOTE-N04", "CAMPO-012"
   uebName: string;                  // Agricultural unit / division name
   areaHectares: number;             // Surface area in ha
+  areaUnit?: "ha";
   varietyCode: string;              // Foreign key to CaneVarietyYieldMaster
   currentStage: CaneGrowthStage;
   ratoonAgeYears: number;           // Chronological age
   soilType: SoilType;
   distanceToMillKm: number;         // Distance to sugar mill weighbridge (km)
+  distanceUnit?: "km";
   historicalAverageTch: number;     // Historical multi-campaign average (t/ha)
   projectedTch: number;             // Calculated expected TCH (t/ha)
+  tchUnit?: "t/ha";
   projectedTotalCaneTons: number;   // areaHectares * projectedTch (t)
+  tonsUnit?: "t";
   scheduledHarvestMonth: number;    // Harvest calendar slot (1-12)
   status: FieldPlotStatus;
   agronomicModel?: AgroModelType;
   trace?: CalculationTrace;
+  createdAt?: string;
+  updatedAt?: string;
+  // Governance & Sync
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
+  syncStatus?: SyncStatus;
+  syncError?: string;
+  lastSyncAt?: string;
 }
 
 /**
@@ -206,6 +315,10 @@ export interface AgriculturalCampaign {
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
   createdAt: string;
   updatedAt: string;
+  // Units contract
+  areaUnit?: "ha";
+  millingUnit?: "t";
+  sugarUnit?: "t";
   // UI aliases & canonical compatibility
   targetMillingTons?: number;
   targetSugarTons?: number;
@@ -213,6 +326,13 @@ export interface AgriculturalCampaign {
   startDate?: string;
   endDate?: string;
   description?: string;
+  // Governance & Sync
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
+  syncStatus?: SyncStatus;
+  syncError?: string;
+  lastSyncAt?: string;
 }
 
 /**
@@ -258,6 +378,13 @@ export interface AgroOperationMaster {
   operatorCount: number;                 // Personnel required per machine
   status?: "ACTIVO" | "INACTIVO" | "ARCHIVADO";
   description?: string;
+  // Governance & Sync
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
+  syncStatus?: SyncStatus;
+  syncError?: string;
+  lastSyncAt?: string;
 }
 
 /**
@@ -375,6 +502,13 @@ export interface AgriculturalEquipmentAsset {
   notes?: string;
   description?: string;
   updatedAt?: string;
+  // Governance & Sync
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
+  syncStatus?: SyncStatus;
+  syncError?: string;
+  lastSyncAt?: string;
 }
 
 /**
@@ -613,6 +747,7 @@ export interface PdaReportResult {
  */
 export interface AgriculturalAuditChangeRecord {
   id: string;
+  auditId?: string;
   tenantId: string;
   campaignId?: string;
   entityType:
@@ -632,8 +767,13 @@ export interface AgriculturalAuditChangeRecord {
   previousValue: any;
   newValue: any;
   user: string;
+  actorUid?: string;
+  actorRole?: string;
+  operation?: "CREATE" | "UPDATE" | "DELETE" | "ARCHIVE" | "SYNC" | "VALIDATE";
   timestamp: string;
   reason: string;
+  source?: string;
+  correlationId?: string;
   version: string;
 }
 
@@ -647,7 +787,7 @@ export interface AgriculturalInputMaster {
   name: string;
   category: "FERTILIZANTE" | "ENMIENDA" | "HERBICIDA" | "SUBPRODUCTO" | "COMBUSTIBLE" | "SEMILLA";
   standardDosePerHa: number;
-  unit: string;
+  unit: AgroUnit | string;
   unitCostUSD: number;
   targetCycle: "PREPARACION" | "PLANTACION" | "TRATOS_PLANTA" | "TRATOS_SOCA" | "GENERAL";
   status: "ACTIVO" | "INACTIVO" | "ARCHIVADO";
@@ -655,6 +795,13 @@ export interface AgriculturalInputMaster {
   supplier?: string;
   activeIngredient?: string;
   updatedAt?: string;
+  // Governance & Sync
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
+  syncStatus?: SyncStatus;
+  syncError?: string;
+  lastSyncAt?: string;
 }
 
 /**
@@ -685,6 +832,13 @@ export interface AgriculturalScenario {
   projectedCostPerTonUSD?: number;
   projectedTrucksRequired?: number;
   trace?: CalculationTrace;
+  // Governance & Sync
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
+  syncStatus?: SyncStatus;
+  syncError?: string;
+  lastSyncAt?: string;
 }
 
 /**
