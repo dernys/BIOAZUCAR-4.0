@@ -37,6 +37,41 @@ export type NavigationTab =
 
 export type NavTabId = NavigationTab;
 
+export type OperationalMode = "SIMULATED" | "LIVE" | "HYBRID";
+
+export type OperationalStatus =
+  | "DRAFT"
+  | "CONFIGURED"
+  | "COMMISSIONING"
+  | "CONNECTED"
+  | "VALIDATED"
+  | "OPERATIONAL"
+  | "DEGRADED"
+  | "OFFLINE"
+  | "SUSPENDED";
+
+export interface SubsystemsOperationalMode {
+  scada?: "REAL" | "SIMULATED";
+  opcua?: "REAL" | "SIMULATED";
+  bascula?: "REAL" | "SIMULATED";
+  lims?: "REAL" | "SIMULATED";
+  agriculture?: "REAL" | "SIMULATED";
+  energy?: "REAL" | "SIMULATED";
+  maintenance?: "REAL" | "SIMULATED";
+  [key: string]: "REAL" | "SIMULATED" | undefined;
+}
+
+export interface TenantPhysicalEvidence {
+  hasActiveGateway: boolean;
+  gatewayId?: string;
+  lastHeartbeatTimestamp?: string;
+  lastValidatedDataTimestamp?: string;
+  activeTagsReceivingCount: number;
+  isSimulatedDataOnly: boolean;
+  dataQualityPassRate: number; // 0-100%
+  validationErrors?: string[];
+}
+
 export interface TenantEnterprise {
   id: string;
   name: string;
@@ -56,6 +91,14 @@ export interface TenantEnterprise {
   themeColor?: string;
   description?: string;
   sugarYieldTarget?: number; // % Rendimiento
+
+  // Modelo Operacional Extendido (Fase 1)
+  operationalMode?: OperationalMode;
+  operationalStatus?: OperationalStatus;
+  subsystemsMode?: SubsystemsOperationalMode;
+  lastPhysicalEvidence?: TenantPhysicalEvidence;
+
+  // Campos Legacy mantenidos para compatibilidad hacia atrás
   runtimeMode?: "SIMULATION" | "LIVE_OT" | "HYBRID" | "HISTORICAL_REPLAY";
   simulationEnabled?: boolean;
   simulationScenario?: SimulationScenario;

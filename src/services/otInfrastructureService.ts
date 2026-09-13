@@ -2,6 +2,10 @@ import {
   OTConnectionConfig,
   UserRole,
   ConnectionDiagnostics,
+  TenantEnterprise,
+  OperationalMode,
+  OperationalStatus,
+  TenantPhysicalEvidence,
 } from "../types";
 import { logAuditEventToDb } from "./dbService";
 
@@ -257,3 +261,201 @@ export class OTInfrastructureService {
 }
 
 export const otInfrastructureService = OTInfrastructureService.getInstance();
+
+// ============================================================================
+// TENANT OPERATIONAL DOMAIN LOGIC (FASE 1: TENANT COMO RAÍZ OPERACIONAL)
+// ============================================================================
+
+/**
+ * Resuelve el modo operacional del tenant, garantizando retrocompatibilidad
+ * con el campo legacy `runtimeMode`.
+ */
+export function resolveTenantOperationalMode(tenant: TenantEnterprise): OperationalMode {
+  if (tenant.operationalMode) {
+    return tenant.operationalMode;
+  }
+  if (tenant.runtimeMode) {
+    switch (tenant.runtimeMode) {
+      case "LIVE_OT":
+        return "LIVE";
+      case "HYBRID":
+        return "HYBRID";
+      case "SIMULATION":
+      case "HISTORICAL_REPLAY":
+      default:
+        return "SIMULATED";
+    }
+  }
+  return "SIMULATED";
+}
+
+/**
+ * Resuelve el estado operacional del tenant, garantizando retrocompatibilidad
+ * con el campo legacy `otStatus`.
+ */
+export function resolveTenantOperationalStatus(tenant: TenantEnterprise): OperationalStatus {
+  if (tenant.operationalStatus) {
+    return tenant.operationalStatus;
+  }
+  if (tenant.otStatus) {
+    switch (tenant.otStatus) {
+      case "CONNECTED":
+        return "CONNECTED";
+      case "WAITING_FOR_COMMISSIONING":
+        return "CONFIGURED";
+      case "DISCONNECTED":
+        return "OFFLINE";
+      case "ERROR":
+        return "DEGRADED";
+      case "RECONNECTING":
+        return "COMMISSIONING";
+      default:
+        return "DRAFT";
+    }
+  }
+  return "DRAFT";
+}
+
+/**
+ * Determina si un tenant reúne las condiciones verificables para alcanzar el estado OPERATIONAL.
+ * Regla de Oro: Configurado ≠ Conectado ≠ Recibiendo ≠ Validado ≠ Operacional.
+ */
+export function canTransitionToOperational(
+  tenant: TenantEnterprise,
+  evidence?: TenantPhysicalEvidence
+): { allowed: boolean; reason?: string } {
+  const mode = resolveTenantOperationalMode(tenant);
+
+  // 1. Reglas para modo LIVE
+  if (mode === "LIVE") {
+    if (!evidence) {
+      return {
+        allowed: false,
+        reason:
+          "Bloqueo operacional: Un tenant en modo LIVE requiere evidencia física verificable (Edge Gateway, tags activos y telemetría validada) para declararse OPERATIONAL.",
+      };
+    }
+    if (!evidence.hasActiveGateway) {
+      return {
+        allowed: false,
+        reason:
+          "Bloqueo operacional: No se detecta ningún Edge Gateway activo o autenticado para este tenant LIVE.",
+      };
+    }
+    if (!evidence.activeTagsReceivingCount || evidence.activeTagsReceivingCount <= 0) {
+      return {
+        allowed: false,
+        reason:
+          "Bloqueo operacional: El tenant LIVE no tiene ningún tag industrial recibiendo telemetría física en tiempo real.",
+      };
+    }
+    if (evidence.isSimulatedDataOnly) {
+      return {
+        allowed: false,
+        reason:
+          "Violación de procedencia: Un tenant en modo LIVE no puede declararse OPERATIONAL utilizando datos exclusivamente simulados.",
+      };
+    }
+    if (!evidence.lastValidatedDataTimestamp) {
+      return {
+        allowed: false,
+        reason:
+          "Bloqueo operacional: No existe registro de telemetría física validada por el Quality Gate para este tenant LIVE.",
+      };
+    }
+    if (evidence.dataQualityPassRate < 90) {
+      return {
+        allowed: false,
+        reason: `Bloqueo operacional: La tasa de calidad de datos física (${evidence.dataQualityPassRate}%) no alcanza el umbral mínimo de operación (90%).`,
+      };
+    }
+    return { allowed: true };
+  }
+
+  // 2. Reglas para modo SIMULATED
+  if (mode === "SIMULATED") {
+    // Un tenant puramente simulado no puede alegar telemetría OT real para entrar en OPERATIONAL
+    if (evidence && !evidence.isSimulatedDataOnly && evidence.hasActiveGateway) {
+      return {
+        allowed: false,
+        reason:
+          "Violación de procedencia: Un tenant en modo SIMULATED no puede declararse OPERATIONAL alegando evidencia física OT inexistente o ajena.",
+      };
+    }
+    // Si opera como gemelo digital simulado validado:
+    return { allowed: true };
+  }
+
+  // 3. Reglas para modo HYBRID
+  if (mode === "HYBRID") {
+    if (!tenant.subsystemsMode || Object.keys(tenant.subsystemsMode).length === 0) {
+      return {
+        allowed: false,
+        reason:
+          "Bloqueo operacional: Un tenant en modo HYBRID debe definir explícitamente la matriz de submodos (subsystemsMode).",
+      };
+    }
+
+    const hasRealSubsystems = Object.values(tenant.subsystemsMode).some((m) => m === "REAL");
+    if (hasRealSubsystems) {
+      if (!evidence || !evidence.hasActiveGateway || evidence.activeTagsReceivingCount <= 0) {
+        return {
+          allowed: false,
+          reason:
+            "Bloqueo operacional: El tenant HYBRID posee subsistemas declarados como REAL pero no presenta evidencia de enlace ni recepción de telemetría física.",
+        };
+      }
+      if (evidence.isSimulatedDataOnly) {
+        return {
+          allowed: false,
+          reason:
+            "Violación de procedencia: El tenant HYBRID posee subsistemas declarados como REAL pero la telemetría reportada es exclusivamente simulada.",
+        };
+      }
+    }
+    return { allowed: true };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Valida de forma determinística la máquina de estados de transición operacional del Tenant.
+ */
+export function validateTenantOperationalTransition(
+  currentStatus: OperationalStatus,
+  targetStatus: OperationalStatus,
+  tenant: TenantEnterprise,
+  evidence?: TenantPhysicalEvidence
+): { allowed: boolean; reason?: string } {
+  if (currentStatus === targetStatus) {
+    return { allowed: true };
+  }
+
+  const validTransitions: Record<OperationalStatus, OperationalStatus[]> = {
+    DRAFT: ["CONFIGURED", "SUSPENDED"],
+    CONFIGURED: ["COMMISSIONING", "DRAFT", "SUSPENDED"],
+    COMMISSIONING: ["CONNECTED", "CONFIGURED", "DEGRADED", "OFFLINE", "SUSPENDED"],
+    CONNECTED: ["VALIDATED", "COMMISSIONING", "DEGRADED", "OFFLINE", "SUSPENDED"],
+    VALIDATED: ["OPERATIONAL", "CONNECTED", "DEGRADED", "OFFLINE", "SUSPENDED"],
+    OPERATIONAL: ["DEGRADED", "OFFLINE", "SUSPENDED", "COMMISSIONING"],
+    DEGRADED: ["OPERATIONAL", "OFFLINE", "VALIDATED", "COMMISSIONING", "SUSPENDED"],
+    OFFLINE: ["CONNECTED", "COMMISSIONING", "DEGRADED", "SUSPENDED"],
+    SUSPENDED: ["DRAFT", "CONFIGURED", "COMMISSIONING", "OFFLINE"],
+  };
+
+  const allowedTargets = validTransitions[currentStatus] || [];
+  if (!allowedTargets.includes(targetStatus)) {
+    return {
+      allowed: false,
+      reason: `Transición de estado operacional inválida: No es posible pasar de '${currentStatus}' a '${targetStatus}'. Estados válidos: [${allowedTargets.join(", ")}].`,
+    };
+  }
+
+  // Verificación estricta de precondiciones al aspirar a OPERATIONAL
+  if (targetStatus === "OPERATIONAL") {
+    return canTransitionToOperational(tenant, evidence);
+  }
+
+  return { allowed: true };
+}
