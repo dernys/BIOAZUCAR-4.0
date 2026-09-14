@@ -72,6 +72,187 @@ export interface TenantPhysicalEvidence {
   validationErrors?: string[];
 }
 
+// ============================================================================
+// PHASE 2: CONNECTION REGISTRY & INDUSTRIAL TAG REGISTRY CANONICAL MODELS
+// ============================================================================
+
+export type IndustrialProtocol =
+  | "OPC_UA"
+  | "OPC_DA"
+  | "MODBUS"
+  | "MQTT"
+  | "SPARKPLUG"
+  | "EROS"
+  | "REST"
+  | "SIMULATED"
+  | "OPC-UA"
+  | "MODBUS-TCP"
+  | "MODBUS-RTU"
+  | "MQTT-SPARKPLUG"
+  | "REST-API"
+  | "SIMULATOR";
+
+export type ConnectionStatus =
+  | "NOT_CONFIGURED"
+  | "CONFIGURED"
+  | "AUTHENTICATED"
+  | "CONNECTED"
+  | "RECEIVING"
+  | "VALIDATED"
+  | "DEGRADED"
+  | "OFFLINE"
+  | "ERROR";
+
+export type CriticalityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
+export interface ConnectionRegistryEntry {
+  id: string;
+  tenantId: string;
+  siteId: string;
+  name: string;
+  protocol: IndustrialProtocol;
+  endpoint: string;
+  gatewayId: string;
+  status: ConnectionStatus;
+  criticality: CriticalityLevel;
+  readOnly: boolean; // Must be true by default for OT safety
+  enabled: boolean;
+  securityProfile?: {
+    securityPolicy?: string;
+    securityMode?: string;
+    tlsVersion?: string;
+    authType?: "ANONYMOUS" | "CERTIFICATE" | "TOKEN" | "BASIC_AUTH";
+  };
+  certificateRef?: string; // Secret reference - never raw certs/keys
+  secretRef?: string;      // Secret reference - never raw passwords/tokens
+  expectedIntervalMs: number;
+  maxSilenceMs: number;    // Must be strictly greater than expectedIntervalMs
+  latencyBudgetMs: number;
+  lastHeartbeatTimestamp?: string | null;
+  lastDataTimestamp?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  configVersion: string;
+}
+
+export type TagDataType =
+  | "NUMBER"
+  | "INTEGER"
+  | "BOOLEAN"
+  | "STRING"
+  | "FLOAT"
+  | "INT"
+  | "BOOL";
+
+export interface EngineeringRange {
+  min: number;
+  max: number;
+  warningLow?: number;
+  warningHigh?: number;
+  alarmLow?: number;
+  alarmHigh?: number;
+}
+
+export interface TagQualityRules {
+  enforceRange?: boolean;
+  maxRateOfChange?: number;
+  staleAfterMs?: number;
+  expectedValueRegex?: string;
+}
+
+export interface IndustrialTagDefinition {
+  id: string;
+  tenantId?: string;
+  siteId?: string;
+  areaId?: string;
+  assetId?: string;
+  connectionId?: string;
+  canonicalName?: string; // Unique per tenant/site/area/asset
+  displayName?: string;
+  sourceSystem?: string;
+  sourceAddress?: string; // Required for physical protocols
+  protocol?: IndustrialProtocol;
+  dataType?: TagDataType;
+  unit?: string;
+  scale?: number;
+  offset?: number;
+  readable?: boolean;
+  writable?: boolean; // Must be false by default
+  samplingIntervalMs?: number;
+  deadband?: number;
+  engineeringRange?: EngineeringRange; // Optional for non-numeric types
+  qualityRules?: TagQualityRules;
+  historianEnabled?: boolean;
+  analyticsEnabled?: boolean;
+  prometheusEnabled?: boolean;
+  criticality?: CriticalityLevel;
+  enabled?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  version?: string;
+
+  // Legacy compatibility fields
+  name?: string;
+  description?: string;
+  area?: string;
+  equipmentId?: string;
+  equipmentName?: string;
+  variable?: string;
+  source?: DataSourceType;
+  address?: string;
+  accessMode?: "READ" | "READ_WRITE";
+  scanRateMs?: number;
+  engMin?: number;
+  engMax?: number;
+  historization?: boolean;
+  alarmEnabled?: boolean;
+  highAlarm?: number;
+  lowAlarm?: number;
+  highHighAlarm?: number;
+  lowLowAlarm?: number;
+  securityLevel?: number;
+  status?: "ACTIVE" | "INACTIVE" | "DEPRECATED";
+}
+
+export type TagSampleQuality = "GOOD" | "BAD" | "UNCERTAIN";
+export type TagSampleAvailability = "AVAILABLE" | "STALE" | "UNAVAILABLE";
+export type TagSampleValidationStatus = "PENDING" | "PASSED" | "REJECTED";
+export type TagSampleOrigin = "LIVE_OT" | "SIMULATED" | "CALCULATED" | "IMPORTED" | "HISTORICAL";
+
+export interface IndustrialTagSample {
+  tagId: string;
+  tenantId: string;
+  siteId?: string;
+  areaId?: string;
+  assetId?: string;
+  connectionId: string;
+  canonicalName?: string;
+  protocol?: IndustrialProtocol;
+  sourceAddress?: string;
+
+  value: number | boolean | string;
+  unit?: string;
+
+  // Explicitly decoupled quality vs availability
+  quality: TagSampleQuality;
+  availability: TagSampleAvailability;
+  validationStatus: TagSampleValidationStatus;
+
+  // Provenance & Devices
+  origin: TagSampleOrigin;
+  sourceSystem: string;
+  sourceDevice: string;
+  gatewayId?: string;
+
+  // Three-stage temporal provenance
+  sourceTimestamp: string;    // Sensor / PLC generation time
+  gatewayTimestamp: string;   // Edge gateway reception time
+  ingestionTimestamp: string; // Central backend ingestion time
+
+  validationScore?: number; // Informational only
+  validationNotes?: string;
+}
+
 export interface TenantEnterprise {
   id: string;
   name: string;
@@ -594,38 +775,6 @@ export interface IndustrialDataPoint {
   engMax?: number;
   description?: string;
   correlationId?: string;
-}
-
-export interface IndustrialTagDefinition {
-  id: string;
-  name: string;
-  description: string;
-  area: string;
-  equipmentId: string;
-  equipmentName: string;
-  variable: string;
-  unit: string;
-  dataType: "FLOAT" | "INTEGER" | "BOOLEAN" | "STRING";
-  source: DataSourceType;
-  protocol: ProtocolType;
-  address: string; // e.g. "ns=2;s=Mill1.TCH_Actual", "DB10.DBD4", "EROS.MOLINO.TCH"
-  accessMode: "READ" | "READ_WRITE";
-  scanRateMs: number;
-  deadband: number;
-  engMin: number;
-  engMax: number;
-  historization: boolean;
-  alarmEnabled: boolean;
-  highAlarm?: number;
-  lowAlarm?: number;
-  highHighAlarm?: number;
-  lowLowAlarm?: number;
-  securityLevel: number; // 1 to 5
-  qualityRules?: string;
-  status: "ACTIVE" | "INACTIVE" | "DEPRECATED";
-  tenantId?: string;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface OTConnectionConfig {

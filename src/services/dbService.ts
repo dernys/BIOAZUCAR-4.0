@@ -48,6 +48,7 @@ import {
 import { INITIAL_SYSTEM_CONFIGS, PREDEFINED_USERS } from "./authService";
 import { DEFAULT_ROLES } from "./rbacService";
 import { AgronomicValidationService } from "./agriculture/AgronomicValidationService";
+import { normalizeTenantOperationalFields } from "./otInfrastructureService";
 
 // Collection Names
 export function formatIndustrialTimestamp(date: Date = new Date()): string {
@@ -88,6 +89,19 @@ export const INITIAL_TENANTS: TenantEnterprise[] = [
     themeColor: "#10b981",
     sugarYieldTarget: 11.8,
     description: "Ingenio piloto de alta eficiencia con turbogeneración de 32.8 MW, caldera biomasa 65 bar y sincronismo con el SEN.",
+    // Canonical operational fields (Phase 1 & 2)
+    operationalMode: "SIMULATED",
+    operationalStatus: "CONFIGURED",
+    subsystemsMode: {
+      scada: "SIMULATED",
+      opcua: "SIMULATED",
+      bascula: "SIMULATED",
+      lims: "SIMULATED",
+      agriculture: "SIMULATED",
+      energy: "SIMULATED",
+      maintenance: "SIMULATED",
+    },
+    // Legacy fields maintained for backward compatibility
     runtimeMode: "SIMULATION",
     simulationEnabled: true,
     simulationScenario: "NORMAL",
@@ -269,16 +283,20 @@ export async function createTenantInDb(
   }
 
   const tenantId = `tenant-${tenant.code.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now().toString().slice(-4)}`;
-  const isSimulation = tenant.runtimeMode === "SIMULATION" || tenant.simulationEnabled === true;
+  const isSimulation = tenant.operationalMode === "SIMULATED" || tenant.runtimeMode === "SIMULATION" || tenant.simulationEnabled === true;
 
-  const fullTenant: TenantEnterprise = {
+  const rawTenant: TenantEnterprise = {
     ...tenant,
     id: tenantId,
     createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+    operationalMode: tenant.operationalMode || (isSimulation ? "SIMULATED" : "LIVE"),
+    operationalStatus: tenant.operationalStatus || (isSimulation ? "CONFIGURED" : "CONFIGURED"),
     runtimeMode: isSimulation ? "SIMULATION" : "LIVE_OT",
     simulationEnabled: isSimulation,
     otStatus: isSimulation ? "CONNECTED" : "WAITING_FOR_COMMISSIONING",
   };
+
+  const fullTenant: TenantEnterprise = normalizeTenantOperationalFields(rawTenant) as TenantEnterprise;
 
   const batch = writeBatch(db);
 
@@ -538,15 +556,18 @@ export async function provisionEnterpriseWithAdminInDb(
   const { tenant, primaryAdmin, otConfig } = payload;
   const tenantId = `tenant-${tenant.code.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now().toString().slice(-4)}`;
   const isSimulation = (otConfig?.initialMode || "SIMULATION") === "SIMULATION";
-  const fullTenant: TenantEnterprise = {
+  const rawTenant: TenantEnterprise = {
     ...tenant,
     id: tenantId,
     createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+    operationalMode: tenant.operationalMode || (isSimulation ? "SIMULATED" : "LIVE"),
+    operationalStatus: tenant.operationalStatus || "CONFIGURED",
     runtimeMode: (otConfig?.initialMode as any) || "SIMULATION",
     simulationEnabled: isSimulation,
     simulationScenario: "NORMAL",
     otStatus: isSimulation ? "CONNECTED" : "WAITING_FOR_COMMISSIONING",
   };
+  const fullTenant: TenantEnterprise = normalizeTenantOperationalFields(rawTenant) as TenantEnterprise;
 
   // Register in runtime manager
   tenantRuntimeManager.registerTenant(fullTenant);

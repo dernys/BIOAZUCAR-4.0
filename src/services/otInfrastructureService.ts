@@ -317,6 +317,113 @@ export function resolveTenantOperationalStatus(tenant: TenantEnterprise): Operat
 }
 
 /**
+ * Normaliza y sincroniza de forma controlada los campos operacionales del Tenant.
+ * La autoridad canónica absoluta son `operationalMode` y `operationalStatus`.
+ * Los campos legacy `runtimeMode` y `otStatus` se proyectan exclusivamente
+ * para mantener la compatibilidad con componentes y contratos antiguos.
+ */
+export function normalizeTenantOperationalFields(
+  tenant: Partial<TenantEnterprise>
+): Partial<TenantEnterprise> {
+  const result: Partial<TenantEnterprise> = { ...tenant };
+
+  // 1. Resolver o sincronizar operationalMode (Canónico) -> runtimeMode (Legacy)
+  let canonicalMode: OperationalMode;
+  if (result.operationalMode) {
+    canonicalMode = result.operationalMode;
+  } else if (result.runtimeMode) {
+    switch (result.runtimeMode) {
+      case "LIVE_OT":
+        canonicalMode = "LIVE";
+        break;
+      case "HYBRID":
+        canonicalMode = "HYBRID";
+        break;
+      case "SIMULATION":
+      case "HISTORICAL_REPLAY":
+      default:
+        canonicalMode = "SIMULATED";
+        break;
+    }
+  } else {
+    canonicalMode = "SIMULATED";
+  }
+  result.operationalMode = canonicalMode;
+
+  // Proyección al campo legacy runtimeMode
+  switch (canonicalMode) {
+    case "LIVE":
+      result.runtimeMode = "LIVE_OT";
+      result.simulationEnabled = false;
+      break;
+    case "HYBRID":
+      result.runtimeMode = "HYBRID";
+      break;
+    case "SIMULATED":
+    default:
+      result.runtimeMode = "SIMULATION";
+      result.simulationEnabled = true;
+      break;
+  }
+
+  // 2. Resolver o sincronizar operationalStatus (Canónico) -> otStatus (Legacy)
+  let canonicalStatus: OperationalStatus;
+  if (result.operationalStatus) {
+    canonicalStatus = result.operationalStatus;
+  } else if (result.otStatus) {
+    switch (result.otStatus) {
+      case "CONNECTED":
+        canonicalStatus = "CONNECTED";
+        break;
+      case "WAITING_FOR_COMMISSIONING":
+        canonicalStatus = "CONFIGURED";
+        break;
+      case "DISCONNECTED":
+        canonicalStatus = "OFFLINE";
+        break;
+      case "ERROR":
+        canonicalStatus = "DEGRADED";
+        break;
+      case "RECONNECTING":
+        canonicalStatus = "COMMISSIONING";
+        break;
+      default:
+        canonicalStatus = "DRAFT";
+        break;
+    }
+  } else {
+    canonicalStatus = "DRAFT";
+  }
+  result.operationalStatus = canonicalStatus;
+
+  // Proyección al campo legacy otStatus
+  switch (canonicalStatus) {
+    case "OPERATIONAL":
+    case "VALIDATED":
+    case "CONNECTED":
+      result.otStatus = "CONNECTED";
+      break;
+    case "COMMISSIONING":
+      result.otStatus = "RECONNECTING";
+      break;
+    case "DEGRADED":
+      result.otStatus = "ERROR";
+      break;
+    case "OFFLINE":
+    case "SUSPENDED":
+      result.otStatus = "DISCONNECTED";
+      break;
+    case "CONFIGURED":
+    case "DRAFT":
+    default:
+      result.otStatus = "WAITING_FOR_COMMISSIONING";
+      break;
+  }
+
+  return result;
+}
+
+/**
  * Determina si un tenant reúne las condiciones verificables para alcanzar el estado OPERATIONAL.
  * Regla de Oro: Configurado ≠ Conectado ≠ Recibiendo ≠ Validado ≠ Operacional.
  */
