@@ -70,10 +70,23 @@ export interface TenantPhysicalEvidence {
   isSimulatedDataOnly: boolean;
   dataQualityPassRate: number; // 0-100%
   validationErrors?: string[];
+  
+  // Real Commissioning Evidence metadata
+  commissioningId?: string;
+  connectionId?: string;
+  protocol?: IndustrialProtocol;
+  latencyMs?: number;
+  continuityRatePercent?: number;
+  storeAndForwardVerified?: boolean;
+  reconnectVerified?: boolean;
+  commissionedAt?: string;
+  commissionedBy?: string;
+  evidenceHash?: string;
+  originRuntime?: "INDUSTRIAL_EDGE_DAEMON" | "CENTRAL_GATEWAY" | "LOCAL_RUNTIME" | "SIMULATION";
 }
 
 // ============================================================================
-// PHASE 2: CONNECTION REGISTRY & INDUSTRIAL TAG REGISTRY CANONICAL MODELS
+// PHASE 2 & 3: CONNECTION REGISTRY & INDUSTRIAL TAG REGISTRY CANONICAL MODELS
 // ============================================================================
 
 export type IndustrialProtocol =
@@ -90,17 +103,22 @@ export type IndustrialProtocol =
   | "MODBUS-RTU"
   | "MQTT-SPARKPLUG"
   | "REST-API"
-  | "SIMULATOR";
+  | "SIMULATOR"
+  | "SIEMENS-S7"
+  | "SIEMENS_S7";
 
 export type ConnectionStatus =
   | "NOT_CONFIGURED"
   | "CONFIGURED"
-  | "AUTHENTICATED"
+  | "CONNECTING"
   | "CONNECTED"
+  | "AUTHENTICATED"
+  | "READ_TEST_OK"
   | "RECEIVING"
   | "VALIDATED"
   | "DEGRADED"
   | "OFFLINE"
+  | "FAILED"
   | "ERROR";
 
 export type CriticalityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
@@ -109,6 +127,7 @@ export interface ConnectionRegistryEntry {
   id: string;
   tenantId: string;
   siteId: string;
+  areaId?: string;
   name: string;
   protocol: IndustrialProtocol;
   endpoint: string;
@@ -133,6 +152,7 @@ export interface ConnectionRegistryEntry {
   createdAt: string;
   updatedAt: string;
   configVersion: string;
+  isDemoSimulation?: boolean; // Explicit flag separating demo/simulation fixtures from physical connections
 }
 
 export type TagDataType =

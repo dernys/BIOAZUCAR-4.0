@@ -362,6 +362,10 @@ export class BioAzucarIndustrialEdge implements CommandDispatcher {
     };
   }
 
+  public getDiagnostics(): ReturnType<BioAzucarIndustrialEdge["getConsolidatedDiagnostics"]> {
+    return this.getConsolidatedDiagnostics();
+  }
+
   private registerStandardModbusTags(): void {
     this.modbus.registerTags([
       {

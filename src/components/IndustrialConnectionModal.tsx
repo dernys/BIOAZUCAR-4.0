@@ -34,6 +34,7 @@ import { RuntimeMode, OTConfig } from "../services/runtime/types";
 import { SimulationScenario, TelemetryData, UserRole, TenantEnterprise } from "../types";
 import { tenantRuntimeManager } from "../services/runtime/TenantRuntimeManager";
 import { dataProviderRegistry } from "../services/dataProviders/DataProviderRegistry";
+import { IndustrialConnectionWizard } from "./IndustrialConnectionWizard";
 
 interface IndustrialConnectionModalProps {
   isOpen: boolean;
@@ -71,8 +72,8 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
   const runtime = tenantRuntimeManager.getRuntime(resolvedTenantId);
   const otConfig = runtime.getOTConfig();
 
-  // Active Tab: "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX"
-  const [activeTab, setActiveTab] = useState<"OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX">("OT_GATEWAY");
+  // Active Tab: "COMMISSIONING_WIZARD" | "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX"
+  const [activeTab, setActiveTab] = useState<"COMMISSIONING_WIZARD" | "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX">("COMMISSIONING_WIZARD");
 
   // Local state for OT configuration form
   const [protocol, setProtocol] = useState<string>(activeTenant?.otProtocol || otConfig.protocol || "OPC-UA");
@@ -454,6 +455,18 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
 
         {/* Tab Navigation */}
         <div className="flex items-center gap-1 px-5 pt-3 border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-950/40 shrink-0 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setActiveTab("COMMISSIONING_WIZARD")}
+            className={`px-3.5 py-2 font-bold text-xs rounded-t-lg transition flex items-center gap-2 border-b-2 ${
+              activeTab === "COMMISSIONING_WIZARD"
+                ? "border-emerald-500 text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Wizard Comisionamiento (10 Pasos)</span>
+          </button>
+
           <button
             onClick={() => setActiveTab("OT_GATEWAY")}
             className={`px-3.5 py-2 font-bold text-xs rounded-t-lg transition flex items-center gap-2 border-b-2 ${
@@ -1082,6 +1095,29 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
                   <strong>Garantía de Veracidad:</strong> Si un activo físico carece de transmisor en el DCS, el sistema NO inventa datos de campo falsos. Se reporta como 0 / N/A con calidad UNCERTAIN para estricta trazabilidad de planta.
                 </span>
               </p>
+            </div>
+          )}
+
+          {/* TAB 5: COMMISSIONING WIZARD */}
+          {activeTab === "COMMISSIONING_WIZARD" && (
+            <div className="animate-in fade-in duration-150">
+              <IndustrialConnectionWizard
+                tenant={
+                  activeTenant ||
+                  ({
+                    id: resolvedTenantId,
+                    name: resolvedTenantName,
+                    code: resolvedTenantCode,
+                    operationalMode: currentMode === "LIVE" ? "LIVE" : currentMode === "HYBRID" ? "HYBRID" : "SIMULATED",
+                    operationalStatus: isOtConnected ? "OPERATIONAL" : "CONFIGURED",
+                  } as any)
+                }
+                userRole={userRole}
+                theme={theme}
+                onComplete={() => {
+                  setActiveTab("OT_GATEWAY");
+                }}
+              />
             </div>
           )}
         </div>

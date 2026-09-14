@@ -30,6 +30,8 @@ const PROTOCOL_REQUIRES_SOURCE_ADDRESS: Partial<Record<IndustrialProtocol, boole
   "MQTT-SPARKPLUG": true,
   "REST-API": true,
   SIMULATOR: false,
+  "SIEMENS-S7": true,
+  "SIEMENS_S7": true,
 };
 
 /**

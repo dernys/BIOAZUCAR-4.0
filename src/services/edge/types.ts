@@ -248,4 +248,6 @@ export interface StoreAndForwardBufferState {
   totalForwarded: number;
   droppedPoints: number;
   lastForwardTimestamp: string | null;
+  diskBufferEnabled?: boolean;
+  persistenceMechanism?: string;
 }

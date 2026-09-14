@@ -1,4 +1,13 @@
-import { IndustrialDataPoint, DataQuality } from "../../types";
+import {
+  IndustrialDataPoint,
+  DataQuality,
+  IndustrialTagSample,
+  TagSampleQuality,
+  TagSampleAvailability,
+  IndustrialTagDefinition,
+  ConnectionRegistryEntry,
+} from "../../types";
+import { validateIndustrialTagSample, SampleValidationContext } from "./IndustrialRegistryValidator";
 
 export type DataOrigin =
   | "REAL"
@@ -17,6 +26,16 @@ export interface DataQualityAuditResult {
   quality: DataQuality;
   reasons: string[];
   latencyMs: number;
+}
+
+export interface SampleQualityAuditResult {
+  isValid: boolean;
+  score: number; // 0 to 100
+  quality: TagSampleQuality;
+  availability: TagSampleAvailability;
+  reasons: string[];
+  latencyMs: number;
+  evaluatedSample: IndustrialTagSample;
 }
 
 export interface QualityGatePolicy {
@@ -182,6 +201,136 @@ export class IndustrialDataQualityGate {
       quality: point.quality,
       reasons,
       latencyMs,
+    };
+  }
+
+  /**
+   * Audits an IndustrialTagSample, decoupling QUALITY (GOOD/BAD/UNCERTAIN)
+   * from AVAILABILITY (AVAILABLE/STALE/UNAVAILABLE).
+   * Validates:
+   *  tenant, connection, source, timestamp, quality, availability,
+   *  engineering range, data type, sampling interval, asset mapping, protocol, provenance.
+   */
+  public auditTagSample(
+    sample: IndustrialTagSample,
+    context?: SampleValidationContext,
+    isProductionEnvironment: boolean = false
+  ): SampleQualityAuditResult {
+    this.totalAudited++;
+    const reasons: string[] = [];
+    let score = 100;
+
+    // 1. Structural & Isolation Validation
+    const validation = validateIndustrialTagSample(sample, context);
+    if (!validation.isValid) {
+      score -= 50;
+      reasons.push(...validation.errors);
+    }
+
+    // 2. Separate Quality Evaluation
+    let evaluatedQuality: TagSampleQuality = sample.quality || "GOOD";
+    if (sample.quality === "BAD") {
+      score -= 30;
+      reasons.push("CALIDAD_BAD: Driver o sensor físico reportó falla");
+    } else if (sample.quality === "UNCERTAIN") {
+      score -= 15;
+      reasons.push("CALIDAD_UNCERTAIN: Calibración dudosa o señal degradada");
+    }
+
+    // 3. Separate Availability Evaluation (AVAILABLE vs STALE vs UNAVAILABLE)
+    let evaluatedAvailability: TagSampleAvailability = sample.availability || "AVAILABLE";
+    const srcTimeMs = Date.parse(sample.sourceTimestamp);
+    const nowMs = Date.now();
+    const ageMs = !isNaN(srcTimeMs) ? nowMs - srcTimeMs : Infinity;
+
+    const maxSilence = context?.connection?.maxSilenceMs || 10000;
+    if (ageMs > maxSilence) {
+      evaluatedAvailability = "STALE";
+      score -= 25;
+      reasons.push(`DISPONIBILIDAD_STALE: Muestra obsoleta (${Math.round(ageMs / 1000)}s sin refresco > maxSilence ${maxSilence}ms)`);
+    } else if (ageMs < 0 || isNaN(srcTimeMs)) {
+      evaluatedAvailability = "UNAVAILABLE";
+      score -= 40;
+      reasons.push("DISPONIBILIDAD_UNAVAILABLE: Marca de tiempo de origen inconsistente o no disponible");
+    } else {
+      evaluatedAvailability = "AVAILABLE";
+    }
+
+    // 4. Data Type Compatibility
+    if (context?.tag?.dataType) {
+      const expectedType = context.tag.dataType;
+      const actualType = typeof sample.value;
+      if ((expectedType === "NUMBER" || expectedType === "FLOAT" || expectedType === "INTEGER" || expectedType === "INT") && actualType !== "number") {
+        evaluatedQuality = "BAD";
+        score -= 30;
+        reasons.push(`DISCORDANCIA_TIPO: El tag requiere numérico (${expectedType}), pero la muestra es '${actualType}'`);
+      } else if ((expectedType === "BOOLEAN" || expectedType === "BOOL") && actualType !== "boolean") {
+        evaluatedQuality = "BAD";
+        score -= 30;
+        reasons.push(`DISCORDANCIA_TIPO: El tag requiere booleano (${expectedType}), pero la muestra es '${actualType}'`);
+      } else if (expectedType === "STRING" && actualType !== "string") {
+        evaluatedQuality = "BAD";
+        score -= 30;
+        reasons.push(`DISCORDANCIA_TIPO: El tag requiere cadena (${expectedType}), pero la muestra es '${actualType}'`);
+      }
+    }
+
+    // 5. Engineering Range Validation
+    if (typeof sample.value === "number" && context?.tag?.engineeringRange) {
+      const { min, max } = context.tag.engineeringRange;
+      if (min !== undefined && sample.value < min) {
+        evaluatedQuality = "UNCERTAIN";
+        score -= 20;
+        reasons.push(`FUERA_RANGO_MIN: ${sample.value} inferior al mínimo de ingeniería (${min} ${sample.unit || ''})`);
+      }
+      if (max !== undefined && sample.value > max) {
+        evaluatedQuality = "UNCERTAIN";
+        score -= 20;
+        reasons.push(`FUERA_RANGO_MAX: ${sample.value} superior al máximo de ingeniería (${max} ${sample.unit || ''})`);
+      }
+    }
+
+    // 6. Asset Lineage Verification
+    if (!sample.assetId && !context?.tag?.assetId) {
+      score -= 15;
+      reasons.push("LINAJE_ASSET_FALTANTE: No se mapeó la muestra a un equipo físico de planta");
+    }
+
+    // 7. Production Origin Guard (No simulation in production)
+    if (isProductionEnvironment && sample.origin === "SIMULATED") {
+      score -= 50;
+      reasons.push("VIOLACION_PRODUCCION: Muestra SIMULATED rechazada en entorno productivo LIVE_OT");
+    }
+
+    // 8. Three-stage Latency
+    const gtwTimeMs = Date.parse(sample.gatewayTimestamp);
+    const ingTimeMs = Date.parse(sample.ingestionTimestamp);
+    const latencyMs = !isNaN(srcTimeMs) && !isNaN(ingTimeMs) ? Math.max(0, ingTimeMs - srcTimeMs) : 0;
+
+    const finalScore = Math.max(0, score);
+    const isValid = finalScore >= 70 && evaluatedQuality !== "BAD" && evaluatedAvailability !== "UNAVAILABLE";
+
+    if (isValid) {
+      this.totalPassed++;
+    } else {
+      this.totalFlagged++;
+    }
+
+    const evaluatedSample: IndustrialTagSample = {
+      ...sample,
+      quality: evaluatedQuality,
+      availability: evaluatedAvailability,
+      validationStatus: isValid ? "PASSED" : "REJECTED",
+    };
+
+    return {
+      isValid,
+      score: finalScore,
+      quality: evaluatedQuality,
+      availability: evaluatedAvailability,
+      reasons,
+      latencyMs,
+      evaluatedSample,
     };
   }
 
