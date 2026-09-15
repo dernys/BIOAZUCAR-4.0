@@ -37,6 +37,7 @@ import { SimulationScenario, TelemetryData, UserRole, TenantEnterprise } from ".
 import { tenantRuntimeManager } from "../services/runtime/TenantRuntimeManager";
 import { dataProviderRegistry } from "../services/dataProviders/DataProviderRegistry";
 import { IndustrialConnectionWizard } from "./IndustrialConnectionWizard";
+import { IndustrialTagTester } from "./IndustrialTagTester";
 
 interface IndustrialConnectionModalProps {
   isOpen: boolean;
@@ -74,8 +75,10 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
   const runtime = tenantRuntimeManager.getRuntime(resolvedTenantId);
   const otConfig = runtime.getOTConfig();
 
-  // Active Tab: "COMMISSIONING_WIZARD" | "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX"
-  const [activeTab, setActiveTab] = useState<"COMMISSIONING_WIZARD" | "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX">("COMMISSIONING_WIZARD");
+  // Active Tab: "COMMISSIONING_WIZARD" | "TAG_TESTER" | "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX"
+  const [activeTab, setActiveTab] = useState<
+    "COMMISSIONING_WIZARD" | "TAG_TESTER" | "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX"
+  >("COMMISSIONING_WIZARD");
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // Local state for OT configuration form
@@ -482,6 +485,18 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
           >
             <Cpu className="w-3.5 h-3.5 text-emerald-500" />
             <span>Wizard Comisionamiento (10 Pasos)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("TAG_TESTER")}
+            className={`px-3.5 py-2 font-bold text-xs rounded-t-lg transition flex items-center gap-2 border-b-2 ${
+              activeTab === "TAG_TESTER"
+                ? "border-emerald-500 text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span>Industrial Tag Tester (Read/Write/Monitor)</span>
           </button>
 
           <button
@@ -1134,6 +1149,18 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
                 onComplete={() => {
                   setActiveTab("OT_GATEWAY");
                 }}
+              />
+            </div>
+          )}
+
+          {/* TAB 6: INDUSTRIAL TAG TESTER */}
+          {activeTab === "TAG_TESTER" && (
+            <div className="animate-in fade-in duration-150 h-[640px]">
+              <IndustrialTagTester
+                tenantId={resolvedTenantId}
+                userRole={userRole}
+                userName="Ingeniero de Automatización"
+                theme={theme}
               />
             </div>
           )}

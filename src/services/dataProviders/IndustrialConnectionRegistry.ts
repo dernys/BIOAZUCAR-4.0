@@ -33,12 +33,13 @@ export interface EdgeProvisioningBundle {
 
 export class IndustrialConnectionRegistry {
   private static instance: IndustrialConnectionRegistry;
+  private readonly STORAGE_KEY = "bioazucar_canonical_connections_v1";
 
   // Primary canonical in-memory store (backed by storage adapter)
   private connections = new Map<string, ConnectionRegistryEntry>();
 
   private constructor() {
-    this.initializeDefaultFixtures();
+    this.initializeFromStorageOrFixtures();
   }
 
   public static getInstance(): IndustrialConnectionRegistry {
@@ -46,6 +47,46 @@ export class IndustrialConnectionRegistry {
       IndustrialConnectionRegistry.instance = new IndustrialConnectionRegistry();
     }
     return IndustrialConnectionRegistry.instance;
+  }
+
+  /**
+   * Persists canonical connections to local persistent storage (offline-first).
+   */
+  private persistToLocalStorage(): void {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const serialized = JSON.stringify(Array.from(this.connections.values()));
+        window.localStorage.setItem(this.STORAGE_KEY, serialized);
+      }
+    } catch (err) {
+      console.warn("[IndustrialConnectionRegistry] Could not persist to localStorage:", err);
+    }
+  }
+
+  /**
+   * Initializes canonical registry from localStorage if available, or populates with demo fixtures.
+   */
+  private initializeFromStorageOrFixtures(): void {
+    let loadedFromStorage = false;
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const saved = window.localStorage.getItem(this.STORAGE_KEY);
+        if (saved) {
+          const parsed: ConnectionRegistryEntry[] = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed.forEach((c) => this.connections.set(c.id, c));
+            loadedFromStorage = true;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[IndustrialConnectionRegistry] Failed to hydrate from storage:", err);
+    }
+
+    if (!loadedFromStorage || this.connections.size === 0) {
+      this.initializeDefaultFixtures();
+      this.persistToLocalStorage();
+    }
   }
 
   /**
@@ -189,6 +230,7 @@ export class IndustrialConnectionRegistry {
     };
 
     this.connections.set(canonicalEntry.id, canonicalEntry);
+    this.persistToLocalStorage();
 
     // 3. Audit trail
     if (actor) {
@@ -280,6 +322,7 @@ export class IndustrialConnectionRegistry {
     }
 
     this.connections.set(id, merged);
+    this.persistToLocalStorage();
 
     if (actor) {
       await logAuditEventToDb({
@@ -311,6 +354,7 @@ export class IndustrialConnectionRegistry {
     if (!existing) return false;
 
     this.connections.delete(id);
+    this.persistToLocalStorage();
 
     if (actor) {
       await logAuditEventToDb({
@@ -349,6 +393,7 @@ export class IndustrialConnectionRegistry {
     if (telemetryTimestamp) {
       conn.lastDataTimestamp = telemetryTimestamp;
     }
+    this.persistToLocalStorage();
   }
 
   /**

@@ -119,7 +119,8 @@ export type ConnectionStatus =
   | "DEGRADED"
   | "OFFLINE"
   | "FAILED"
-  | "ERROR";
+  | "ERROR"
+  | "PROTOCOL_SPEC_REQUIRED";
 
 export type CriticalityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 

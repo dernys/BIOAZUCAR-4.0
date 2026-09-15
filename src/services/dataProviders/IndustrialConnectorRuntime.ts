@@ -400,59 +400,24 @@ export class IndustrialConnectorRuntime {
     connection: ConnectionRegistryEntry,
     t0: number
   ): Promise<RealConnectionTestResult> {
-    try {
-      const eros = industrialEdge.eros;
-      const connected = await eros.connect();
-      const latencyMs = Date.now() - t0;
-
-      if (!connected) {
-        await industrialConnectionRegistry.updateConnectionStatus(connection.id, "FAILED");
-        return {
-          connectionId: connection.id,
-          protocol: connection.protocol,
-          endpoint: connection.endpoint,
-          status: "FAILED",
-          isPhysicalSuccess: false,
-          stepReached: "CONNECTING",
-          latencyMs,
-          errorMessage: `Fallo al sincronizar con adaptador EROS en ${connection.endpoint}. Sin respuesta en puerto 9000.`,
-          details: {},
-          provenance: "PHYSICAL_OT_RUNTIME",
-        };
-      }
-
-      await industrialConnectionRegistry.updateConnectionStatus(connection.id, "READ_TEST_OK");
-      return {
-        connectionId: connection.id,
-        protocol: connection.protocol,
-        endpoint: connection.endpoint,
-        status: "READ_TEST_OK",
-        isPhysicalSuccess: true,
-        stepReached: "READ_TEST_OK",
-        latencyMs,
-        details: {
-          tcpPortReachable: true,
-          sessionCreated: true,
-          readVerificationSuccess: true,
-          testedAddress: "EROS.Tandem.SpeedSync",
-        },
-        provenance: "PHYSICAL_OT_RUNTIME",
-      };
-    } catch (err: any) {
-      await industrialConnectionRegistry.updateConnectionStatus(connection.id, "FAILED");
-      return {
-        connectionId: connection.id,
-        protocol: connection.protocol,
-        endpoint: connection.endpoint,
-        status: "FAILED",
-        isPhysicalSuccess: false,
-        stepReached: "FAILED",
-        latencyMs: Date.now() - t0,
-        errorMessage: err.message,
-        details: {},
-        provenance: "PHYSICAL_OT_RUNTIME",
-      };
-    }
+    const latencyMs = Date.now() - t0;
+    await industrialConnectionRegistry.updateConnectionStatus(connection.id, "PROTOCOL_SPEC_REQUIRED");
+    return {
+      connectionId: connection.id,
+      protocol: connection.protocol,
+      endpoint: connection.endpoint,
+      status: "PROTOCOL_SPEC_REQUIRED",
+      isPhysicalSuccess: false,
+      stepReached: "CONFIGURED",
+      latencyMs,
+      errorMessage: `ESTADO: PROTOCOL_SPEC_REQUIRED. La integración nativa con EROS requiere especificar la pasarela física (OPC-UA Bridge, Modbus Gateway o driver del fabricante). Sin hardware verificado no se inventan datos falsos.`,
+      details: {
+        tcpPortReachable: false,
+        sessionCreated: false,
+        readVerificationSuccess: false,
+      },
+      provenance: "PHYSICAL_OT_RUNTIME",
+    };
   }
 
   /**

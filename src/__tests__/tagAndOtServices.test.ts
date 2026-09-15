@@ -111,4 +111,74 @@ describe("Tag Management & OT Infrastructure Services (ISA-95 / IEC 62443)", () 
     expect(writeRes.success).toBe(false);
     expect(writeRes.message).toContain("Adaptador EROS en estado de espera");
   });
+
+  it("IndustrialConnectorRuntime marks unverified EROS connection as PROTOCOL_SPEC_REQUIRED without simulating fake success", async () => {
+    const { industrialConnectorRuntime } = await import("../services/dataProviders/IndustrialConnectorRuntime");
+    const res = await industrialConnectorRuntime.testPhysicalConnection({
+      id: "conn-eros-sugar-test",
+      tenantId: "TENANT_AZUCAR_01",
+      siteId: "SITE_01",
+      name: "Molino Central EROS Native",
+      protocol: "EROS",
+      endpoint: "tcp://192.168.20.10:9000",
+      gatewayId: "gw-01",
+      status: "CONFIGURED",
+      criticality: "CRITICAL",
+      readOnly: true,
+      enabled: true,
+      expectedIntervalMs: 1000,
+      maxSilenceMs: 5000,
+      latencyBudgetMs: 500,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      configVersion: "1.0.0",
+      isDemoSimulation: false,
+    });
+
+    expect(res.status).toBe("PROTOCOL_SPEC_REQUIRED");
+    expect(res.isPhysicalSuccess).toBe(false);
+    expect(res.errorMessage).toContain("PROTOCOL_SPEC_REQUIRED");
+    expect(res.errorMessage).toContain("especificar la pasarela física");
+  });
+
+  it("TagManagementService executes tag read/write tests safely, enforcing engineering ranges and RBAC", async () => {
+    const user = { role: "OPERATOR" as const, name: "Operador Molino" };
+    const tags = await tagManagementService.getTags();
+    expect(tags.length).toBeGreaterThan(0);
+    const targetTag = tags[0]; // Flujo de Molienda TCH, engMin: 0, engMax: 600, READ_WRITE
+
+    // 1. Successful READ test
+    const readResult = await tagManagementService.testTagOperation({
+      tagId: targetTag.id,
+      operation: "READ",
+      user,
+    });
+    expect(readResult.success).toBe(true);
+    expect(readResult.quality).toBe("GOOD");
+    expect(typeof readResult.value).toBe("number");
+
+    // 2. Successful WRITE test within engineering limits
+    const writeResult = await tagManagementService.testTagOperation({
+      tagId: targetTag.id,
+      operation: "WRITE",
+      user,
+      writeValue: 450,
+      reason: "Ajuste operativo de molienda",
+    });
+    expect(writeResult.success).toBe(true);
+    expect(writeResult.quality).toBe("GOOD");
+    expect(writeResult.value).toBe(450);
+
+    // 3. Failed WRITE test exceeding engineering maximum
+    const outOfBoundsResult = await tagManagementService.testTagOperation({
+      tagId: targetTag.id,
+      operation: "WRITE",
+      user,
+      writeValue: 9999, // Exceeds engMax 600
+      reason: "Prueba fuera de rango",
+    });
+    expect(outOfBoundsResult.success).toBe(false);
+    expect(outOfBoundsResult.quality).toBe("BAD");
+    expect(outOfBoundsResult.message).toContain("Violación de límite de ingeniería");
+  });
 });
