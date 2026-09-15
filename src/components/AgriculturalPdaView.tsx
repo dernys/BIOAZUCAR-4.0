@@ -50,6 +50,7 @@ import {
   Download,
   Calculator,
   History,
+  Minimize2,
 } from "lucide-react";
 import {
   FieldPlot,
@@ -67,7 +68,7 @@ import {
   AgronomicAlert,
   AgroOperationMaster,
 } from "../types/agriculture";
-import { CaneBatch, WorkOrder } from "../types";
+import { CaneBatch, WorkOrder, UserRole, UserAccount } from "../types";
 import {
   YieldCalculationService,
   COMMERCIAL_VARIETIES_CATALOG,
@@ -87,6 +88,9 @@ import {
 import {
   AgriculturalPersistenceService,
 } from "../services/agriculture/AgriculturalPersistenceService";
+import {
+  validateParamValue,
+} from "../services/agriculture/agriculturalValidation";
 import {
   INITIAL_AGRICULTURAL_CAMPAIGN,
   INITIAL_FIELD_PLOTS,
@@ -113,6 +117,8 @@ interface AgriculturalPdaViewProps {
   nominalMillTch?: number; // e.g. 450 t/h from SCADA
   onBatchDispatched?: (batch: CaneBatch) => void;
   onWorkOrderCreated?: (wo: WorkOrder) => void;
+  currentRole?: UserRole;
+  currentUser?: UserAccount;
 }
 
 type SubTab =
@@ -147,8 +153,30 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
   nominalMillTch = 450.0,
   onBatchDispatched,
   onWorkOrderCreated,
+  currentRole = "agronomo",
+  currentUser,
 }) => {
   const isLight = theme === "light";
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // RBAC Permission Check for PDA Governance
+  const canEditGovernance =
+    currentRole === "superadmin" ||
+    currentRole === "administrador" ||
+    currentRole === "ingeniero" ||
+    currentRole === "agronomo" ||
+    Boolean(currentUser?.isSuperAdmin);
+
+  // Exit fullscreen on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("plots");
   const [plots, setPlots] = useState<FieldPlot[]>(INITIAL_FIELD_PLOTS);
@@ -218,6 +246,9 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
   const [governanceSearch, setGovernanceSearch] = useState<string>("");
   const [editingParam, setEditingParam] = useState<AgriculturalParameter | null>(null);
   const [paramEditValue, setParamEditValue] = useState<string>("");
+  const [paramChangeReason, setParamChangeReason] = useState<string>("");
+  const [paramValidationError, setParamValidationError] = useState<string | null>(null);
+  const [showParamAuditHistory, setShowParamAuditHistory] = useState<boolean>(false);
   const [notificationMsg, setNotificationMsg] = useState<{ text: string; type: "success" | "info" | "error" } | null>(null);
 
   // Filter states for plots
@@ -731,31 +762,68 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
   // Handle saving an edited parameter
   const handleSaveParam = async () => {
     if (!editingParam) return;
-    const numVal = parseFloat(paramEditValue);
-    if (isNaN(numVal)) {
-      setNotificationMsg({ text: "El valor numérico no es válido", type: "error" });
+
+    if (!canEditGovernance) {
+      setNotificationMsg({
+        text: `Acceso restringido: El rol actual (${currentRole}) no tiene privilegios de gobernanza PDA para modificar parámetros del modelo.`,
+        type: "error",
+      });
       return;
     }
+
+    const numVal = parseFloat(paramEditValue);
+    const rangeError = validateParamValue(editingParam, numVal);
+    if (rangeError) {
+      setParamValidationError(rangeError);
+      setNotificationMsg({ text: rangeError, type: "error" });
+      return;
+    }
+
+    if (!paramChangeReason.trim()) {
+      setParamValidationError("Debe indicar el motivo técnico del cambio para la auditoría formal.");
+      setNotificationMsg({ text: "Debe ingresar el motivo de cambio para la auditoría de gobernanza.", type: "error" });
+      return;
+    }
+
+    const previousVal = editingParam.value;
+    const userIdentifier = currentUser?.name || currentUser?.email || currentRole;
+    const changeReasonText = paramChangeReason.trim();
 
     const updated: AgriculturalParameter = {
       ...editingParam,
       value: numVal,
+      updatedAt: new Date().toISOString(),
     };
 
-    await AgriculturalPersistenceService.saveParameter(updated);
+    await AgriculturalPersistenceService.saveParameter(updated, userIdentifier, changeReasonText);
+    setParameters(AgriculturalParameterRegistry.getAllParameters());
+    setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+
     setEditingParam(null);
+    setParamChangeReason("");
+    setParamValidationError(null);
     setNotificationMsg({
-      text: `Parámetro ${updated.key} actualizado correctamente (${updated.value} ${updated.unit})`,
+      text: `Parámetro ${updated.key} actualizado: ${previousVal} → ${updated.value} ${updated.unit}. Auditoría inmutable registrada por ${userIdentifier}.`,
       type: "success",
     });
-    setTimeout(() => setNotificationMsg(null), 4000);
+    setTimeout(() => setNotificationMsg(null), 5000);
   };
 
   // Reset parameters
   const handleResetParameters = async () => {
-    if (window.confirm("¿Restablecer todos los parámetros agrícolas a los valores canónicos del Modelo PDA?")) {
+    if (!canEditGovernance) {
+      setNotificationMsg({
+        text: `Acceso restringido: El rol actual (${currentRole}) no tiene privilegios para restablecer los parámetros a la línea base canónica.`,
+        type: "error",
+      });
+      return;
+    }
+
+    if (window.confirm("¿Restablecer todos los parámetros agrícolas a los valores canónicos del Modelo PDA? Esta acción quedará registrada en el log de auditoría.")) {
       await AgriculturalPersistenceService.resetParametersToCanonical(campaign.tenantId);
-      setNotificationMsg({ text: "Parámetros restablecidos al modelo canónico PDA", type: "info" });
+      setParameters(AgriculturalParameterRegistry.getAllParameters());
+      setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
+      setNotificationMsg({ text: "Parámetros restablecidos al modelo canónico PDA con trazabilidad de auditoría", type: "info" });
       setTimeout(() => setNotificationMsg(null), 4000);
     }
   };
@@ -802,7 +870,15 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
   };
 
   return (
-    <div className={`p-4 md:p-6 space-y-6 ${isLight ? "bg-slate-50 text-slate-800" : "bg-slate-950 text-slate-100"}`}>
+    <div
+      className={`space-y-6 transition-colors ${
+        isFullscreen
+          ? `fixed inset-0 z-50 w-screen h-screen overflow-y-auto p-4 md:p-6 ${
+              isLight ? "bg-slate-50 text-slate-800" : "bg-slate-950 text-slate-100"
+            }`
+          : `p-4 md:p-6 ${isLight ? "bg-slate-50 text-slate-800" : "bg-slate-950 text-slate-100"}`
+      }`}
+    >
       {/* Toast Notification Banner */}
       {notificationMsg && (
         <div
@@ -891,6 +967,19 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
             >
               <ShieldCheck className="w-4 h-4" />
               <span>Gestor Parámetros ({parameterStats.requiresVal > 0 ? `${parameterStats.requiresVal} por validar` : `${parameters.length} total`})</span>
+            </button>
+
+            <button
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? "Salir de pantalla completa (Esc)" : "Pantalla completa"}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
+                isLight
+                  ? "bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200"
+                  : "bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4 text-emerald-400" /> : <Maximize2 className="w-4 h-4 text-emerald-400" />}
+              <span>{isFullscreen ? "Salir Fullscreen" : "Pantalla Completa"}</span>
             </button>
           </div>
         </div>
@@ -2151,6 +2240,23 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
 
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setShowParamAuditHistory(!showParamAuditHistory)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+                    showParamAuditHistory
+                      ? isLight
+                        ? "bg-blue-600 text-white border-blue-700 shadow-sm"
+                        : "bg-blue-600 text-white border-blue-500 shadow-sm"
+                      : isLight
+                      ? "bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200"
+                      : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
+                  }`}
+                  title="Conmutar vista entre matriz de parámetros y registro inmutable de auditoría"
+                >
+                  <History className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>{showParamAuditHistory ? "Ver Parámetros" : "Historial Auditoría"}</span>
+                </button>
+
+                <button
                   onClick={() => {
                     setEditingParamCustom(null);
                     setIsParamModalOpen(true);
@@ -2216,148 +2322,225 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
             </div>
           </div>
 
-          {/* Search & Filters */}
-          <div className={`p-3 rounded-lg border flex flex-wrap items-center justify-between gap-3 ${
-            isLight ? "bg-white border-slate-200" : "bg-slate-900 border-slate-800"
-          }`}>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
-                <input
-                  type="text"
-                  placeholder="Buscar clave, nombre o procedencia..."
-                  value={governanceSearch}
-                  onChange={(e) => setGovernanceSearch(e.target.value)}
-                  className={`text-xs pl-8 pr-3 py-1.5 rounded-md border w-64 ${
-                    isLight ? "bg-slate-50 border-slate-300" : "bg-slate-950 border-slate-700 text-slate-200"
-                  }`}
-                />
+          {/* Conditional: Historical Audit View vs. Parameters Matrix */}
+          {showParamAuditHistory ? (
+            <div className={`overflow-x-auto rounded-xl border ${isLight ? "bg-white border-slate-200" : "bg-slate-900 border-slate-800"}`}>
+              <div className={`p-4 border-b flex items-center justify-between ${isLight ? "bg-slate-50 border-slate-200" : "bg-slate-950/60 border-slate-800"}`}>
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs font-bold">Registro Histórico Inmutable de Parámetros (Auditoría PDA)</span>
+                </div>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {auditRecords.filter((r) => r.entityType === "PARAMETER").length} eventos registrados
+                </span>
               </div>
-
-              <select
-                value={governanceCategoryFilter}
-                onChange={(e) => setGovernanceCategoryFilter(e.target.value)}
-                className={`text-xs px-2.5 py-1.5 rounded-md border ${
-                  isLight ? "bg-slate-50 border-slate-300" : "bg-slate-950 border-slate-700 text-slate-200"
-                }`}
-              >
-                <option value="ALL">Todas las Categorías</option>
-                <option value="VARIEDAD">Variedades & TCH Base</option>
-                <option value="SUELO">Suelos & Modificadores</option>
-                <option value="PREPARACION_SUELO">Preparación de Suelos</option>
-                <option value="PLANTIO">Siembra & Semilleros</option>
-                <option value="TRATOS_CULTURALES">Tratos Culturales & Vinaza</option>
-                <option value="MAQUINARIA">Maquinaria & Rendimientos</option>
-                <option value="CCT_LOGISTICA">Logística CCT & Transporte</option>
-                <option value="ECONOMIA">Precios, Diesel & Laboral</option>
-              </select>
-
-              <select
-                value={governanceStatusFilter}
-                onChange={(e) => setGovernanceStatusFilter(e.target.value)}
-                className={`text-xs px-2.5 py-1.5 rounded-md border ${
-                  isLight ? "bg-slate-50 border-slate-300" : "bg-slate-950 border-slate-700 text-slate-200"
-                }`}
-              >
-                <option value="ALL">Todos los Estados de Validación</option>
-                <option value="CONFIRMADO">CONFIRMADO (Modelo Canónico Validado)</option>
-                <option value="REQUIERE_VALIDACION">REQUIERE_VALIDACION (Calibración en Campo)</option>
-                <option value="CONFIGURABLE">CONFIGURABLE (Parámetro Libre)</option>
-              </select>
-            </div>
-
-            <span className="text-xs text-slate-400">
-              Mostrando <span className="font-bold text-slate-200">{filteredParameters.length}</span> de {parameters.length} parámetros
-            </span>
-          </div>
-
-          {/* Parameters Table */}
-          <div className={`overflow-x-auto rounded-xl border ${
-            isLight ? "bg-white border-slate-200" : "bg-slate-900 border-slate-800"
-          }`}>
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className={`border-b font-semibold ${isLight ? "bg-slate-100/70 border-slate-200 text-slate-700" : "bg-slate-950 border-slate-800 text-slate-300"}`}>
-                  <th className="p-3">Estado de Validación</th>
-                  <th className="p-3">Clave Parámetro</th>
-                  <th className="p-3">Nombre & Descripción</th>
-                  <th className="p-3">Valor Actual</th>
-                  <th className="p-3">Unidad</th>
-                  <th className="p-3">Dominio & Procedencia</th>
-                  <th className="p-3 text-center">Acción</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/40">
-                {filteredParameters.map((param, idx) => {
-                  return (
-                    <tr
-                      key={`param-${param.id || param.key || idx}`}
-                      className="hover:bg-slate-800/30 transition"
-                    >
-                      <td className="p-3 whitespace-nowrap">
-                        {param.validationStatus === "CONFIRMADO" ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                            <CheckCircle2 className="w-3 h-3" />
-                            CONFIRMADO
-                          </span>
-                        ) : param.validationStatus === "REQUIERE_VALIDACION" ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                            <AlertTriangle className="w-3 h-3" />
-                            REQUIERE_VALIDACIÓN
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
-                            <SlidersHorizontal className="w-3 h-3" />
-                            CONFIGURABLE
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 font-mono font-bold text-slate-300">{param.key}</td>
-                      <td className="p-3 max-w-xs">
-                        <span className="font-semibold text-slate-200 block">{param.name}</span>
-                        <span className="text-[11px] text-slate-400 line-clamp-1">{param.description}</span>
-                      </td>
-                      <td className="p-3 font-mono font-bold text-emerald-400">
-                        {typeof param.value === "number" ? param.value.toLocaleString() : String(param.value)}
-                      </td>
-                      <td className="p-3 text-slate-400 font-mono">{param.unit}</td>
-                      <td className="p-3 font-mono text-[11px] text-slate-300">
-                        <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
-                          {param.provenanceDoc || `${param.category} • ${param.validity || "Vigente"}`}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingParam(param);
-                              setParamEditValue(String(param.value));
-                            }}
-                            className="px-2 py-1 rounded text-[11px] font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700 transition flex items-center gap-1"
-                            title="Edición rápida de valor"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                            <span>Valor</span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              setEditingParamCustom(param);
-                              setIsParamModalOpen(true);
-                            }}
-                            className="p-1 rounded text-slate-400 hover:text-blue-400 hover:bg-slate-800 border border-transparent hover:border-slate-700 transition"
-                            title="Editar Parámetro Completo (Metadatos, Rango, Fórmulas)"
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className={`border-b font-semibold ${isLight ? "bg-slate-100/70 border-slate-200 text-slate-700" : "bg-slate-950 border-slate-800 text-slate-300"}`}>
+                    <th className="p-3">Fecha & Hora</th>
+                    <th className="p-3">Parámetro</th>
+                    <th className="p-3">Usuario Auditor</th>
+                    <th className="p-3">Valor Anterior</th>
+                    <th className="p-3">Nuevo Valor</th>
+                    <th className="p-3">Motivo de Cambio</th>
+                    <th className="p-3">Sincronización</th>
+                  </tr>
+                </thead>
+                <tbody className={`divide-y ${isLight ? "divide-slate-200" : "divide-slate-800/40"}`}>
+                  {auditRecords.filter((r) => r.entityType === "PARAMETER").length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
+                        No hay modificaciones registradas todavía. Los parámetros se encuentran en su valor canónico inicial.
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    auditRecords
+                      .filter((r) => r.entityType === "PARAMETER")
+                      .map((rec) => (
+                        <tr key={rec.id} className={`${isLight ? "hover:bg-slate-50" : "hover:bg-slate-800/30"} transition`}>
+                          <td className="p-3 font-mono text-[11px] text-slate-400 whitespace-nowrap">
+                            {new Date(rec.timestamp).toLocaleString()}
+                          </td>
+                          <td className="p-3 font-semibold">
+                            <span className={`block ${isLight ? "text-slate-800" : "text-slate-200"}`}>{rec.entityName}</span>
+                            <span className="font-mono text-[10px] text-slate-500">{rec.entityId}</span>
+                          </td>
+                          <td className="p-3 font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            {rec.user}
+                          </td>
+                          <td className="p-3 font-mono text-slate-400">
+                            {rec.previousValue?.value != null ? `${rec.previousValue.value} ${rec.previousValue.unit || ""}` : "Línea Base"}
+                          </td>
+                          <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {rec.newValue?.value != null ? `${rec.newValue.value} ${rec.newValue.unit || ""}` : "N/A"}
+                          </td>
+                          <td className={`p-3 max-w-xs ${isLight ? "text-slate-700" : "text-slate-300"}`}>
+                            {rec.reason || "Sin motivo especificado"}
+                          </td>
+                          <td className="p-3">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                              <CheckCircle2 className="w-2.5 h-2.5" />
+                              {rec.newValue?.syncStatus || "SYNCED"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <>
+              {/* Search & Filters */}
+              <div className={`p-3 rounded-lg border flex flex-wrap items-center justify-between gap-3 ${
+                isLight ? "bg-white border-slate-200" : "bg-slate-900 border-slate-800"
+              }`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Buscar clave, nombre o procedencia..."
+                      value={governanceSearch}
+                      onChange={(e) => setGovernanceSearch(e.target.value)}
+                      className={`text-xs pl-8 pr-3 py-1.5 rounded-md border w-64 ${
+                        isLight ? "bg-slate-50 border-slate-300 text-slate-800" : "bg-slate-950 border-slate-700 text-slate-200"
+                      }`}
+                    />
+                  </div>
+
+                  <select
+                    value={governanceCategoryFilter}
+                    onChange={(e) => setGovernanceCategoryFilter(e.target.value)}
+                    className={`text-xs px-2.5 py-1.5 rounded-md border ${
+                      isLight ? "bg-slate-50 border-slate-300 text-slate-800" : "bg-slate-950 border-slate-700 text-slate-200"
+                    }`}
+                  >
+                    <option value="ALL">Todas las Categorías</option>
+                    <option value="VARIEDAD">Variedades & TCH Base</option>
+                    <option value="SUELO">Suelos & Modificadores</option>
+                    <option value="PREPARACION_SUELO">Preparación de Suelos</option>
+                    <option value="PLANTIO">Siembra & Semilleros</option>
+                    <option value="TRATOS_CULTURALES">Tratos Culturales & Vinaza</option>
+                    <option value="MAQUINARIA">Maquinaria & Rendimientos</option>
+                    <option value="CCT_LOGISTICA">Logística CCT & Transporte</option>
+                    <option value="ECONOMIA">Precios, Diesel & Laboral</option>
+                  </select>
+
+                  <select
+                    value={governanceStatusFilter}
+                    onChange={(e) => setGovernanceStatusFilter(e.target.value)}
+                    className={`text-xs px-2.5 py-1.5 rounded-md border ${
+                      isLight ? "bg-slate-50 border-slate-300 text-slate-800" : "bg-slate-950 border-slate-700 text-slate-200"
+                    }`}
+                  >
+                    <option value="ALL">Todos los Estados de Validación</option>
+                    <option value="CONFIRMADO">CONFIRMADO (Modelo Canónico Validado)</option>
+                    <option value="REQUIERE_VALIDACION">REQUIERE_VALIDACION (Calibración en Campo)</option>
+                    <option value="CONFIGURABLE">CONFIGURABLE (Parámetro Libre)</option>
+                  </select>
+                </div>
+
+                <span className="text-xs text-slate-400">
+                  Mostrando <span className={`font-bold ${isLight ? "text-slate-800" : "text-slate-200"}`}>{filteredParameters.length}</span> de {parameters.length} parámetros
+                </span>
+              </div>
+
+              {/* Parameters Table */}
+              <div className={`overflow-x-auto rounded-xl border ${
+                isLight ? "bg-white border-slate-200" : "bg-slate-900 border-slate-800"
+              }`}>
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className={`border-b font-semibold ${isLight ? "bg-slate-100/70 border-slate-200 text-slate-700" : "bg-slate-950 border-slate-800 text-slate-300"}`}>
+                      <th className="p-3">Estado de Validación</th>
+                      <th className="p-3">Clave Parámetro</th>
+                      <th className="p-3">Nombre & Descripción</th>
+                      <th className="p-3">Valor Actual</th>
+                      <th className="p-3">Unidad</th>
+                      <th className="p-3">Dominio & Procedencia</th>
+                      <th className="p-3 text-center">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y ${isLight ? "divide-slate-200" : "divide-slate-800/40"}`}>
+                    {filteredParameters.map((param, idx) => {
+                      return (
+                        <tr
+                          key={`param-${param.id || param.key || idx}`}
+                          className={`${isLight ? "hover:bg-slate-50" : "hover:bg-slate-800/30"} transition`}
+                        >
+                          <td className="p-3 whitespace-nowrap">
+                            {param.validationStatus === "CONFIRMADO" ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                <CheckCircle2 className="w-3 h-3" />
+                                CONFIRMADO
+                              </span>
+                            ) : param.validationStatus === "REQUIERE_VALIDACION" ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                                <AlertTriangle className="w-3 h-3" />
+                                REQUIERE VALIDACIÓN
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                                <SlidersHorizontal className="w-3 h-3" />
+                                CONFIGURABLE
+                              </span>
+                            )}
+                          </td>
+                          <td className={`p-3 font-mono font-bold ${isLight ? "text-slate-800" : "text-slate-300"}`}>{param.key}</td>
+                          <td className="p-3 max-w-xs">
+                            <span className={`font-semibold block ${isLight ? "text-slate-900" : "text-slate-200"}`}>{param.name}</span>
+                            <span className="text-[11px] text-slate-400 line-clamp-1">{param.description}</span>
+                          </td>
+                          <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {typeof param.value === "number" ? param.value.toLocaleString() : String(param.value)}
+                          </td>
+                          <td className="p-3 text-slate-400 font-mono">{param.unit}</td>
+                          <td className="p-3 font-mono text-[11px] text-slate-400">
+                            <span className={`px-1.5 py-0.5 rounded border ${isLight ? "bg-slate-100 border-slate-300 text-slate-700" : "bg-slate-950 border-slate-800 text-slate-300"}`}>
+                              {param.provenanceDoc || `${param.category} • ${param.validity || "Vigente"}`}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingParam(param);
+                                  setParamEditValue(String(param.value));
+                                  setParamChangeReason("");
+                                  setParamValidationError(null);
+                                }}
+                                className={`px-2 py-1 rounded text-[11px] font-semibold border transition flex items-center gap-1 ${
+                                  isLight
+                                    ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300"
+                                    : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border-slate-700"
+                                }`}
+                                title="Edición rápida de valor con auditoría"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>Valor</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setEditingParamCustom(param);
+                                  setIsParamModalOpen(true);
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 transition"
+                                title="Editar Parámetro Completo (Metadatos, Rango, Fórmulas)"
+                              >
+                                <SlidersHorizontal className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -2381,57 +2564,125 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
       {/* PARAMETER EDIT MODAL */}
       {editingParam && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className={`rounded-xl p-6 max-w-lg w-full shadow-2xl space-y-4 border ${
+            isLight ? "bg-white border-slate-200 text-slate-900" : "bg-slate-900 border-slate-800 text-slate-100"
+          }`}>
+            <div className={`flex items-center justify-between border-b pb-3 ${isLight ? "border-slate-200" : "border-slate-800"}`}>
               <div className="flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-emerald-500" />
-                <h3 className="font-bold text-sm">Editar Parámetro Agrícola</h3>
+                <div>
+                  <h3 className="font-bold text-sm">Gobernanza de Parámetro Agronómico</h3>
+                  <span className="text-[10px] text-slate-400">Auditoría Inmutable PDA (ISA-95 Nivel 4)</span>
+                </div>
               </div>
               <button
-                onClick={() => setEditingParam(null)}
-                className="text-slate-400 hover:text-white"
+                onClick={() => {
+                  setEditingParam(null);
+                  setParamValidationError(null);
+                  setParamChangeReason("");
+                }}
+                className="text-slate-400 hover:text-slate-200 p-1"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Operator RBAC Info */}
+            <div className={`p-2.5 rounded-lg text-xs flex items-center justify-between ${
+              canEditGovernance
+                ? isLight
+                  ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                  : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-300"
+                : isLight
+                ? "bg-rose-50 border border-rose-200 text-rose-800"
+                : "bg-rose-500/10 border border-rose-500/20 text-rose-300"
+            }`}>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                <span>Auditor: <strong>{currentUser?.name || "Usuario Activo"}</strong> (Rol: <strong>{currentRole}</strong>)</span>
+              </div>
+              {!canEditGovernance && (
+                <span className="font-bold text-[11px] uppercase">Solo Lectura</span>
+              )}
+            </div>
+
             <div className="space-y-3 text-xs">
-              <div>
-                <span className="text-slate-400 block mb-1">Nombre:</span>
-                <span className="font-bold text-slate-200 block text-sm">{editingParam.name}</span>
-                <span className="font-mono text-[11px] text-slate-500">{editingParam.key}</span>
+              <div className={`p-3 rounded-lg border ${isLight ? "bg-slate-50 border-slate-200" : "bg-slate-950/60 border-slate-800"}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="font-bold text-sm block">{editingParam.name}</span>
+                    <span className="font-mono text-[11px] text-slate-500 block">{editingParam.key}</span>
+                  </div>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono border ${
+                    editingParam.validationStatus === "CONFIRMADO"
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500"
+                      : editingParam.validationStatus === "REQUIERE_VALIDACION"
+                      ? "bg-amber-500/10 border-amber-500/30 text-amber-500"
+                      : "bg-blue-500/10 border-blue-500/30 text-blue-500"
+                  }`}>
+                    {editingParam.validationStatus}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">{editingParam.description}</p>
+                <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-slate-400 border-t border-slate-800/40 pt-1.5">
+                  <span>Procedencia: <strong className="text-emerald-500">{editingParam.provenanceDoc || editingParam.category}</strong></span>
+                  <span>Valor Actual: <strong className={isLight ? "text-slate-800" : "text-slate-200"}>{editingParam.value} {editingParam.unit}</strong></span>
+                </div>
               </div>
 
               <div>
-                <span className="text-slate-400 block mb-1">Estado en Modelo:</span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-300">
-                  {editingParam.validationStatus}
-                </span>
-              </div>
-
-              <div>
-                <span className="text-slate-400 block mb-1">Procedencia Documental:</span>
-                <span className="font-mono text-emerald-400">
-                  {editingParam.provenanceDoc || `${editingParam.category} (Modelo Canónico)`}
-                </span>
-              </div>
-
-              <div>
-                <label className="text-slate-300 font-semibold block mb-1">
+                <label className={`font-semibold block mb-1 ${isLight ? "text-slate-800" : "text-slate-200"}`}>
                   Nuevo Valor ({editingParam.unit}):
                 </label>
                 <input
                   type="number"
                   step="any"
+                  disabled={!canEditGovernance}
                   value={paramEditValue}
-                  onChange={(e) => setParamEditValue(e.target.value)}
-                  className="w-full text-sm font-mono px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-hidden focus:border-emerald-500"
+                  onChange={(e) => {
+                    setParamEditValue(e.target.value);
+                    setParamValidationError(null);
+                  }}
+                  className={`w-full text-sm font-mono px-3 py-2 rounded-lg border focus:outline-hidden ${
+                    isLight
+                      ? "bg-slate-50 border-slate-300 text-slate-900 focus:border-emerald-500"
+                      : "bg-slate-950 border-slate-700 text-white focus:border-emerald-500"
+                  }`}
+                  placeholder={`Ej: ${editingParam.value}`}
                 />
               </div>
 
+              <div>
+                <label className={`font-semibold block mb-1 ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                  Motivo Técnico de la Modificación <span className="text-rose-500">*</span> (Auditoría PDA):
+                </label>
+                <textarea
+                  rows={2}
+                  disabled={!canEditGovernance}
+                  value={paramChangeReason}
+                  onChange={(e) => {
+                    setParamChangeReason(e.target.value);
+                    setParamValidationError(null);
+                  }}
+                  placeholder="Justificación agronómica, calibración en campo o ajuste operativo..."
+                  className={`w-full text-xs px-3 py-2 rounded-lg border focus:outline-hidden ${
+                    isLight
+                      ? "bg-slate-50 border-slate-300 text-slate-900 focus:border-emerald-500"
+                      : "bg-slate-950 border-slate-700 text-white focus:border-emerald-500"
+                  }`}
+                />
+              </div>
+
+              {paramValidationError && (
+                <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[11px] flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{paramValidationError}</span>
+                </div>
+              )}
+
               {editingParam.validationStatus === "REQUIERE_VALIDACION" && (
-                <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[11px] flex gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>
                     Este parámetro requiere calibración en campo contra las condiciones reales del ingenio antes de dar por cerrada la zafra.
                   </span>
@@ -2439,16 +2690,23 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+            <div className={`flex items-center justify-end gap-2 pt-3 border-t ${isLight ? "border-slate-200" : "border-slate-800"}`}>
               <button
-                onClick={() => setEditingParam(null)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white"
+                onClick={() => {
+                  setEditingParam(null);
+                  setParamValidationError(null);
+                  setParamChangeReason("");
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                  isLight ? "text-slate-600 hover:text-slate-900" : "text-slate-400 hover:text-white"
+                }`}
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSaveParam}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 flex items-center gap-1.5 transition"
+                disabled={!canEditGovernance}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition"
               >
                 <Save className="w-3.5 h-3.5" />
                 <span>Guardar Parámetro</span>

@@ -1239,10 +1239,8 @@ export class AgriculturalParameterRegistry {
   public static getParameter<T = any>(key: string, defaultValue?: T): AgriculturalParameter | null {
     const p = this.parametersMap.get(key);
     if (p) return p;
-    if (defaultValue !== undefined) {
-      const canonical = CANONICAL_AGRICULTURAL_PARAMETERS.find((c) => c.key === key);
-      return canonical ?? null;
-    }
+    const canonical = CANONICAL_AGRICULTURAL_PARAMETERS.find((c) => c.key === key);
+    if (canonical) return { ...canonical };
     return null;
   }
 

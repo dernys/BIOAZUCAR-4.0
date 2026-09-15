@@ -38,14 +38,22 @@ interface NavigationProps {
   theme?: "dark" | "light";
 }
 
-type MenuCategory = "ALL" | "OPERATIONS" | "QUALITY_MAINT" | "DATA_IOT" | "AI" | "SECURITY_CONFIG";
+type MenuCategory =
+  | "ALL"
+  | "PLANT_OPERATIONS"
+  | "AGRONOMY_FIELD"
+  | "QUALITY_LAB"
+  | "SECURITY_MAINT"
+  | "OT_OBSERVABILITY"
+  | "AI_GOVERNANCE"
+  | "ADMIN_CONFIG";
 
 export const Navigation: React.FC<NavigationProps> = ({
   activeTab,
   onTabChange,
   activeAlarmsCount = 0,
   onOpenDbModal,
-  dbLatencyMs = 24,
+  dbLatencyMs = 45,
   currentUser,
   currentRole,
   theme = "dark",
@@ -62,7 +70,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     desc: string;
-    category: "OPERATIONS" | "QUALITY_MAINT" | "DATA_IOT" | "AI" | "SECURITY_CONFIG";
+    category: MenuCategory;
     badge?: number | null;
     highlight?: boolean;
     tag?: string;
@@ -74,29 +82,21 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Dashboard KPI",
       icon: LayoutDashboard,
       desc: "Producción & OEE",
-      category: "OPERATIONS",
+      category: "PLANT_OPERATIONS",
     },
     {
       id: "scada",
       label: "Sinóptico SCADA",
       icon: GitBranch,
       desc: "Mímico & Lazos PID",
-      category: "OPERATIONS",
-    },
-    {
-      id: "agricultural_pda",
-      label: "Plan Agrícola PDA",
-      icon: Tractor,
-      desc: "Campo, CCT & Zafra",
-      category: "OPERATIONS",
-      tag: "PDA",
+      category: "PLANT_OPERATIONS",
     },
     {
       id: "energy_dispatch",
       label: "Energía & Calderas",
       icon: Zap,
       desc: "ASME PTC 4 & PPA MW",
-      category: "OPERATIONS",
+      category: "PLANT_OPERATIONS",
       tag: "Cogen",
     },
     {
@@ -104,37 +104,30 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Gemelo Digital 3D",
       icon: Boxes,
       desc: "Three.js WebGL",
-      category: "OPERATIONS",
+      category: "PLANT_OPERATIONS",
       tag: "3D",
+    },
+    {
+      id: "agricultural_pda",
+      label: "Plan Agrícola PDA",
+      icon: Tractor,
+      desc: "Campo, CCT & Zafra",
+      category: "AGRONOMY_FIELD",
+      tag: "PDA",
     },
     {
       id: "batches",
       label: "LIMS & Caña",
       icon: Layers,
       desc: "Core Sampler & ARE",
-      category: "QUALITY_MAINT",
+      category: "QUALITY_LAB",
     },
     {
       id: "equipment",
       label: "CBM & CMMS",
       icon: Wrench,
       desc: "FFT Vibración & OTs",
-      category: "QUALITY_MAINT",
-    },
-    {
-      id: "uns_hub",
-      label: "UNS & IIoT Hub",
-      icon: Network,
-      desc: "OPC UA & Sparkplug B",
-      category: "DATA_IOT",
-      tag: "OT/IT",
-    },
-    {
-      id: "historian",
-      label: "Historiador",
-      icon: TrendingUp,
-      desc: "Tendencias & CSV",
-      category: "DATA_IOT",
+      category: "SECURITY_MAINT",
     },
     {
       id: "alarms",
@@ -142,14 +135,29 @@ export const Navigation: React.FC<NavigationProps> = ({
       icon: ShieldAlert,
       desc: "ISA-18.2 SOE",
       badge: activeAlarmsCount > 0 ? activeAlarmsCount : null,
-      category: "DATA_IOT",
+      category: "SECURITY_MAINT",
+    },
+    {
+      id: "uns_hub",
+      label: "UNS & IIoT Hub",
+      icon: Network,
+      desc: "OPC UA & Sparkplug B",
+      category: "OT_OBSERVABILITY",
+      tag: "OT/IT",
+    },
+    {
+      id: "historian",
+      label: "Historiador",
+      icon: TrendingUp,
+      desc: "Tendencias & CSV",
+      category: "OT_OBSERVABILITY",
     },
     {
       id: "ai_center",
       label: "Centro IA Gemini",
       icon: Sparkles,
       desc: "Diagnósticos & Copilot",
-      category: "AI",
+      category: "AI_GOVERNANCE",
       highlight: true,
     },
     {
@@ -157,7 +165,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Deck Ejecutivo",
       icon: Presentation,
       desc: "Inversionistas & Clientes",
-      category: "AI",
+      category: "AI_GOVERNANCE",
       highlight: true,
       tag: "Pitch",
     },
@@ -166,7 +174,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Empresas Multi-Tenant",
       icon: Building2,
       desc: "Aislamiento & Capacidad",
-      category: "SECURITY_CONFIG",
+      category: "ADMIN_CONFIG",
       superAdminOnly: true,
       tag: "Root",
     },
@@ -175,7 +183,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Usuarios & Roles",
       icon: Users,
       desc: "RBAC & Permisos CRUD",
-      category: "SECURITY_CONFIG",
+      category: "ADMIN_CONFIG",
       adminOnly: true,
       tag: "RBAC",
     },
@@ -184,7 +192,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Configuración",
       icon: Settings,
       desc: "Parámetros & IEC 62443",
-      category: "SECURITY_CONFIG",
+      category: "ADMIN_CONFIG",
       tag: "Audit",
     },
   ];
@@ -213,12 +221,14 @@ export const Navigation: React.FC<NavigationProps> = ({
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
             <span className={`${isLight ? "text-slate-600 font-bold" : "text-slate-500"} hidden sm:inline mr-1 text-xs`}>Área:</span>
             {[
-              { id: "ALL", label: "Todas las Áreas" },
-              { id: "OPERATIONS", label: "Operaciones SCADA" },
-              { id: "QUALITY_MAINT", label: "Calidad & CBM" },
-              { id: "DATA_IOT", label: "UNS & Historiador" },
-              { id: "AI", label: "IA Gemini" },
-              { id: "SECURITY_CONFIG", label: "Seguridad & Config" },
+              { id: "ALL", label: "Todos los Dominios" },
+              { id: "PLANT_OPERATIONS", label: "Fábrica / Planta" },
+              { id: "AGRONOMY_FIELD", label: "Campo / Plan Agrícola" },
+              { id: "QUALITY_LAB", label: "Calidad & Laboratorio" },
+              { id: "SECURITY_MAINT", label: "Seguridad & Mantenimiento" },
+              { id: "OT_OBSERVABILITY", label: "Integración OT & Observabilidad" },
+              { id: "AI_GOVERNANCE", label: "IA Gemini" },
+              { id: "ADMIN_CONFIG", label: "Administración & Roles" },
             ].map((cat) => (
               <button
                 key={cat.id}

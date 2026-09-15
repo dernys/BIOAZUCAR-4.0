@@ -28,7 +28,9 @@ import {
   Network,
   Cloud,
   FileCode,
-  Gauge
+  Gauge,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { RuntimeMode, OTConfig } from "../services/runtime/types";
 import { SimulationScenario, TelemetryData, UserRole, TenantEnterprise } from "../types";
@@ -74,6 +76,7 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
 
   // Active Tab: "COMMISSIONING_WIZARD" | "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX"
   const [activeTab, setActiveTab] = useState<"COMMISSIONING_WIZARD" | "OT_GATEWAY" | "PROMETHEUS" | "ARCHITECTURE" | "TAGS_MATRIX">("COMMISSIONING_WIZARD");
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // Local state for OT configuration form
   const [protocol, setProtocol] = useState<string>(activeTenant?.otProtocol || otConfig.protocol || "OPC-UA");
@@ -408,8 +411,12 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-3 sm:p-4 overflow-y-auto font-sans">
-      <div className="relative w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden font-mono text-xs animate-in zoom-in-95 duration-150 my-auto text-slate-900 dark:text-slate-100 flex flex-col max-h-[90vh]">
+    <div className={`fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 backdrop-blur-md overflow-y-auto font-sans ${isFullscreen ? "p-0" : "p-3 sm:p-4"}`}>
+      <div className={`relative w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 shadow-2xl overflow-hidden font-mono text-xs duration-150 text-slate-900 dark:text-slate-100 flex flex-col ${
+        isFullscreen
+          ? "fixed inset-0 z-[130] w-screen h-screen max-w-none max-h-none rounded-none border-0 m-0"
+          : "max-w-5xl rounded-2xl my-auto max-h-[92vh] animate-in zoom-in-95"
+      }`}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70 shrink-0">
           <div className="flex items-center gap-3">
@@ -445,12 +452,22 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? "Restaurar ventana" : "Pantalla completa"}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+            >
+              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+            <button
+              onClick={onClose}
+              title="Cerrar modal"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}

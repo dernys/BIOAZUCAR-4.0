@@ -543,8 +543,12 @@ export class AgriculturalPersistenceService {
   ): Promise<AgriculturalParameter> {
     const validated = AgronomicValidationService.validateParameter(param);
     
-    // Versioning enforcement: deactivate any older active version for the same key
+    // Find previous parameter value for formal audit trail
     const currentLocal = this.getLocalCachedParameters();
+    const existingParam = currentLocal.find((p) => p.key === validated.normalizedData.key);
+    const previousVal = existingParam ? { value: existingParam.value, unit: existingParam.unit } : null;
+
+    // Versioning enforcement: deactivate any older active version for the same key
     const updatedLocal = currentLocal.map((existing) => {
       if (
         existing.key === validated.normalizedData.key &&
@@ -576,22 +580,26 @@ export class AgriculturalPersistenceService {
     this.setLocalCachedParameters(updatedLocal);
     AgriculturalParameterRegistry.registerParameter(paramToSave);
 
-    try {
-      const docRef = doc(db, AGRO_COLLECTIONS.PARAMETERS, paramToSave.id || `param-${paramToSave.key.toLowerCase()}`);
-      await setDoc(docRef, {
-        ...paramToSave,
-        syncStatus: "SYNCED",
-        lastSyncAt: new Date().toISOString(),
-        syncError: null,
-      }, { merge: true });
+    if (auth.currentUser) {
+      try {
+        const docRef = doc(db, AGRO_COLLECTIONS.PARAMETERS, paramToSave.id || `param-${paramToSave.key.toLowerCase()}`);
+        await setDoc(docRef, {
+          ...paramToSave,
+          syncStatus: "SYNCED",
+          lastSyncAt: new Date().toISOString(),
+          syncError: null,
+        }, { merge: true });
 
-      paramToSave.syncStatus = "SYNCED";
-      paramToSave.lastSyncAt = new Date().toISOString();
-      paramToSave.syncError = undefined;
-    } catch (err: any) {
-      console.warn("[AgroPersistence] Firestore write deferred for param:", paramToSave.key, err.message);
-      paramToSave.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
-      paramToSave.syncError = err.message || "Error al sincronizar con Firestore";
+        paramToSave.syncStatus = "SYNCED";
+        paramToSave.lastSyncAt = new Date().toISOString();
+        paramToSave.syncError = undefined;
+      } catch (err: any) {
+        console.warn("[AgroPersistence] Firestore write deferred for param:", paramToSave.key, err.message);
+        paramToSave.syncStatus = typeof navigator !== "undefined" && !navigator.onLine ? "OFFLINE" : "SYNC_ERROR";
+        paramToSave.syncError = err.message || "Error al sincronizar con Firestore";
+      }
+    } else {
+      paramToSave.syncStatus = "LOCAL_DRAFT";
     }
 
     // Refresh confirmed sync status in local cache
@@ -607,7 +615,7 @@ export class AgriculturalPersistenceService {
       entityId: paramToSave.id,
       entityName: paramToSave.name,
       fieldChanged: "VALOR_PARAMETRO",
-      previousValue: null,
+      previousValue: previousVal,
       newValue: { value: paramToSave.value, unit: paramToSave.unit, syncStatus: paramToSave.syncStatus },
       user,
       reason,
@@ -620,25 +628,44 @@ export class AgriculturalPersistenceService {
   /**
    * Reset parameters to Canonical Baseline
    */
-  public static async resetParametersToCanonical(tenantId: string): Promise<void> {
+  public static async resetParametersToCanonical(
+    tenantId: string,
+    user: string = "ADMIN_OPERACIONAL",
+    reason: string = "Restablecimiento integral a la línea base canónica del Modelo PDA"
+  ): Promise<void> {
     AgriculturalParameterRegistry.resetToCanonical();
     const canonical = AgriculturalParameterRegistry.getAllParameters();
     this.setLocalCachedParameters(canonical);
 
-    try {
-      for (const p of CANONICAL_AGRICULTURAL_PARAMETERS) {
-        const docRef = doc(db, AGRO_COLLECTIONS.PARAMETERS, p.id);
-        await setDoc(docRef, {
-          ...p,
-          tenantId,
-          syncStatus: "SYNCED",
-          lastSyncAt: new Date().toISOString(),
-          syncError: null,
-        }, { merge: true });
+    if (auth.currentUser) {
+      try {
+        for (const p of CANONICAL_AGRICULTURAL_PARAMETERS) {
+          const docRef = doc(db, AGRO_COLLECTIONS.PARAMETERS, p.id);
+          await setDoc(docRef, {
+            ...p,
+            tenantId,
+            syncStatus: "SYNCED",
+            lastSyncAt: new Date().toISOString(),
+            syncError: null,
+          }, { merge: true });
+        }
+      } catch (err: any) {
+        console.warn("[AgroPersistence] Firestore reset deferred to local cache:", err.message);
       }
-    } catch (err: any) {
-      console.warn("[AgroPersistence] Firestore reset deferred to local cache:", err.message);
     }
+
+    await this.recordAuditChange({
+      tenantId,
+      entityType: "PARAMETER",
+      entityId: "ALL_PARAMETERS",
+      entityName: "Catálogo Completo de Parámetros Agronómicos",
+      fieldChanged: "RESET_CANONICAL",
+      previousValue: null,
+      newValue: { count: canonical.length, status: "CANONICAL_RESTORED" },
+      user,
+      reason,
+      version: "CANONICAL_BASELINE",
+    });
   }
 
   /**
@@ -1037,7 +1064,7 @@ export class AgriculturalPersistenceService {
   // Local Storage Helper Methods
   private static getLocalCachedParameters(): AgriculturalParameter[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.PARAMS);
+      const raw = safeGetItem(STORAGE_KEYS.PARAMS);
       if (raw) return JSON.parse(raw);
     } catch {}
     return [];
@@ -1045,7 +1072,7 @@ export class AgriculturalPersistenceService {
 
   private static setLocalCachedParameters(params: AgriculturalParameter[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.PARAMS, JSON.stringify(params));
+      safeSetItem(STORAGE_KEYS.PARAMS, JSON.stringify(params));
     } catch {}
   }
 
@@ -1909,10 +1936,12 @@ export class AgriculturalPersistenceService {
    */
   public static getLocalCachedAuditTrail(): AgriculturalAuditChangeRecord[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.AUDIT);
+      const raw = safeGetItem(STORAGE_KEYS.AUDIT);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       }
     } catch {}
     return [];
@@ -1920,7 +1949,7 @@ export class AgriculturalPersistenceService {
 
   public static setLocalCachedAuditTrail(list: AgriculturalAuditChangeRecord[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(list));
+      safeSetItem(STORAGE_KEYS.AUDIT, JSON.stringify(list));
     } catch {}
   }
 
@@ -1940,11 +1969,13 @@ export class AgriculturalPersistenceService {
     }
     this.setLocalCachedAuditTrail(currentList);
 
-    try {
-      const docRef = doc(db, AGRO_COLLECTIONS.AUDIT, record.id);
-      await setDoc(docRef, record);
-    } catch (err) {
-      console.warn("[AgroPersistence] Audit record save fallback:", err);
+    if (auth.currentUser) {
+      try {
+        const docRef = doc(db, AGRO_COLLECTIONS.AUDIT, record.id);
+        await setDoc(docRef, record);
+      } catch (err) {
+        console.warn("[AgroPersistence] Audit record save fallback:", err);
+      }
     }
 
     return record;

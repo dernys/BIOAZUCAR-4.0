@@ -655,6 +655,8 @@ export default function App() {
               theme={theme}
               currentTenantName={activeTenant.name}
               nominalMillTch={telemetry.tch}
+              currentRole={currentRole}
+              currentUser={currentUser}
             />
           </ErrorBoundary>
         )}

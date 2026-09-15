@@ -33,6 +33,7 @@ import {
 import { industrialEdge } from "./BioAzucarIndustrialEdge";
 import { industrialConnectionRegistry } from "../dataProviders/IndustrialConnectionRegistry";
 import { logAuditEventToDb } from "../dbService";
+import { computeEvidenceHash } from "../../utils/cryptoUtils";
 
 export interface CommissioningCheckResult {
   step: string;
@@ -275,14 +276,15 @@ export class IndustrialCommissioningService {
 
     let evidence: TenantPhysicalEvidence | undefined;
     if (allPassed) {
-      // Deterministic evidence hash
-      const payloadToHash = `${commissioningId}|${connection.tenantId}|${connection.id}|${tNow}|${qualityRate}|${observedLatency}`;
-      let hashVal = 0;
-      for (let i = 0; i < payloadToHash.length; i++) {
-        hashVal = (hashVal << 5) - hashVal + payloadToHash.charCodeAt(i);
-        hashVal |= 0;
-      }
-      const evidenceHash = `sha256-evidence-${Math.abs(hashVal).toString(16)}`;
+      // Real FIPS 180-4 compliant SHA-256 evidence hash
+      const evidenceHash = `sha256:${computeEvidenceHash({
+        commissioningId,
+        tenantId: connection.tenantId,
+        connectionId: connection.id,
+        timestamp: tNow,
+        dataQualityPassRate: qualityRate,
+        latencyMs: observedLatency,
+      })}`;
 
       evidence = {
         hasActiveGateway: true,

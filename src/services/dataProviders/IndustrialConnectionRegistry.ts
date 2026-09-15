@@ -19,6 +19,7 @@ import {
 } from "../../types";
 import { validateConnectionRegistryEntry } from "./IndustrialRegistryValidator";
 import { logAuditEventToDb } from "../dbService";
+import { sha256Hex } from "../../utils/cryptoUtils";
 
 export interface EdgeProvisioningBundle {
   version: string;
@@ -373,13 +374,9 @@ export class IndustrialConnectionRegistry {
       tenantId,
     });
 
-    const payload = JSON.stringify({ gatewayId, tenantId, count: connections.length });
-    // Deterministic checksum for bundle verification
-    let hash = 0;
-    for (let i = 0; i < payload.length; i++) {
-      hash = (hash << 5) - hash + payload.charCodeAt(i);
-      hash |= 0;
-    }
+    const payload = JSON.stringify({ gatewayId, tenantId, count: connections.length, connectionIds: connections.map((c) => c.id) });
+    // FIPS 180-4 standard cryptographic SHA-256 checksum for edge bundle verification
+    const bundleChecksum = sha256Hex(payload);
 
     return {
       version: "1.0.0",
@@ -388,7 +385,7 @@ export class IndustrialConnectionRegistry {
       siteId: connections[0]?.siteId || "SITE_CENTRAL_01",
       gatewayId,
       connections,
-      checksum: `sha256-edge-${Math.abs(hash).toString(16)}`,
+      checksum: `sha256:${bundleChecksum}`,
     };
   }
 
