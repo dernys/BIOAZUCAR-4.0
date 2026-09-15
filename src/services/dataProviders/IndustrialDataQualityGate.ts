@@ -335,6 +335,25 @@ export class IndustrialDataQualityGate {
   }
 
   /**
+   * Evaluates an IndustrialTagSample and returns normalized quality and availability decisions.
+   */
+  public evaluateSample(
+    sample: IndustrialTagSample,
+    context?: any,
+    isProductionEnvironment: boolean = false
+  ) {
+    const audit = this.auditTagSample(sample, context, isProductionEnvironment);
+    return {
+      ...audit,
+      finalQuality: audit.quality,
+      finalAvailability: audit.availability,
+      validationStatus: audit.evaluatedSample.validationStatus as "PASSED" | "REJECTED",
+      qualityScore: audit.score,
+      rejectionReasons: audit.reasons,
+    };
+  }
+
+  /**
    * Diagnostic metrics
    */
   public getMetrics() {

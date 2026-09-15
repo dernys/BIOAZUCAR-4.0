@@ -181,29 +181,128 @@ export interface TagQualityRules {
   expectedValueRegex?: string;
 }
 
+export type TagSignedness = "SIGNED" | "UNSIGNED";
+export type TagEndianness = "BIG_ENDIAN" | "LITTLE_ENDIAN" | "MID_BIG_ENDIAN" | "MID_LITTLE_ENDIAN";
+export type TagSamplingMode = "POLLING" | "SUBSCRIPTION" | "ON_CHANGE";
+
+// ISA-95 Physical & Functional Hierarchy Models
+export interface IndustrialSite {
+  id: string;
+  tenantId: string;
+  name: string;
+  code: string;
+  location?: string;
+}
+
+export interface IndustrialArea {
+  id: string;
+  tenantId: string;
+  siteId: string;
+  name: string;
+  code: string;
+  description?: string;
+}
+
+export interface IndustrialProcessCell {
+  id: string;
+  tenantId: string;
+  siteId: string;
+  areaId: string;
+  name: string;
+  code: string;
+}
+
+export interface IndustrialAsset {
+  id: string;
+  tenantId: string;
+  siteId: string;
+  areaId: string;
+  processCellId?: string;
+  name: string;
+  code: string;
+  type?: string;
+}
+
+export interface IndustrialGateway {
+  id: string;
+  tenantId: string;
+  siteId: string;
+  name: string;
+  ipAddress: string;
+  hardwareModel?: string;
+  osVersion?: string;
+  status: "ONLINE" | "OFFLINE" | "DEGRADED";
+}
+
+// Device Engineering Model
+export type IndustrialDeviceType =
+  | "PLC"
+  | "DCS"
+  | "RTU"
+  | "SMART_TRANSMITTER"
+  | "DRIVE_VFD"
+  | "POWER_METER"
+  | "GATEWAY_MODULE";
+
+export interface IndustrialDeviceDefinition {
+  id: string;
+  tenantId: string;
+  siteId: string;
+  areaId: string;
+  processCellId?: string;
+  assetId?: string;
+  connectionId: string;
+  name: string;
+  deviceType: IndustrialDeviceType;
+  vendor?: string;
+  model?: string;
+  serialNumber?: string;
+  firmwareVersion?: string;
+  busAddress?: string | number; // e.g. Modbus Unit ID (1..247) or Profibus/DeviceNet node
+  rack?: number;
+  slot?: number;
+  ipAddress?: string;
+  status: "ONLINE" | "OFFLINE" | "DEGRADED" | "CONFIGURED" | "UNREACHABLE";
+  criticality?: CriticalityLevel;
+  tagsCount?: number;
+  enabled?: boolean;
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface IndustrialTagDefinition {
   id: string;
   tenantId?: string;
   siteId?: string;
   areaId?: string;
+  processCellId?: string;
   assetId?: string;
   connectionId?: string;
+  deviceId?: string;
+  deviceName?: string;
   canonicalName?: string; // Unique per tenant/site/area/asset
   displayName?: string;
   sourceSystem?: string;
   sourceAddress?: string; // Required for physical protocols
   protocol?: IndustrialProtocol;
   dataType?: TagDataType;
+  signedness?: TagSignedness;
+  endianness?: TagEndianness;
   unit?: string;
   scale?: number;
   offset?: number;
   readable?: boolean;
   writable?: boolean; // Must be false by default
+  samplingMode?: TagSamplingMode;
   samplingIntervalMs?: number;
   deadband?: number;
+  staleTimeoutMs?: number;
   engineeringRange?: EngineeringRange; // Optional for non-numeric types
   qualityRules?: TagQualityRules;
   historianEnabled?: boolean;
+  dashboardEnabled?: boolean;
+  aiEnabled?: boolean;
   analyticsEnabled?: boolean;
   prometheusEnabled?: boolean;
   criticality?: CriticalityLevel;

@@ -414,7 +414,7 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
   };
 
   return (
-    <div className={`fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 backdrop-blur-md overflow-y-auto font-sans ${isFullscreen ? "p-0" : "p-3 sm:p-4"}`}>
+    <div className={`fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 backdrop-blur-md overflow-y-auto font-sans ${isFullscreen ? "p-0" : "p-3 sm:p-4"} ${theme === "dark" ? "dark" : ""}`}>
       <div className={`relative w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 shadow-2xl overflow-hidden font-mono text-xs duration-150 text-slate-900 dark:text-slate-100 flex flex-col ${
         isFullscreen
           ? "fixed inset-0 z-[130] w-screen h-screen max-w-none max-h-none rounded-none border-0 m-0"

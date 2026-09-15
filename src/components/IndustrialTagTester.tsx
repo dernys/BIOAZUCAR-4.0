@@ -171,7 +171,7 @@ export const IndustrialTagTester: React.FC<IndustrialTagTesterProps> = ({
   });
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
+    <div className={`flex flex-col h-full bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm ${theme === "dark" ? "dark" : ""}`}>
       {/* Top Banner Header */}
       <div className="bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
         <div className="flex items-center gap-2">

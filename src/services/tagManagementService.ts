@@ -878,6 +878,100 @@ export class TagManagementService {
     return true;
   }
 
+  public async duplicateTag(
+    tagId: string,
+    user: { role: UserRole; name: string }
+  ): Promise<IndustrialTagDefinition | null> {
+    const existing = this.memoryTags.get(tagId);
+    if (!existing) return null;
+
+    const copyData: Omit<IndustrialTagDefinition, "id" | "createdAt"> = {
+      ...existing,
+      name: `${existing.name || "Tag"} (Copia)`,
+      displayName: `${existing.displayName || existing.name || "Tag"} (Copia)`,
+      canonicalName: existing.canonicalName ? `${existing.canonicalName}_COPY` : undefined,
+      address: existing.address ? `${existing.address}_COPY` : undefined,
+      sourceAddress: existing.sourceAddress ? `${existing.sourceAddress}_COPY` : undefined,
+    };
+
+    return this.createTag(copyData, user);
+  }
+
+  public async bulkUpdateTags(
+    tagIds: string[],
+    updates: Partial<IndustrialTagDefinition>,
+    user: { role: UserRole; name: string }
+  ): Promise<number> {
+    let count = 0;
+    for (const id of tagIds) {
+      const updated = await this.updateTag(id, updates, user);
+      if (updated) count++;
+    }
+    return count;
+  }
+
+  public async bulkDeleteTags(
+    tagIds: string[],
+    user: { role: UserRole; name: string }
+  ): Promise<number> {
+    let count = 0;
+    for (const id of tagIds) {
+      const deleted = await this.deleteTag(id, user);
+      if (deleted) count++;
+    }
+    return count;
+  }
+
+  public async importTags(
+    tags: Partial<IndustrialTagDefinition>[],
+    tenantId: string,
+    user: { role: UserRole; name: string }
+  ): Promise<IndustrialTagDefinition[]> {
+    const createdList: IndustrialTagDefinition[] = [];
+    for (const item of tags) {
+      if (!item.name && !item.canonicalName) continue;
+      const created = await this.createTag(
+        {
+          name: item.name || item.canonicalName || "Imported_Tag",
+          canonicalName: item.canonicalName || item.name,
+          displayName: item.displayName || item.name,
+          address: item.address || item.sourceAddress || "ns=2;s=Device.Var",
+          sourceAddress: item.sourceAddress || item.address || "ns=2;s=Device.Var",
+          protocol: item.protocol || "OPC_UA",
+          dataType: item.dataType || "FLOAT",
+          unit: item.unit || "",
+          scale: item.scale ?? 1,
+          offset: item.offset ?? 0,
+          engMin: item.engMin ?? 0,
+          engMax: item.engMax ?? 100,
+          accessMode: item.accessMode || "READ",
+          readable: true,
+          writable: item.accessMode === "READ_WRITE" || Boolean(item.writable),
+          historianEnabled: item.historianEnabled ?? true,
+          dashboardEnabled: item.dashboardEnabled ?? true,
+          aiEnabled: item.aiEnabled ?? true,
+          samplingMode: item.samplingMode || "SUBSCRIPTION",
+          samplingIntervalMs: item.samplingIntervalMs || 1000,
+          deadband: item.deadband ?? 0.1,
+          staleTimeoutMs: item.staleTimeoutMs ?? 5000,
+          status: "ACTIVE",
+          tenantId: tenantId || item.tenantId || "TENANT_AZUCAR_01",
+          siteId: item.siteId || "SITE_CENTRAL_01",
+          area: item.area || "MOLIENDA",
+          areaId: item.areaId || "AREA_MOLIENDA",
+          assetId: item.assetId || "eq-molino-1",
+          deviceId: item.deviceId,
+          deviceName: item.deviceName,
+          source: item.source || "SIMULATION",
+          ...item,
+        } as any,
+        user
+      );
+      createdList.push(created);
+    }
+    return createdList;
+  }
+
   /**
    * Industrial Tag Tester: READ or WRITE with full IEC 62443 authorization check and audit trail.
    */

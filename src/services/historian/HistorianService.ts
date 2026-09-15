@@ -3,6 +3,8 @@ import { db } from "../firebase";
 import { HistorianRecord } from "../runtime/types";
 import { tenantRuntimeManager } from "../runtime/TenantRuntimeManager";
 import { industrialTsdbEngine, LttbPoint, TsdbBucketAggregation } from "./IndustrialTsdbEngine";
+import { industrialDataQualityGate, SampleQualityAuditResult } from "../dataProviders/IndustrialDataQualityGate";
+import { IndustrialTagSample, IndustrialTagDefinition } from "../../types";
 
 export class HistorianService {
   private static instance: HistorianService;
@@ -14,6 +16,40 @@ export class HistorianService {
       HistorianService.instance = new HistorianService();
     }
     return HistorianService.instance;
+  }
+
+  /**
+   * Pipeline enforcement:
+   * TAG -> SAMPLE -> QUALITY GATE -> HISTORIAN -> LIVE
+   * Never convert SIMULATED into LIVE_OT. Reject invalid or out-of-range samples.
+   */
+  public async ingestValidatedTagSample(
+    sample: IndustrialTagSample,
+    tagDef?: IndustrialTagDefinition
+  ): Promise<SampleQualityAuditResult> {
+    const audit = industrialDataQualityGate.evaluateSample(sample, {
+      tagDefinition: tagDef,
+    });
+
+    if (audit.isValid) {
+      const record: HistorianRecord = {
+        tenantId: sample.tenantId,
+        tag: sample.canonicalName || sample.tagId,
+        value: typeof sample.value === "number" ? sample.value : parseFloat(String(sample.value)) || 0,
+        quality: audit.quality === "GOOD" ? "GOOD" : audit.quality === "UNCERTAIN" ? "UNCERTAIN" : "BAD",
+        timestamp: sample.sourceTimestamp || sample.ingestionTimestamp || new Date().toISOString(),
+        isSimulated: sample.origin === "SIMULATED",
+        source: sample.origin === "LIVE_OT" ? "LIVE_OT" : "SIMULATION",
+        provenance: sample.origin === "LIVE_OT" ? "OBSERVED_OT" : "SIMULATED_PROCESS_MODEL",
+        scenario: "NORMAL",
+        sequence: Date.now(),
+        unit: tagDef?.unit || "",
+      };
+
+      await this.recordPoint(record);
+    }
+
+    return audit;
   }
 
   /**
