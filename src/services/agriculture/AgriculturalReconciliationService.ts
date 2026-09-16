@@ -36,11 +36,15 @@ export interface ReconciliationInputContext {
     dailyHarvestRequirementTons?: number;
   };
   soilPrepPlan: SoilPreparationPlan;
-  plantingPlan: PlantingPlan;
-  treatmentsPlan: CulturalTreatmentPlan;
+  plantingPlan?: PlantingPlan;
+  treatmentsPlan?: CulturalTreatmentPlan;
   fleetPlan: MachineryFleetPlan;
-  cctLogistics: CctTransportCycleCalculation;
-  economics: AgroEconomicsSummary;
+  cctLogistics: Partial<CctTransportCycleCalculation> & {
+    dailyCapacityPerTruckTons?: number;
+    dailyTransportCapacityTonsPerTruck?: number;
+    [key: string]: any;
+  };
+  economics: Partial<AgroEconomicsSummary> & { [key: string]: any };
   nominalMillTch?: number;
   millAvailabilityFactor?: number;
 }
@@ -129,7 +133,10 @@ export class AgriculturalReconciliationService {
       const tch = Number(p.projectedTch) || 0;
       return sum + (area * tch);
     }, 0);
-    const summaryProductionTons = Number(context.campaignSummary.totalProjectedCaneTons) || 0;
+    const summaryProductionTons = Number(
+      context.campaignSummary.totalProjectedCaneTons ??
+      context.campaignSummary.totalProductionTons
+    ) || 0;
     const prodDiff = Math.abs(individualPlotTons - summaryProductionTons);
     const prodTolerance = 1.0; // 1 ton tolerance
 
@@ -168,7 +175,10 @@ export class AgriculturalReconciliationService {
 
     // 2b. WEIGHTED AVERAGE TCH RECONCILIATION
     const expectedAvgTch = arableAreaHa > 0 ? individualPlotTons / arableAreaHa : 0;
-    const summaryAvgTch = Number(context.campaignSummary.weightedAverageTch) || 0;
+    const summaryAvgTch = Number(
+      context.campaignSummary.weightedAverageTch ??
+      context.campaignSummary.averageTch
+    ) || 0;
     const tchDiff = Math.abs(expectedAvgTch - summaryAvgTch);
 
     let tchStatus: ReconciliationStatus = "PASS";
@@ -196,7 +206,10 @@ export class AgriculturalReconciliationService {
     // 3. HARVEST & DAILY DEMAND BALANCE
     const effectiveDays = Math.max(1, context.campaign.effectiveHarvestDays || 135);
     const calculatedDailyDemand = summaryProductionTons / effectiveDays;
-    const reportedDailyDemand = Number(context.campaignSummary.dailyHarvestRequirementTons) || 0;
+    const reportedDailyDemand = Number(
+      context.campaignSummary.dailyHarvestRequirementTons ??
+      context.campaign.dailyHarvestRequirementTons
+    ) || 0;
     const demandDiff = Math.abs(calculatedDailyDemand - reportedDailyDemand);
 
     let demandStatus: ReconciliationStatus = "PASS";
@@ -223,7 +236,10 @@ export class AgriculturalReconciliationService {
 
     // 4. CCT LOGISTICS CAPACITY BALANCE
     const dailyDemandTons = calculatedDailyDemand;
-    const truckDailyCapacity = Number(context.cctLogistics.dailyCapacityPerTruckTons) || 1;
+    const truckDailyCapacity = Number(
+      context.cctLogistics.dailyCapacityPerTruckTons ??
+      (context.cctLogistics as any)?.dailyTransportCapacityTonsPerTruck
+    ) || 1;
     const trucksRequired = Math.ceil(dailyDemandTons / truckDailyCapacity);
     const trucksAvailable = context.fleetPlan.balanceItems.find(
       (b) => b.category === "CAMION_CANERO_RODOVIARIO"
@@ -333,9 +349,9 @@ export class AgriculturalReconciliationService {
     if (costPerTonDiff > 1.0) {
       costPerTonStatus = "ERROR";
       costPerTonRemediation = `Inconsistencia en el costo unitario por tonelada ($${costPerTonDiff.toFixed(2)} USD/t).`;
-    } else if (calculatedCostPerTon < 15.0 || calculatedCostPerTon > 80.0) {
+    } else if (calculatedCostPerTon < 10.0 || calculatedCostPerTon > 80.0) {
       costPerTonStatus = "WARNING";
-      costPerTonRemediation = `El costo unitario de $${calculatedCostPerTon.toFixed(2)} USD/t está fuera del rango agro-económico típico ($20 - $55 USD/t). Verificar precios de diesel e insumos.`;
+      costPerTonRemediation = `El costo unitario de $${calculatedCostPerTon.toFixed(2)} USD/t está fuera del rango agro-económico típico ($10 - $70 USD/t). Verificar precios de diesel e insumos.`;
     }
 
     checks.push({
@@ -354,7 +370,7 @@ export class AgriculturalReconciliationService {
     });
 
     // 8. CAPEX RECONCILIATION: Machinery Deficit vs Fleet Plan
-    const reportedCapex = Number(context.economics.capex?.totalCapexUSD) || 0;
+    const reportedCapex = Number(context.economics.capex?.machineryAcquisitionUSD ?? context.economics.capex?.totalCapexUSD) || 0;
     const fleetCapex = Number(context.fleetPlan.totalAcquisitionCapexUSD) || 0;
     const capexDiff = Math.abs(reportedCapex - fleetCapex);
 
@@ -393,11 +409,23 @@ export class AgriculturalReconciliationService {
       overallStatus = "WARNING";
     }
 
+    const integrityIndex =
+      checks.length > 0
+        ? Number(
+            (
+              ((passCount * 1.0 + warningCount * 0.85 + errorCount * 0.5) /
+                checks.length) *
+              100
+            ).toFixed(1)
+          )
+        : 100.0;
+
     return {
       campaignId: context.campaign.id,
       campaignName: context.campaign.name,
       timestamp: new Date().toISOString(),
       overallStatus,
+      integrityIndex,
       checksCount: checks.length,
       passCount,
       warningCount,

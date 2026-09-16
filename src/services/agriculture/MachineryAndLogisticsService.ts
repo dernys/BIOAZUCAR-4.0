@@ -345,4 +345,74 @@ export class MachineryAndLogisticsService {
       totalDailyTransportCostUSD,
     };
   }
+
+  /**
+   * Calculates CCT Transport Cycle with minute-level parameters as required by the E2E suite and UI.
+   */
+  public static calculateCctTransportCycle(params: {
+    campaignId?: string;
+    averageHaulDistanceKm: number;
+    averageLoadedSpeedKmH?: number;
+    averageEmptySpeedKmH?: number;
+    fieldLoadingTimeMinutes?: number;
+    millUnloadingTimeMinutes?: number;
+    fieldWaitTimeMinutes?: number;
+    millQueueTimeMinutes?: number;
+    truckPayloadTons?: number;
+    operatingHoursPerDay?: number;
+    trafficCongestionFactor?: number;
+    dailyMillCrushCapacityTons: number;
+    availableTrucks?: number;
+  }): any {
+    const haulDist = params.averageHaulDistanceKm;
+    const roundTripDist = haulDist * 2.0;
+    const speedLoaded = params.averageLoadedSpeedKmH ?? 35.0;
+    const speedEmpty = params.averageEmptySpeedKmH ?? 45.0;
+    const congestion = params.trafficCongestionFactor ?? 1.0;
+
+    const transitLoadedMin = ((haulDist / speedLoaded) * 60.0) * congestion;
+    const transitEmptyMin = ((haulDist / speedEmpty) * 60.0) * congestion;
+
+    const loadMin = params.fieldLoadingTimeMinutes ?? 25.0;
+    const unloadMin = params.millUnloadingTimeMinutes ?? 20.0;
+    const waitFieldMin = params.fieldWaitTimeMinutes ?? 15.0;
+    const queueMillMin = params.millQueueTimeMinutes ?? 15.0;
+
+    const roundTripCycleTimeMinutes = Number(
+      (transitLoadedMin + transitEmptyMin + loadMin + unloadMin + waitFieldMin + queueMillMin).toFixed(1)
+    );
+    const roundTripCycleTimeHours = roundTripCycleTimeMinutes / 60.0;
+
+    const operatingHours = params.operatingHoursPerDay ?? 18.0;
+    const tripsPerTruckPerDay = Number((operatingHours / roundTripCycleTimeHours).toFixed(2));
+    const payload = params.truckPayloadTons ?? 28.0;
+
+    const dailyCapacityPerTruckTons = Number((tripsPerTruckPerDay * payload).toFixed(2));
+    const trucksRequiredCount =
+      dailyCapacityPerTruckTons > 0
+        ? Math.max(1, Math.ceil(params.dailyMillCrushCapacityTons / dailyCapacityPerTruckTons))
+        : 2;
+
+    const baseCycle = this.calculateTransportCycle({
+      roundTripDistanceKm: roundTripDist,
+      dailyHarvestDemandTons: params.dailyMillCrushCapacityTons,
+      averageSpeedEmptyKmH: speedEmpty,
+      averageSpeedLoadedKmH: speedLoaded,
+      loadingInFieldTimeHours: loadMin / 60.0,
+      unloadingAtMillTimeHours: unloadMin / 60.0,
+      fieldQueueTimeHours: waitFieldMin / 60.0,
+      millWeighbridgeQueueTimeHours: queueMillMin / 60.0,
+      payloadTonsPerTruck: payload,
+      availableTrucks: params.availableTrucks,
+    });
+
+    return {
+      ...baseCycle,
+      roundTripCycleTimeMinutes,
+      trucksRequiredCount,
+      operatingHoursPerDay: operatingHours,
+      tripsPerTruckPerDay,
+      truckPayloadTons: payload,
+    };
+  }
 }

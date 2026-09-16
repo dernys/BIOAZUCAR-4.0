@@ -476,6 +476,27 @@ export class CopilotIntentClassifier {
       };
     }
 
+    // FORMULA GOVERNANCE & PDA TRACEABILITY
+    const isFormulaGovernanceQuery =
+      clean.includes("registro de formulas") ||
+      clean.includes("formulas pda") ||
+      clean.includes("trazabilidad de calculo") ||
+      clean.includes("gobernanza de formulas") ||
+      clean.includes("traza de calculo") ||
+      clean.includes("trazas de calculo") ||
+      clean.includes("formula registry") ||
+      clean.includes("auditoria de formulas");
+
+    if (isFormulaGovernanceQuery) {
+      return {
+        intent: "FORMULA_GOVERNANCE",
+        confidence: 0.99,
+        reason: "Consulta sobre registro canónico de fórmulas PDA, trazabilidad y linaje determinístico",
+        targetModule: "agricultural_pda",
+        recommendedTool: "get_formula_registry_audit",
+      };
+    }
+
     // 2. PLAN VS REAL
     const isPlanVsRealQuery =
       clean.includes("plan vs real") ||
@@ -542,12 +563,14 @@ export class CopilotIntentClassifier {
 
     // 5. TCH CALCULATION & YIELD
     const isTchQuery =
-      clean.includes("tch") ||
+      !clean.includes("setpoint") &&
+      !clean.includes("consigna") &&
+      (clean.includes("tch") ||
       clean.includes("rendimiento agricola") ||
       clean.includes("toneladas por hectarea") ||
       clean.includes("decaimiento varietal") ||
       clean.includes("estimacion de rendimiento") ||
-      clean.includes("curva de decaimiento");
+      clean.includes("curva de decaimiento"));
 
     if (isTchQuery) {
       return {

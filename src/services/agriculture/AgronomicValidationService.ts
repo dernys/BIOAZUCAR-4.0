@@ -1088,7 +1088,7 @@ export class AgronomicValidationService {
       return { allowed: true };
     }
 
-    const validTransitions: Record<FieldPlotStatus, FieldPlotStatus[]> = {
+    const validTransitions: Partial<Record<FieldPlotStatus, FieldPlotStatus[]>> = {
       REGISTERED: ["VALIDATED", "EN_PREPARACION", "PREPARACION_SUELO", "PLANTADO", "PLANIFICADO"],
       VALIDATED: ["PLANNED", "PLANIFICADO", "EN_PREPARACION", "PREPARACION_SUELO", "PLANTADO", "REGISTERED", "VEGETACION"],
       PLANNED: ["READY_FOR_HARVEST", "EN_PREPARACION", "PREPARACION_SUELO", "VALIDATED", "VEGETACION", "MADURACION", "EN_CORTE"],

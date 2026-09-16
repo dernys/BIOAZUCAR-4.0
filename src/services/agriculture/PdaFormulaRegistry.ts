@@ -466,6 +466,9 @@ const FORMULA_ALIASES: Record<string, string> = {
   FORMULA_OPEX_CONSOLIDATION: "OPEX_TOTAL_V1",
   FORMULA_COST_PER_TON: "OPEX_POR_TONELADA_V1",
   FORMULA_OPEX_PER_TON: "OPEX_POR_TONELADA_V1",
+  COSTO_OPEX_UNITARIO_V1: "OPEX_POR_TONELADA_V1",
+  DEMANDA_DIARIA_MOLIENDA_V1: "DEMANDA_DIARIA_V1",
+  CAMIONES_CCT_V1: "FLOTA_CAMIONES_V1",
   FORMULA_BIOAZUCAR_NDVI_TCH: "BIOAZUCAR_NDVI_TCH_V1",
   FORMULA_BIOAZUCAR_DYNAMIC_DISPATCH: "BIOAZUCAR_DYNAMIC_DISPATCH_V1",
 };
@@ -656,6 +659,7 @@ export class PdaFormulaRegistry {
           break;
         }
 
+        case "DEMANDA_DIARIA_V1":
         case "DEMANDA_DIARIA_MOLIENDA_V1": {
           const totalTons = inputs["TotalProductionTons"] ?? 0;
           const days = inputs["EffectiveHarvestDays"] ?? 0;
@@ -688,6 +692,7 @@ export class PdaFormulaRegistry {
           break;
         }
 
+        case "FLOTA_CAMIONES_V1":
         case "CAMIONES_CCT_V1": {
           const dailyTons = inputs["DailyHarvestTons"] ?? 0;
           const payload = inputs["TruckPayloadTons"] ?? 28;
@@ -714,6 +719,7 @@ export class PdaFormulaRegistry {
           break;
         }
 
+        case "OPEX_POR_TONELADA_V1":
         case "COSTO_OPEX_UNITARIO_V1": {
           const opex = inputs["TotalOpexUSD"] ?? 0;
           const tons = inputs["TotalCaneTons"] ?? 0;
@@ -797,7 +803,7 @@ export class PdaFormulaRegistry {
    */
   public static createCalculationTrace(params: {
     formulaId: string;
-    inputs: Record<string, { value: number | string | boolean; unit: string; description?: string; parameterKey?: string }>;
+    inputs: Record<string, { value: number | string | boolean; unit: string; description?: string; parameterKey?: string; source?: string }>;
     result: { value: number | string; unit: string };
     modelType?: AgroModelType;
     scenario?: string;
@@ -813,7 +819,10 @@ export class PdaFormulaRegistry {
         ? "WHAT_IF_SCENARIO"
         : "PDA_VALIDATED");
 
+    const traceId = `TRACE-${formula?.formulaId || params.formulaId}-${Date.now()}`;
+
     return {
+      traceId,
       formulaId: formula?.formulaId || params.formulaId,
       formulaName: formula?.name || params.formulaId,
       formulaExpression: formula?.expression || "Cálculo interno determinístico",
@@ -822,7 +831,11 @@ export class PdaFormulaRegistry {
       campaignId: params.campaignId || "ZAFRA-2026-2027",
       scenario: params.scenario || "Línea Base Canónica",
       user: params.user || "agronomo_bioazucar",
+      calculatedBy: params.user || "agronomo_bioazucar",
       calculatedAt: new Date().toISOString(),
+      dataClassification: "CALCULATED",
+      dataOrigin: "PDA_FORMULA_REGISTRY",
+      dataQuality: "VALIDATED",
       inputs: params.inputs,
       result: params.result,
       provenance: {

@@ -102,11 +102,11 @@ export class AgriculturalPlanVsRealService {
     const plantAreaDev = plantRealArea - plantPlannedArea;
     const plantAreaDevPct = plantPlannedArea > 0 ? (plantAreaDev / plantPlannedArea) * 100 : 0;
 
-    const plantPlannedHours = params.plantingPlan.requiredMachineHours;
+    const plantPlannedHours = params.plantingPlan.requiredMachineHours ?? (plantPlannedArea * 4.5);
     const plantRealHours = Number((plantPlannedHours * (plantRealArea / Math.max(1, plantPlannedArea)) * 1.02).toFixed(1));
     const plantHoursDev = plantRealHours - plantPlannedHours;
 
-    const plantPlannedDiesel = params.plantingPlan.requiredDieselLiters;
+    const plantPlannedDiesel = params.plantingPlan.requiredDieselLiters ?? (plantPlannedArea * 35.0);
     const plantRealDiesel = Number((plantPlannedDiesel * (plantRealArea / Math.max(1, plantPlannedArea))).toFixed(1));
     const plantDieselDev = plantRealDiesel - plantPlannedDiesel;
 
@@ -145,16 +145,16 @@ export class AgriculturalPlanVsRealService {
     });
 
     // 3. Labor: Tratos Culturales (Desmalezado y Fertilización de Socas)
-    const treatPlannedArea = params.treatmentsPlan.ratoonCaneAreaHa + params.treatmentsPlan.plantCaneAreaHa;
+    const treatPlannedArea = (params.treatmentsPlan.ratoonCaneAreaHa ?? 0) + (params.treatmentsPlan.plantCaneAreaHa ?? 0) || (params.treatmentsPlan.totalTreatedAreaHa ?? 0);
     const treatRealArea = Number((treatPlannedArea * 0.95).toFixed(2));
     const treatAreaDev = treatRealArea - treatPlannedArea;
     const treatAreaDevPct = treatPlannedArea > 0 ? (treatAreaDev / treatPlannedArea) * 100 : 0;
 
-    const treatPlannedHours = params.treatmentsPlan.totalMachineHours;
+    const treatPlannedHours = params.treatmentsPlan.totalMachineHours ?? (treatPlannedArea * 1.5);
     const treatRealHours = Number((treatPlannedHours * 0.96).toFixed(1));
     const treatHoursDev = treatRealHours - treatPlannedHours;
 
-    const treatPlannedDiesel = params.treatmentsPlan.totalDieselLiters;
+    const treatPlannedDiesel = params.treatmentsPlan.totalDieselLiters ?? (treatPlannedArea * 12.0);
     const treatRealDiesel = Number((treatPlannedDiesel * 0.96).toFixed(1));
     const treatDieselDev = treatRealDiesel - treatPlannedDiesel;
 

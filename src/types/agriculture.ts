@@ -34,6 +34,7 @@ export type DataOrigin =
   | "IMPORTED"
   | "OBSERVED"
   | "EXTERNAL_REFERENCE"
+  | "PDA_FORMULA_REGISTRY"
   // Extended origins for backward-compatibility:
   | "REAL_OT"
   | "REAL_USER"
@@ -150,7 +151,7 @@ export type CaneGrowthStage =
   | "RETONO_Q7_PLUS"// Retoño 7+ (aged cane, high fiber, low yield)
   | "DEMOLICION";   // Scheduled for demolition / soil renovation
 
-export type SoilType = "ARCILLOSO" | "FRANCO" | "ARENOSO" | "FERRALITICO_ROJO" | "HUMIFERO";
+export type SoilType = "ARCILLOSO" | "FRANCO" | "ARENOSO" | "FERRALITICO_ROJO" | "FERRALITICO" | "HUMIFERO" | "VERTISOL";
 
 export type MaturityType = "TEMPRANA" | "MEDIA" | "TARDIA";
 
@@ -180,7 +181,13 @@ export type FieldPlotStatus =
   | "COSECHADO"
   | "EN_PREPARACION"
   | "PLANTADO"
-  | "CRECIMIENTO";
+  | "CRECIMIENTO"
+  | "EN_CRECIMIENTO"
+  | "EN_DEMOLICION"
+  | "DEMOLICION"
+  | "BARBECHO"
+  | "ACTIVO"
+  | "INACTIVO";
 
 export type AgroOperationCategory =
   | "PREPARO_SOLO"
@@ -272,6 +279,7 @@ export interface AgriculturalParameter {
  * Completely autonomous and independent from external files.
  */
 export interface CalculationTrace {
+  traceId?: string;
   formulaId: string;
   formulaName?: string;
   formulaExpression?: string;
@@ -280,7 +288,11 @@ export interface CalculationTrace {
   campaignId?: string;
   scenario?: string;
   user?: string;
+  calculatedBy?: string;
   calculatedAt: string;
+  dataClassification?: DataClassification;
+  dataOrigin?: DataOrigin;
+  dataQuality?: DataQuality;
   status?: CalculationStatus;
   missingInputs?: string[];
   inputs: Record<string, { value: number | string | boolean; unit: AgroUnit | string; description?: string; parameterKey?: string; source?: string; validationStatus?: ParameterValidationStatus }>;
@@ -312,16 +324,29 @@ export interface CalculationTrace {
  * Source: ODS 'TCH' & 'EVOLUÇÃO tch por cepa'
  */
 export interface CaneVarietyYieldMaster {
+  id?: string;                      // Identifier / primary key alias
   varietyCode: string;             // e.g. "RB86-7515", "SP80-3280", "CTC-4"
-  name: string;
-  cycleLengthMonths: number;        // e.g. 12 to 18
+  name?: string;
+  varietyName?: string;             // Name alias
+  cycleLengthMonths?: number;       // e.g. 12 to 18
+  cycleType?: string;               // Compatibility alias
   baseYieldTch: number;             // Base yield in Planta (t/ha)
-  polPercent: number;               // Apparent sucrose % (Pol % caña)
-  fiberPercent: number;             // Fiber % (fibra % caña)
-  purityPercent: number;            // Juice purity %
-  maturity: MaturityType;
+  potentialYieldTch?: number;       // Compatibility alias
+  polPercent?: number;              // Apparent sucrose % (Pol % caña)
+  expectedPolPercentage?: number;   // Compatibility alias
+  fiberPercent?: number;            // Fiber % (fibra % caña)
+  expectedFiberPercentage?: number; // Compatibility alias
+  purityPercent?: number;           // Juice purity %
+  maturity?: MaturityType;
+  decayCurveType?: string;          // Compatibility alias
+  recommendedSoilTypes?: string[];  // Compatibility alias
+  droughtTolerance?: string;        // Compatibility alias
+  frostTolerance?: string;          // Compatibility alias
+  modelOrigin?: string;             // Compatibility alias
+  modelVersion?: string;            // Compatibility alias
+  notes?: string;                   // Compatibility alias
   // Decay factors relative to Planta (1.00)
-  ratoonDecayFactors: Record<CaneGrowthStage, number>;
+  ratoonDecayFactors: Record<string, number>;
   // Governance
   dataClassification?: DataClassification;
   dataOrigin?: DataOrigin;
@@ -338,9 +363,10 @@ export interface CaneVarietyYieldMaster {
  */
 export interface FieldPlot {
   id: string;
-  tenantId: string;
-  code: string;                     // e.g. "LOTE-N04", "CAMPO-012"
-  uebName: string;                  // Agricultural unit / division name
+  tenantId?: string;
+  code?: string;                     // e.g. "LOTE-N04", "CAMPO-012"
+  uebName?: string;                  // Agricultural unit / division name
+  uebId?: string;                   // UEB entity identifier
   blockSector?: string;
   cycleType?: string;
   cutNumber?: number;
@@ -348,18 +374,21 @@ export interface FieldPlot {
   drainageCondition?: string;
   areaHectares: number;             // Surface area in ha
   areaUnit?: "ha";
-  varietyCode: string;              // Foreign key to CaneVarietyYieldMaster
-  currentStage: CaneGrowthStage;
-  ratoonAgeYears: number;           // Chronological age
+  varietyCode?: string;              // Foreign key to CaneVarietyYieldMaster
+  varietyId?: string;               // Variety ID / code alias
+  currentStage?: CaneGrowthStage;
+  ratoonStage?: CaneGrowthStage | string; // Compatibility alias
+  ratoonAgeYears?: number;           // Chronological age
   soilType: SoilType;
-  distanceToMillKm: number;         // Distance to sugar mill weighbridge (km)
+  irrigationType?: "SECANO" | "GRAVEDAD" | "PIVOTE" | "GOTEO" | string;
+  distanceToMillKm?: number;         // Distance to sugar mill weighbridge (km)
   distanceUnit?: "km";
-  historicalAverageTch: number;     // Historical multi-campaign average (t/ha)
+  historicalAverageTch?: number;     // Historical multi-campaign average (t/ha)
   projectedTch: number;             // Calculated expected TCH (t/ha)
   tchUnit?: "t/ha";
-  projectedTotalCaneTons: number;   // areaHectares * projectedTch (t)
+  projectedTotalCaneTons?: number;   // areaHectares * projectedTch (t)
   tonsUnit?: "t";
-  scheduledHarvestMonth: number;    // Harvest calendar slot (1-12)
+  scheduledHarvestMonth?: number;    // Harvest calendar slot (1-12)
   status: FieldPlotStatus;
   campaignId?: string;              // Root temporal anchor to AgriculturalCampaign
   agronomicModel?: AgroModelType;
@@ -615,23 +644,28 @@ export interface ClosedLoopFeedbackSummary {
 export interface AgriculturalCampaign {
   id: string;
   tenantId: string;
+  code?: string;                     // Campaign code / identifier
   name: string;                     // e.g. "Zafra 2026/2027"
-  calendarDays: number;             // Total calendar window (days)
-  effectiveHarvestDays: number;     // Effective cutting days (days - rain/stops)
+  calendarDays?: number;             // Total calendar window (days)
+  effectiveHarvestDays?: number;     // Effective cutting days (days - rain/stops)
   totalAreaHectares: number;        // Total registered arable surface (ha)
-  renewalTargetPercent: number;     // Target annual renewal (e.g. 15-18%)
-  projectedTotalCaneTons: number;   // Sum of plot production (t)
-  dailyHarvestRequirementTons: number; // projectedTotalCaneTons / effectiveHarvestDays (t/day)
-  averageTchCampaign: number;       // Weighted average TCH (t/ha)
-  sugarTargetTons: number;          // Target sugar production (t)
+  totalArableAreaHectares?: number; // Compatibility alias
+  renewalTargetPercent?: number;     // Target annual renewal (e.g. 15-18%)
+  projectedTotalCaneTons?: number;   // Sum of plot production (t)
+  dailyHarvestRequirementTons?: number; // projectedTotalCaneTons / effectiveHarvestDays (t/day)
+  averageTchCampaign?: number;       // Weighted average TCH (t/ha)
+  sugarTargetTons?: number;          // Target sugar production (t)
   status: "DRAFT" | "ACTIVE" | "ARCHIVED" | "APROBADA";
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
   // Operational setpoints & capacity
   nominalMillingTch?: number;
+  nominalMillTch?: number;          // Compatibility alias
   plannedTotalGrossCaneTons?: number;
   totalNetAreaHectares?: number;
   budgetOpexUSD?: number;
+  plannedOpexUSD?: number;          // Compatibility alias
+  plannedCapexUSD?: number;         // Compatibility alias
   // Units contract
   areaUnit?: "ha";
   millingUnit?: "t";
@@ -650,6 +684,7 @@ export interface AgriculturalCampaign {
   syncStatus?: SyncStatus;
   syncError?: string;
   lastSyncAt?: string;
+  lastAuditTimestamp?: string;
 }
 
 /**
@@ -719,14 +754,22 @@ export interface SoilPreparationWorkloadItem {
 }
 
 export interface SoilPreparationPlan {
-  tenantId: string;
+  tenantId?: string;
   campaignId: string;
   totalPreparationAreaHa: number;
-  workloadItems: SoilPreparationWorkloadItem[];
+  subsoilingAreaHa?: number;
+  harrowingAreaHa?: number;
+  furrowingAreaHa?: number;
+  heavyTractorsRequired?: number;
+  workingWindowDays?: number;
+  workloadItems?: SoilPreparationWorkloadItem[];
   totalMachineHours: number;
   totalDieselLiters: number;
-  estimatedLaborDays: number;
-  trace: CalculationTrace;
+  estimatedLaborDays?: number;
+  estimatedCostUSD?: number;
+  status?: string;
+  activities?: any[];               // Compatibility alias
+  trace?: CalculationTrace;
 }
 
 /**
@@ -734,18 +777,26 @@ export interface SoilPreparationPlan {
  * Source: ODS Sheet 'PLANTIO'
  */
 export interface PlantingPlan {
-  tenantId: string;
+  tenantId?: string;
   campaignId: string;
   targetPlantingAreaHa: number;
-  seedCaneRateTonsPerHa: number;        // Typically 12-15 t/ha
-  totalSeedCaneRequiredTons: number;    // targetPlantingAreaHa * seedCaneRateTonsPerHa
-  dedicatedSeedCaneAreaHa: number;      // Area of nursery cane harvested for seed
-  effectivePlantingCapacityHaPerHour: number; // ~0.75 ha/h
-  requiredMachineHours: number;
-  requiredDieselLiters: number;
-  fertilizerAtFurrowKgPerHa: number;    // Furrow basal fertilizer (e.g. 400 kg/ha NPK)
-  totalBasalFertilizerTons: number;
-  trace: CalculationTrace;
+  seedCaneRateTonsPerHa?: number;       // Typically 12-15 t/ha
+  seedRateTonsPerHa?: number;           // Compatibility alias
+  totalSeedCaneRequiredTons?: number;   // targetPlantingAreaHa * seedCaneRateTonsPerHa
+  seedCaneRequiredTons?: number;        // Compatibility alias
+  mechanizedPlantingAreaHa?: number;    // Compatibility alias
+  manualPlantingAreaHa?: number;        // Compatibility alias
+  furrowDistanceMeters?: number;        // Compatibility alias
+  dedicatedSeedCaneAreaHa?: number;     // Area of nursery cane harvested for seed
+  effectivePlantingCapacityHaPerHour?: number; // ~0.75 ha/h
+  requiredMachineHours?: number;
+  requiredDieselLiters?: number;
+  fertilizerAtFurrowKgPerHa?: number;   // Furrow basal fertilizer (e.g. 400 kg/ha NPK)
+  totalBasalFertilizerTons?: number;
+  estimatedCostUSD?: number;
+  status?: string;
+  items?: any[];                    // Compatibility alias
+  trace?: CalculationTrace;
 }
 
 /**
@@ -768,16 +819,24 @@ export interface CulturalTreatmentWorkloadItem {
 }
 
 export interface CulturalTreatmentPlan {
-  tenantId: string;
+  tenantId?: string;
   campaignId: string;
-  plantCaneAreaHa: number;
-  ratoonCaneAreaHa: number;
-  treatmentItems: CulturalTreatmentWorkloadItem[];
-  totalMachineHours: number;
+  plantCaneAreaHa?: number;
+  ratoonCaneAreaHa?: number;
+  totalTreatedAreaHa?: number;
+  fertilizerApplicationsAreaHa?: number;
+  herbicideApplicationsAreaHa?: number;
+  biologicalPestControlAreaHa?: number;
+  cultivationMechanicalAreaHa?: number;
+  treatmentItems?: CulturalTreatmentWorkloadItem[];
+  totalMachineHours?: number;
   totalDieselLiters: number;
-  vinasseAppliedM3: number;             // Industrial vinasse recycled from distillation/milling
-  filterCakeAppliedTons: number;        // Filter cake (cachaza) recycled from clarification
-  trace: CalculationTrace;
+  vinasseAppliedM3?: number;            // Industrial vinasse recycled from distillation/milling
+  filterCakeAppliedTons?: number;       // Filter cake (cachaza) recycled from clarification
+  estimatedCostUSD?: number;
+  status?: string;
+  interventions?: any[];            // Compatibility alias
+  trace?: CalculationTrace;
 }
 
 /**
@@ -857,14 +916,18 @@ export interface MachineryFleetBalanceItem {
 }
 
 export interface MachineryFleetPlan {
-  tenantId: string;
+  tenantId?: string;
   campaignId: string;
+  generatedAt?: string;
+  overallSufficiencyStatus?: string;
   balanceItems: MachineryFleetBalanceItem[];
-  totalFleetRequired: number;
-  totalFleetAvailable: number;
-  totalFleetDeficit: number;
-  totalAcquisitionCapexUSD: number;
-  trace: CalculationTrace;
+  totalFleetRequired?: number;
+  totalFleetAvailable?: number;
+  totalFleetDeficit?: number;
+  totalAcquisitionCapexUSD?: number;
+  totalCapexDeficitUSD?: number;    // Compatibility alias
+  totalDieselDemandLiters?: number; // Compatibility alias
+  trace?: CalculationTrace;
 }
 
 /**
@@ -1236,6 +1299,7 @@ export interface AgriculturalReconciliationSummary {
   campaignName: string;
   timestamp: string;
   overallStatus: ReconciliationStatus;
+  integrityIndex?: number;
   checksCount: number;
   passCount: number;
   warningCount: number;

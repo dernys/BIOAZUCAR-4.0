@@ -27,7 +27,7 @@ export class KnowledgeRetrievalService {
     activeModule?: NavigationTab,
     limit: number = 3
   ): IndustrialGlossaryEntry[] {
-    const cleanQuery = query.toLowerCase().trim();
+    const cleanQuery = (query || "").toLowerCase().trim();
     if (!cleanQuery) return [];
 
     const queryTokens = cleanQuery
@@ -75,7 +75,7 @@ export class KnowledgeRetrievalService {
     queryOrModule: string,
     currentModule?: NavigationTab
   ): ModuleDocumentation | undefined {
-    const raw = queryOrModule.toLowerCase().trim();
+    const raw = (queryOrModule || "").toLowerCase().trim();
 
     // 1. Direct module key match
     if (BIOAZUCAR_MODULE_DOCS[raw as NavigationTab]) {
@@ -133,7 +133,7 @@ export class KnowledgeRetrievalService {
     context?: CopilotUserContext,
     limit: number = 2
   ): OperationalProcedure[] {
-    const clean = query.toLowerCase().trim();
+    const clean = (query || "").toLowerCase().trim();
     if (!clean) return [];
 
     const tokens = clean.split(/\s+/).filter((t) => t.length > 2);
@@ -168,7 +168,7 @@ export class KnowledgeRetrievalService {
    * Determine the requested explanation style
    */
   public static detectExplanationStyle(query: string): ExplanationStyle {
-    const lower = query.toLowerCase();
+    const lower = (query || "").toLowerCase();
     if (lower.includes("sencillo") || lower.includes("simple") || lower.includes("para niños") || lower.includes("en facil") || lower.includes("en fácil")) {
       return "SIMPLE";
     }
@@ -194,14 +194,15 @@ export class KnowledgeRetrievalService {
     alarms: AlarmEvent[],
     equipmentList: EquipmentItem[]
   ): KnowledgeEvidenceBundle {
-    const glossaryHits = this.retrieveGlossaryTerms(query, context.currentModule as NavigationTab, 2);
-    const moduleDoc = this.retrieveModuleDocumentation(query, context.currentModule as NavigationTab);
+    const currentMod = (context?.currentModule || (context as any)?.currentView || (context as any)?.activeTab || "dashboard") as NavigationTab;
+    const glossaryHits = this.retrieveGlossaryTerms(query, currentMod, 2);
+    const moduleDoc = this.retrieveModuleDocumentation(query, currentMod);
     const procedures = this.retrieveProcedures(query, context, 1);
     const explanationStyle = this.detectExplanationStyle(query);
 
     // Knowledge Graph Subgraph extraction
     const relevantNodeIds = new Set<string>();
-    const queryLower = query.toLowerCase();
+    const queryLower = (query || "").toLowerCase();
 
     KNOWLEDGE_GRAPH_NODES.forEach((n) => {
       if (
@@ -224,7 +225,7 @@ export class KnowledgeRetrievalService {
     );
 
     // Evidence classification
-    const isSimulated = liveTelemetry.simulationScenario !== undefined || !liveTelemetry.tenantId;
+    const isSimulated = !liveTelemetry || liveTelemetry.simulationScenario !== undefined || !liveTelemetry.tenantId;
     let evidenceCategory: EvidenceCategory = "DOCUMENTATION";
     if (
       queryLower.includes("diagnostico") ||
@@ -256,7 +257,7 @@ export class KnowledgeRetrievalService {
 
     return {
       query,
-      activeModule: (context.currentModule as NavigationTab) || "dashboard",
+      activeModule: (context?.currentModule || (context as any)?.currentView || (context as any)?.activeTab || "dashboard") as NavigationTab,
       glossaryHits,
       moduleDoc,
       procedures,
@@ -267,7 +268,7 @@ export class KnowledgeRetrievalService {
       liveDataProvenance: [
         {
           tag: "Milling.Tandem.TCH_Actual",
-          value: liveTelemetry.tch,
+          value: liveTelemetry?.tch ?? 0,
           unit: "TCH",
           quality: (isSimulated ? "SIMULATED" : "GOOD") as DataQuality,
           source: (isSimulated ? "SIMULATION" : "OPC_UA") as DataSourceType,
@@ -276,7 +277,7 @@ export class KnowledgeRetrievalService {
         },
         {
           tag: "Boiler1.Steam_Pressure_HP",
-          value: liveTelemetry.boilerPressureHP,
+          value: liveTelemetry?.boilerPressureHP ?? 0,
           unit: "bar",
           quality: (isSimulated ? "SIMULATED" : "GOOD") as DataQuality,
           source: (isSimulated ? "SIMULATION" : "OPC_UA") as DataSourceType,

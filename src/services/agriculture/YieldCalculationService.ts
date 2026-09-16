@@ -34,7 +34,9 @@ export const SOIL_IMPACT_FACTORS: Record<SoilType, number> = {
   ARCILLOSO: 0.98,
   ARENOSO: 0.92,
   FERRALITICO_ROJO: 1.05,
+  FERRALITICO: 1.05,
   HUMIFERO: 1.02,
+  VERTISOL: 0.95,
 };
 
 /**
@@ -447,18 +449,26 @@ export class YieldCalculationService {
     };
 
     for (const plot of plots) {
-      totalAreaHa += plot.areaHectares;
-      totalProductionTons += plot.projectedTotalCaneTons;
+      const area = plot.areaHectares || 0;
+      const plotTons =
+        plot.projectedTotalCaneTons != null && !Number.isNaN(plot.projectedTotalCaneTons)
+          ? plot.projectedTotalCaneTons
+          : Number((area * (plot.projectedTch || 0)).toFixed(2));
 
-      areaByStage[plot.currentStage] = Number(
-        (areaByStage[plot.currentStage] + plot.areaHectares).toFixed(2)
-      );
-      productionByStageTons[plot.currentStage] = Number(
-        (productionByStageTons[plot.currentStage] + plot.projectedTotalCaneTons).toFixed(2)
-      );
+      totalAreaHa += area;
+      totalProductionTons += plotTons;
 
-      if (plot.currentStage === "DEMOLICION") {
-        demolitionAreaHa += plot.areaHectares;
+      const stage = (plot.currentStage || (plot as any).ratoonStage || "PLANTA") as CaneGrowthStage;
+
+      if (areaByStage[stage] !== undefined) {
+        areaByStage[stage] = Number((areaByStage[stage] + area).toFixed(2));
+      }
+      if (productionByStageTons[stage] !== undefined) {
+        productionByStageTons[stage] = Number((productionByStageTons[stage] + plotTons).toFixed(2));
+      }
+
+      if (stage === "DEMOLICION" || (plot as any).status === "EN_DEMOLICION") {
+        demolitionAreaHa += area;
       }
     }
 
@@ -502,6 +512,22 @@ export class YieldCalculationService {
       productionByStageTons,
       demolitionAreaHa: Number(demolitionAreaHa.toFixed(2)),
       trace,
+    };
+  }
+
+  /**
+   * Alias / canonical method for calculating campaign yield summary from plots collection.
+   */
+  public static calculateCampaignYield(
+    plots: FieldPlot[],
+    _campaign?: any
+  ): YieldCalculationResult & { totalArableAreaHectares: number; totalProjectedCaneTons: number; weightedAverageTch: number } {
+    const summary = this.calculateCampaignYieldSummary(plots);
+    return {
+      ...summary,
+      totalArableAreaHectares: summary.totalAreaHa,
+      totalProjectedCaneTons: summary.totalProductionTons,
+      weightedAverageTch: summary.averageTch,
     };
   }
 

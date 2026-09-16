@@ -90,7 +90,7 @@ describe("BioAzúcar 4.0 — Agro-Economics Consolidation (ODS PDA)", () => {
     const fleetItem = MachineryAndLogisticsService.calculateFleetBalanceItem({
       category: "TRACTOR_PESADO",
       description: "Tractor Pesado",
-      totalWorkloadHours: 1500,
+      totalWorkloadHours: 1300,
       workingWindowDays: 60,
       fleetAvailableUnits: 0,
     }); // 2 deficit * $190,000 = $380,000

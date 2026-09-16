@@ -175,4 +175,126 @@ export class AgriculturalDataTruthService {
     }
     return "VALIDATED";
   }
+
+  /**
+   * Audits an individual entity's data truth, verifying whether it can legitimately represent real OT data.
+   */
+  public static auditEntityTruth(params: {
+    entityId: string;
+    classification: DataClassification;
+    origin?: DataOrigin;
+    quality?: string;
+  }): {
+    isLegitimateLiveOt: boolean;
+    requiresPhysicalVerification: boolean;
+    reason?: string;
+  } {
+    if (params.classification === "SIMULATED") {
+      return {
+        isLegitimateLiveOt: false,
+        requiresPhysicalVerification: true,
+        reason: "Datos marcados como SIMULATED no pueden ser promocionados a LIVE_OT/REAL sin evidencia física de campo.",
+      };
+    }
+    if (params.classification === "ASSUMPTION" || params.classification === "BENCHMARK") {
+      return {
+        isLegitimateLiveOt: false,
+        requiresPhysicalVerification: true,
+        reason: "Valores asumidos o de referencia externa requieren validación mediante báscula, densímetro o telemetría de campo.",
+      };
+    }
+    if (params.classification === "REAL") {
+      return {
+        isLegitimateLiveOt: true,
+        requiresPhysicalVerification: false,
+      };
+    }
+    return {
+      isLegitimateLiveOt: false,
+      requiresPhysicalVerification: true,
+      reason: `Clasificación ${params.classification} no homologada para control operacional directo.`,
+    };
+  }
+
+  /**
+   * Validates integrity of a collection of field plots, detecting duplicates and surface discrepancies.
+   */
+  public static validatePlotCollectionIntegrity(plots: any[]): {
+    hasDuplicates: boolean;
+    duplicateIds: string[];
+    isValid: boolean;
+  } {
+    const seen = new Set<string>();
+    const duplicateIds: string[] = [];
+
+    for (const plot of plots) {
+      if (plot.id) {
+        if (seen.has(plot.id)) {
+          duplicateIds.push(plot.id);
+        } else {
+          seen.add(plot.id);
+        }
+      }
+    }
+
+    return {
+      hasDuplicates: duplicateIds.length > 0,
+      duplicateIds,
+      isValid: duplicateIds.length === 0,
+    };
+  }
+
+  /**
+   * Validates biological and agronomic bounds for a single field plot (TCH, Pol, Fiber, Area).
+   */
+  public static validatePlotAgronomicBounds(plot: any): {
+    isAnomaly: boolean;
+    reason?: string;
+  } {
+    const tch = Number(plot.projectedTch) || 0;
+    const area = Number(plot.areaHectares) || 0;
+
+    if (tch < 0 || tch > 250) {
+      return {
+        isAnomaly: true,
+        reason: `TCH fuera de rango biológico (${tch} t/ha). Rango típico agronómico: 30 - 200 t/ha.`,
+      };
+    }
+    if (area <= 0) {
+      return {
+        isAnomaly: true,
+        reason: `Superficie de lote inválida o no positiva (${area} ha).`,
+      };
+    }
+    return {
+      isAnomaly: false,
+    };
+  }
+
+  /**
+   * Enforces strict multi-tenant boundary isolation.
+   */
+  public static verifyTenantBoundary(
+    currentTenantId: string,
+    entityTenantId?: string
+  ): {
+    authorized: boolean;
+    violationType?: "CROSS_TENANT_ACCESS_DENIED" | "MISSING_TENANT_ID";
+  } {
+    if (!entityTenantId) {
+      return {
+        authorized: false,
+        violationType: "MISSING_TENANT_ID",
+      };
+    }
+    if (currentTenantId !== entityTenantId) {
+      return {
+        authorized: false,
+        violationType: "CROSS_TENANT_ACCESS_DENIED",
+      };
+    }
+    return {
+      authorized: true,
+    };
+  }
 }

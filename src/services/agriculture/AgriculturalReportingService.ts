@@ -85,7 +85,92 @@ export interface AgriculturalReportContext {
   currentUser?: string;
 }
 
+export interface DeterministicReportInput {
+  reportType: "REPORTE_BALANCE_MASA_AREA" | string;
+  campaign: AgriculturalCampaign;
+  plots: FieldPlot[];
+  campaignSummary: YieldCalculationResult & {
+    totalArableAreaHectares?: number;
+    totalProjectedCaneTons?: number;
+    weightedAverageTch?: number;
+    dailyHarvestRequirementTons?: number;
+  };
+  soilPrepPlan?: SoilPreparationPlan;
+  plantingPlan?: PlantingPlan;
+  treatmentsPlan?: CulturalTreatmentPlan;
+  fleetPlan?: MachineryFleetPlan;
+  cctLogistics?: CctTransportCycleCalculation;
+  economics?: AgroEconomicsSummary;
+  reconciliation?: any;
+  currentUser?: string;
+}
+
 export class AgriculturalReportingService {
+  /**
+   * Generates a deterministic audit report with structured KPIs and plot-by-plot rows.
+   */
+  public static generateDeterministicReport(input: DeterministicReportInput) {
+    const totalArea = getArea(input as any);
+    const totalProd = getProduction(input as any);
+    const avgTch = getTch(input as any);
+    const dailyDemand = getDailyDemand(input as any);
+
+    const kpis: PdaReportKpi[] = [
+      { label: "Superficie Total Registrada", value: safeFixed(totalArea, 1), unit: "ha" },
+      { label: "Producción Total Caña", value: totalProd.toLocaleString(), unit: "t" },
+      { label: "TCH Promedio Ponderado", value: safeFixed(avgTch, 2), unit: "t/ha" },
+      { label: "Demanda Diaria Molienda", value: safeFixed(dailyDemand, 1), unit: "t/día" },
+    ];
+
+    const columns: PdaReportColumn[] = [
+      { key: "plotCode", label: "Código Parcela", align: "left" },
+      { key: "uebName", label: "UEB", align: "left" },
+      { key: "varietyCode", label: "Cultivar", align: "left" },
+      { key: "currentStage", label: "Etapa / Corte", align: "left" },
+      { key: "areaHectares", label: "Área (ha)", align: "right" },
+      { key: "projectedTch", label: "TCH (t/ha)", align: "right" },
+      { key: "projectedProductionTons", label: "Producción (t)", align: "right" },
+      { key: "distanceKm", label: "Distancia Fábrica (km)", align: "right" },
+      { key: "status", label: "Estado Masa", align: "center" },
+    ];
+
+    const rows = (input.plots || []).map((plot) => {
+      const area = safeNum(plot.areaHectares);
+      const tch = safeNum(plot.projectedTch);
+      const tons = safeNum(plot.projectedTotalCaneTons, Number((area * tch).toFixed(2)));
+      return {
+        plotCode: plot.code,
+        uebName: plot.uebName || "UEB Central",
+        varietyCode: plot.varietyCode,
+        currentStage: plot.currentStage,
+        areaHectares: safeFixed(area, 2),
+        projectedTch: safeFixed(tch, 2),
+        projectedProductionTons: safeFixed(tons, 2),
+        distanceKm: safeFixed(plot.distanceToMillKm || 0, 1),
+        status: plot.currentStage === "DEMOLICION" ? "REFORMA_SUELO" : "ACTIVO_COSECHA",
+      };
+    });
+
+    return {
+      reportId: `REP-DET-BALANCE-${Date.now()}`,
+      reportType: input.reportType,
+      title: "Reporte Determinístico: Balance de Masa y Superficie Agrícola",
+      subtitle: `Campaña ${input.campaign.name} — Auditoría de Integridad Multivariante`,
+      generatedAt: new Date().toISOString(),
+      tenantId: input.campaign.tenantId,
+      campaignId: input.campaign.id,
+      kpis,
+      summaryKpis: kpis,
+      columns,
+      rows,
+      reconciliationSummary: input.reconciliation,
+      metadata: {
+        totalPlots: input.plots.length,
+        modelRevision: MODEL_REVISION,
+      },
+    };
+  }
+
   /**
    * Universal Report Generation Gateway
    */

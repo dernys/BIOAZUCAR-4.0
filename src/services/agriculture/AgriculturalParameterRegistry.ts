@@ -1410,7 +1410,9 @@ export class AgriculturalParameterRegistry {
       ARCILLOSO: this.getNumberValue("SOIL_FACTOR_ARCILLOSO", 0.98),
       ARENOSO: this.getNumberValue("SOIL_FACTOR_ARENOSO", 0.92),
       FERRALITICO_ROJO: this.getNumberValue("SOIL_FACTOR_FERRALITICO_ROJO", 1.05),
+      FERRALITICO: this.getNumberValue("SOIL_FACTOR_FERRALITICO", 1.05),
       HUMIFERO: this.getNumberValue("SOIL_FACTOR_HUMIFERO", 1.02),
+      VERTISOL: this.getNumberValue("SOIL_FACTOR_VERTISOL", 0.95),
     };
   }
 }

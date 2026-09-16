@@ -60,7 +60,8 @@ export type CopilotIntent =
   | "CCT_LOGISTICS"
   | "AGRO_ECONOMICS"
   | "RECONCILIATION_AUDIT"
-  | "PLAN_VS_REAL";
+  | "PLAN_VS_REAL"
+  | "FORMULA_GOVERNANCE";
 
 export type IntegrationSubIntent =
   | "EROS_INTEGRATION"

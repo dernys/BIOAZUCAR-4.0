@@ -49,10 +49,13 @@ export class AgroEconomicsService {
    * Source: ODS Sheets 'OPEX', 'CAPEX', 'DIESEL e LUBR', 'FERTILIZANTES'
    */
   public static consolidateCampaignEconomics(params: {
-    tenantId: string;
-    campaignId: string;
-    totalArableAreaHa: number;
-    totalCaneTonsDelivered: number;
+    tenantId?: string;
+    campaignId?: string;
+    totalArableAreaHa?: number;
+    totalCaneTonsDelivered?: number;
+    campaign?: any;
+    summary?: any;
+    cctLogistics?: any;
     soilPrepPlan?: SoilPreparationPlan;
     plantingPlan?: PlantingPlan;
     treatmentsPlan?: CulturalTreatmentPlan;
@@ -63,6 +66,21 @@ export class AgroEconomicsService {
     infrastructureCapexUSD?: number;    // From 'OUTROS INV'
     soilRenovationCapexUSD?: number;
   }): AgroEconomicsSummary {
+    const tenantId =
+      params.tenantId ?? params.campaign?.tenantId ?? "default-tenant";
+    const campaignId =
+      params.campaignId ?? params.campaign?.id ?? "default-campaign";
+    const totalArableAreaHa =
+      params.totalArableAreaHa ??
+      params.summary?.totalArableAreaHectares ??
+      params.campaign?.totalArableAreaHa ??
+      0;
+    const totalCaneTonsDelivered =
+      params.totalCaneTonsDelivered ??
+      params.summary?.totalProjectedCaneTons ??
+      params.campaign?.projectedTotalCaneTons ??
+      0;
+
     const dieselPrice =
       params.customDieselPriceUSD ??
       AgriculturalParameterRegistry.getParameterValue<number>(
@@ -84,9 +102,9 @@ export class AgroEconomicsService {
     const plantDiesel = params.plantingPlan?.requiredDieselLiters ?? 0;
     const treatDiesel = params.treatmentsPlan?.totalDieselLiters ?? 0;
     const harvestDiesel =
-      params.harvestDieselLiters ?? params.totalCaneTonsDelivered * harvestDieselRate;
+      params.harvestDieselLiters ?? totalCaneTonsDelivered * harvestDieselRate;
     const transportDiesel =
-      params.transportDieselLiters ?? params.totalCaneTonsDelivered * transportDieselRate;
+      params.transportDieselLiters ?? totalCaneTonsDelivered * transportDieselRate;
 
     const totalDieselLiters = Number(
       (prepDiesel + plantDiesel + treatDiesel + harvestDiesel + transportDiesel).toFixed(2)
@@ -116,7 +134,7 @@ export class AgroEconomicsService {
       BENCHMARK_ECONOMIC_PRICES.LABOR_OPERATOR_MONTH_USD
     );
 
-    const ratoonArea = params.treatmentsPlan?.ratoonCaneAreaHa ?? params.totalArableAreaHa * 0.8;
+    const ratoonArea = params.treatmentsPlan?.ratoonCaneAreaHa ?? totalArableAreaHa * 0.8;
     const coverFertilizerTons = (ratoonArea * ratoonFertilizerRateKgPerHa) / 1000.0;
     const totalFertilizerTons = basalFertilizerTons + coverFertilizerTons;
     const fertilizersAndAmendmentsCostUSD = Number(
@@ -124,7 +142,7 @@ export class AgroEconomicsService {
     );
 
     const agrochemicalsAndDefensivesCostUSD = Number(
-      (params.totalArableAreaHa * herbicideCostPerHa).toFixed(2)
+      (totalArableAreaHa * herbicideCostPerHa).toFixed(2)
     );
 
     // Maintenance of Fleet & Implement wear parts
@@ -132,7 +150,7 @@ export class AgroEconomicsService {
       (params.soilPrepPlan?.totalMachineHours ?? 0) +
       (params.plantingPlan?.requiredMachineHours ?? 0) +
       (params.treatmentsPlan?.totalMachineHours ?? 0) +
-      (params.totalCaneTonsDelivered / 50.0); // Harvester hours (~50 t/h)
+      (totalCaneTonsDelivered / 50.0); // Harvester hours (~50 t/h)
 
     const machineryMaintenanceCostUSD = Number(
       (totalMachineHours * maintenanceRatePerHourUSD).toFixed(2)
@@ -145,8 +163,12 @@ export class AgroEconomicsService {
       (laborMonths * operatorMonthlySalaryUSD).toFixed(2)
     );
 
+    const cctTransportComponentUSD = params.cctLogistics?.transportCostPerTonUSD
+      ? totalCaneTonsDelivered * params.cctLogistics.transportCostPerTonUSD
+      : totalCaneTonsDelivered * 4.2;
+
     const otherOperationalCostsUSD = Number(
-      (params.totalArableAreaHa * 18.5).toFixed(2) // Roads, communication, safety
+      (totalArableAreaHa * 18.5 + cctTransportComponentUSD).toFixed(2) // Roads, communication, safety, CCT transport logistics
     );
 
     const totalOpexUSD = Number(
@@ -161,13 +183,13 @@ export class AgroEconomicsService {
     );
 
     const costPerHectareUSD =
-      params.totalArableAreaHa > 0
-        ? Number((totalOpexUSD / params.totalArableAreaHa).toFixed(2))
+      totalArableAreaHa > 0
+        ? Number((totalOpexUSD / totalArableAreaHa).toFixed(2))
         : 0;
 
     const costPerTonCaneUSD =
-      params.totalCaneTonsDelivered > 0
-        ? Number((totalOpexUSD / params.totalCaneTonsDelivered).toFixed(2))
+      totalCaneTonsDelivered > 0
+        ? Number((totalOpexUSD / totalCaneTonsDelivered).toFixed(2))
         : 0;
 
     const opex: AgroOpexCostBreakdown = {
@@ -210,8 +232,8 @@ export class AgroEconomicsService {
       formula:
         "TotalOpex = Sum(Diesel + Fert + Chem + Maint + Labor + Other); CostPerTon = TotalOpex / TotalCaneTons; CostPerHa = TotalOpex / TotalAreaHa",
       inputs: {
-        totalAreaHa: { value: params.totalArableAreaHa, unit: "ha" },
-        totalCaneTons: { value: params.totalCaneTonsDelivered, unit: "t" },
+        totalAreaHa: { value: totalArableAreaHa, unit: "ha" },
+        totalCaneTons: { value: totalCaneTonsDelivered, unit: "t" },
         totalDieselLiters: { value: totalDieselLiters, unit: "L" },
         dieselPriceUSD: { value: dieselPrice, unit: "USD/L" },
         totalOpexUSD: { value: totalOpexUSD, unit: "USD" },
@@ -224,13 +246,13 @@ export class AgroEconomicsService {
     };
 
     return {
-      tenantId: params.tenantId,
-      campaignId: params.campaignId,
+      tenantId,
+      campaignId,
       currency: "USD",
       dieselPricePerLiterUSD: dieselPrice,
       totalDieselConsumedLiters: totalDieselLiters,
-      totalCaneTonsDelivered: params.totalCaneTonsDelivered,
-      totalArableAreaHa: params.totalArableAreaHa,
+      totalCaneTonsDelivered,
+      totalArableAreaHa,
       opex,
       capex,
       trace,
