@@ -67,19 +67,35 @@ export class MachineryAndLogisticsService {
     const unitPrice =
       params.customUnitPriceUSD ?? this.getEquipmentUnitPrice(params.category);
 
-    const capacityPerMachineHours = params.workingWindowDays * dailyHours * availability;
+    const theoreticalCapacityHours = params.workingWindowDays * dailyHours;
+    const fieldEfficiency = AgriculturalParameterRegistry.getNumberValue("FIELD_EFFICIENCY_RATIO", 0.85);
+    const effectiveCapacityHours = theoreticalCapacityHours * availability * fieldEfficiency;
+
     const fleetRequiredUnits =
-      capacityPerMachineHours > 0
-        ? Math.max(1, Math.ceil(params.totalWorkloadHours / capacityPerMachineHours))
+      effectiveCapacityHours > 0
+        ? Math.max(1, Math.ceil(params.totalWorkloadHours / effectiveCapacityHours))
         : 1;
 
     const fleetDeficitUnits = Math.max(0, fleetRequiredUnits - params.fleetAvailableUnits);
+    const fleetSurplusUnits = Math.max(0, params.fleetAvailableUnits - fleetRequiredUnits);
     const totalAcquisitionCapexUSD = Number((fleetDeficitUnits * unitPrice).toFixed(2));
+
+    const availableCapacityHours = params.fleetAvailableUnits * effectiveCapacityHours;
+    const fleetUtilizationPercent =
+      availableCapacityHours > 0
+        ? Math.min(100, Number(((params.totalWorkloadHours / availableCapacityHours) * 100).toFixed(1)))
+        : 100;
+
+    // Fuel and OPEX calculations
+    const fuelRatePerHour = AgriculturalParameterRegistry.getNumberValue(`FUEL_RATE_${params.category}`, 22.0);
+    const estimatedFuelLiters = Number((params.totalWorkloadHours * fuelRatePerHour).toFixed(1));
+    const hourlyOpexRate = AgriculturalParameterRegistry.getNumberValue(`HOURLY_OPEX_${params.category}`, 35.0);
+    const estimatedOpexUSD = Number((params.totalWorkloadHours * hourlyOpexRate).toFixed(2));
 
     const trace: CalculationTrace = {
       formulaId: "FLOTA_REQUERIDA_V1",
       formulaName: "Dimensionamiento de Flota Requerida de Maquinaria",
-      formulaExpression: "RequiredUnits = Ceil( WorkloadHours / (CalendarDays * DailyHours * Avail) ); Deficit = Max(0, Req - Avail)",
+      formulaExpression: "Theoretical = Days * DailyHours; Effective = Theoretical * Avail * Efficiency; Req = Ceil(Hours / Effective); Deficit = Max(0, Req - Avail)",
       modelType: "PDA_VALIDATED",
       modelVersion: "1.0.0",
       campaignId: "ZAFRA-2026-2027",
@@ -92,7 +108,8 @@ export class MachineryAndLogisticsService {
         workingWindowDays: { value: params.workingWindowDays, unit: "días", description: "Ventana temporal de preparación" },
         dailyHours: { value: dailyHours, unit: "h/día", description: "Jornada operativa diaria", parameterKey: "HOURS_PER_DAY_SOIL_PREP" },
         availability: { value: availability, unit: "ratio", description: "Disponibilidad mecánica", parameterKey: "EQUIPMENT_AVAILABILITY_SOIL_PREP" },
-        requiredUnits: { value: fleetRequiredUnits, unit: "unidades", description: "Flota teórica necesaria" },
+        fieldEfficiency: { value: fieldEfficiency, unit: "ratio", description: "Eficiencia de campo operativa" },
+        requiredUnits: { value: fleetRequiredUnits, unit: "unidades", description: "Flota necesaria" },
         availableUnits: { value: params.fleetAvailableUnits, unit: "unidades", description: "Parque existente" },
         deficitUnits: { value: fleetDeficitUnits, unit: "unidades", description: "Déficit neto a adquirir" },
         unitPriceUSD: { value: unitPrice, unit: "USD", description: "Precio benchmark de compra" },
@@ -103,7 +120,7 @@ export class MachineryAndLogisticsService {
         documentSource: "Módulo de Maquinaria y Tracción BioAzúcar 4.0",
         historicReference: "Dimensionamiento Teórico de Flota",
       },
-      formula: "Required = Ceil(Hours / (Days * DailyHours * Avail)); Deficit = Max(0, Req - Avail); Capex = Deficit * Price",
+      formula: "Theoretical = Days * DailyHours; Effective = Theoretical * Avail * Efficiency; Req = Ceil(Hours / Effective); Deficit = Max(0, Req - Avail)",
       sourceSheet: "Módulo de Maquinaria",
       modelRevision: MODEL_REVISION,
     };
@@ -121,6 +138,13 @@ export class MachineryAndLogisticsService {
       unitAcquisitionPriceUSD: unitPrice,
       totalAcquisitionCapexUSD,
       trace,
+      theoreticalCapacityHours: Number(theoreticalCapacityHours.toFixed(1)),
+      effectiveCapacityHours: Number(effectiveCapacityHours.toFixed(1)),
+      fieldEfficiencyRatio: fieldEfficiency,
+      fleetSurplusUnits,
+      fleetUtilizationPercent,
+      estimatedFuelLiters,
+      estimatedOpexUSD,
     };
   }
 
@@ -201,6 +225,7 @@ export class MachineryAndLogisticsService {
     millWeighbridgeQueueTimeHours?: number;
     payloadTonsPerTruck?: number;
     dailyUtilizationFactor?: number;
+    availableTrucks?: number;
   }): CctTransportCycleCalculation {
     const speedEmpty =
       params.averageSpeedEmptyKmH ??
@@ -284,6 +309,20 @@ export class MachineryAndLogisticsService {
       modelRevision: MODEL_REVISION,
     };
 
+    const availableTrucks = params.availableTrucks ?? 8;
+    const trucksDeficit = Math.max(0, trucksRequiredForDailyDemand - availableTrucks);
+    const totalDailyFleetCapacityTons = Number((availableTrucks * dailyCapacityPerTruckTons).toFixed(2));
+
+    // Logistics economics
+    const dieselPriceUSD = AgriculturalParameterRegistry.getNumberValue("PRICE_DIESEL_USD", 1.15);
+    const fuelConsumptionPerTripLiters = Number(((params.roundTripDistanceKm / 100) * 48.0).toFixed(1)); // ~48 L/100km for loaded cane truck
+    const fuelCostPerTripUSD = fuelConsumptionPerTripLiters * dieselPriceUSD;
+    const driverAndTollPerTripUSD = 28.0;
+    const maintenancePerTripUSD = 18.0;
+    const costPerTripUSD = fuelCostPerTripUSD + driverAndTollPerTripUSD + maintenancePerTripUSD;
+    const transportCostPerTonUSD = Number((costPerTripUSD / payload).toFixed(2));
+    const totalDailyTransportCostUSD = Number((params.dailyHarvestDemandTons * transportCostPerTonUSD).toFixed(2));
+
     return {
       roundTripDistanceKm: params.roundTripDistanceKm,
       averageSpeedEmptyKmH: speedEmpty,
@@ -299,6 +338,11 @@ export class MachineryAndLogisticsService {
       dailyCapacityPerTruckTons,
       trucksRequiredForDailyDemand,
       trace,
+      availableTrucks,
+      trucksDeficit,
+      totalDailyFleetCapacityTons,
+      transportCostPerTonUSD,
+      totalDailyTransportCostUSD,
     };
   }
 }

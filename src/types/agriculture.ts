@@ -7,30 +7,77 @@
 
 /**
  * Data Governance Classification (Mandatory Governance)
+ * Strictly enforces: REAL | IMPORTED | CALCULATED | ASSUMPTION | BENCHMARK | SIMULATED | NO_DATA
  */
 export type DataClassification =
-  | "MASTER_DATA"       // Variedades, Maquinaria, Catálogo de Operaciones, Insumos
-  | "CONFIGURATION"     // Parámetros agronómicos, factores de suelo, umbrales
-  | "OPERATIONAL_DATA"   // Estado de parcelas, órdenes de trabajo, despachos
-  | "OBSERVED_DATA"      // Mediciones de campo, análisis de laboratorio LIMS, pesajes báscula
-  | "DERIVED_DATA";      // TCH proyectado, balance de flota, requerimiento diario
+  | "REAL"
+  | "IMPORTED"
+  | "CALCULATED"
+  | "ASSUMPTION"
+  | "BENCHMARK"
+  | "SIMULATED"
+  | "NO_DATA"
+  // Extended categories for backward-compatibility:
+  | "MASTER_DATA"
+  | "CONFIGURATION"
+  | "OPERATIONAL_DATA"
+  | "OBSERVED_DATA"
+  | "DERIVED_DATA";
 
 /**
  * Data Origin / Provenance
+ * Strictly enforces: BIOAZUCAR | HISTORICAL | IMPORTED | OBSERVED | EXTERNAL_REFERENCE
  */
 export type DataOrigin =
+  | "BIOAZUCAR"
+  | "HISTORICAL"
+  | "IMPORTED"
+  | "OBSERVED"
+  | "EXTERNAL_REFERENCE"
+  // Extended origins for backward-compatibility:
   | "REAL_OT"
   | "REAL_USER"
   | "SIMULATED"
   | "CALCULATED"
   | "DEFAULT"
-  | "IMPORTED"
   | "USER_ENTRY"
   | "FIELD_MEASUREMENT"
   | "ERP"
   | "SCADA"
   | "IMPORT"
   | "SYSTEM_DEFAULT";
+
+/**
+ * Data Validation State (Mandatory Governance)
+ * UNVALIDATED | UNDER_REVIEW | VALIDATED | FIELD_VALIDATED | MODEL_VALIDATED | REJECTED
+ */
+export type DataValidationState =
+  | "UNVALIDATED"
+  | "UNDER_REVIEW"
+  | "VALIDATED"
+  | "FIELD_VALIDATED"
+  | "MODEL_VALIDATED"
+  | "REJECTED";
+
+/**
+ * Sovereign Plan Lifecycle Status
+ * DRAFT | VALIDATED | PLANNED | APPROVED | READY | IN_EXECUTION | PARTIALLY_EXECUTED | COMPLETED | CLOSED
+ */
+export type PlanLifecycleStatus =
+  | "DRAFT"
+  | "VALIDATED"
+  | "PLANNED"
+  | "APPROVED"
+  | "READY"
+  | "IN_EXECUTION"
+  | "PARTIALLY_EXECUTED"
+  | "COMPLETED"
+  | "CLOSED";
+
+/**
+ * Reconciliation Check Status
+ */
+export type ReconciliationStatus = "PASS" | "WARNING" | "ERROR" | "CRITICAL" | "UNRECONCILED";
 
 /**
  * Data Quality Governance Status
@@ -793,12 +840,20 @@ export interface MachineryFleetBalanceItem {
   workingWindowDays: number;
   dailyOperatingHours: number;        // Typically 16 to 20 h/day in harvest/prep
   mechanicalAvailabilityRatio: number;// e.g. 0.85
-  fleetRequiredUnits: number;         // Ceil(Hours / (Days * DailyHours * Avail))
+  fleetRequiredUnits: number;         // Ceil(Hours / EffectiveCapacity)
   fleetAvailableUnits: number;
   fleetDeficitUnits: number;          // Max(0, Required - Available)
   unitAcquisitionPriceUSD: number;
   totalAcquisitionCapexUSD: number;   // Deficit * UnitPrice
   trace: CalculationTrace;
+  // Enriched capacity breakdown (Dimensionamiento de Flota Industrial)
+  theoreticalCapacityHours?: number;  // Days * DailyHours
+  effectiveCapacityHours?: number;    // Days * DailyHours * Avail * Efficiency
+  fieldEfficiencyRatio?: number;      // e.g. 0.85
+  fleetSurplusUnits?: number;         // Max(0, Available - Required)
+  fleetUtilizationPercent?: number;   // (Hours / (Available * EffectiveCap)) * 100
+  estimatedFuelLiters?: number;       // Hours * ConsumptionRate
+  estimatedOpexUSD?: number;          // Hours * HourlyOperatingCost
 }
 
 export interface MachineryFleetPlan {
@@ -843,6 +898,12 @@ export interface CctTransportCycleCalculation {
   dailyCapacityPerTruckTons: number;  // effectiveTrips * payload
   trucksRequiredForDailyDemand: number;// Ceil(DailyHarvestTons / DailyCapacityPerTruck)
   trace: CalculationTrace;
+  // Enriched CCT Logistics Metrics
+  availableTrucks?: number;
+  trucksDeficit?: number;
+  totalDailyFleetCapacityTons?: number;
+  transportCostPerTonUSD?: number;
+  totalDailyTransportCostUSD?: number;
 }
 
 /**
@@ -1140,6 +1201,137 @@ export interface AgroPlanExecutionMetric {
   deviationPercent: number;
   status: "OPTIMO" | "ATENCION" | "CRITICO";
 }
+
+/**
+ * End-to-End Agricultural Reconciliation Check (Auditoría Integral de Integridad)
+ * Governs consistency across:
+ * CAMPAÑA → UEB → PARCELAS → ÁREAS → VARIEDADES → CICLOS → TCH → PRODUCCIÓN → LABORES → COSECHA → CCT → FÁBRICA → COSTOS
+ */
+export interface AgriculturalReconciliationCheck {
+  checkId: string;
+  name: string;
+  category:
+    | "AREA_BALANCE"
+    | "PRODUCTION_BALANCE"
+    | "HARVEST_BALANCE"
+    | "CCT_BALANCE"
+    | "MILL_DEMAND_BALANCE"
+    | "OPEX_BALANCE"
+    | "CAPEX_BALANCE"
+    | "UNIT_COST_BALANCE";
+  status: ReconciliationStatus;
+  expectedValue: number | string;
+  actualValue: number | string;
+  difference: number;
+  tolerance: number;
+  unit: AgroUnit | string;
+  formulaDescription: string;
+  details: string;
+  remediationAction: string;
+  trace?: CalculationTrace;
+}
+
+export interface AgriculturalReconciliationSummary {
+  campaignId: string;
+  campaignName: string;
+  timestamp: string;
+  overallStatus: ReconciliationStatus;
+  checksCount: number;
+  passCount: number;
+  warningCount: number;
+  errorCount: number;
+  criticalCount: number;
+  checks: AgriculturalReconciliationCheck[];
+}
+
+/**
+ * Detailed Plan vs Real Operation Record
+ * Tracks labor execution, inputs, equipment, fuel and costs with real root cause analysis.
+ */
+export interface AgriculturalPlanVsRealItem {
+  id: string;
+  laborCode: string;
+  laborName: string;
+  category: AgroOperationCategory | "PREPARO_SOLO" | "PLANTIO" | "TRATOS_CULTURAIS" | "COLHEITA" | "TRANSPORTE";
+  uebName?: string;
+  plotCode?: string;
+  plannedAreaHa: number;
+  realAreaHa: number;
+  deviationAreaHa: number;
+  deviationAreaPercent: number;
+  plannedHours: number;
+  realHours: number;
+  deviationHours: number;
+  plannedDieselLiters: number;
+  realDieselLiters: number;
+  deviationDieselLiters: number;
+  plannedCostUSD: number;
+  realCostUSD: number;
+  deviationCostUSD: number;
+  plannedProductivityHaPerDay: number;
+  realProductivityHaPerDay: number;
+  status: "OPTIMO" | "ATENCION" | "CRITICO";
+  deviationCause?: string;
+  correctiveAction?: string;
+  responsibleAgronomist?: string;
+  lastUpdated: string;
+  dataClassification: DataClassification;
+  dataOrigin: DataOrigin;
+  dataQuality: DataQuality;
+}
+
+export interface AgriculturalPlanVsRealSummary {
+  campaignId: string;
+  overallStatus: "OPTIMO" | "ATENCION" | "CRITICO";
+  totalPlannedAreaHa: number;
+  totalRealAreaHa: number;
+  areaExecutionPercent: number;
+  totalPlannedHours: number;
+  totalRealHours: number;
+  totalPlannedDieselLiters: number;
+  totalRealDieselLiters: number;
+  totalPlannedCostUSD: number;
+  totalRealCostUSD: number;
+  items: AgriculturalPlanVsRealItem[];
+}
+
+/**
+ * Data Truth Audit Item (Traceability Matrix of Parameters and Data Sources)
+ */
+export interface AgriculturalDataTruthAuditItem {
+  id: string;
+  key: string;
+  name: string;
+  category: AgroParameterCategory;
+  value: any;
+  unit: AgroUnit | string;
+  classification: DataClassification;
+  origin: DataOrigin;
+  validationState: DataValidationState;
+  sourceDescription: string;
+  justification: string;
+  isSovereignBioAzucar: boolean;
+  hasOdsDependency: boolean;
+  lastAuditedAt: string;
+  auditedBy: string;
+  notes?: string;
+}
+
+export interface AgriculturalDataTruthSummary {
+  totalParametersAudited: number;
+  realCount: number;
+  importedCount: number;
+  calculatedCount: number;
+  assumptionCount: number;
+  benchmarkCount: number;
+  simulatedCount: number;
+  noDataCount: number;
+  requiresValidationCount: number;
+  sovereignPercentage: number;
+  lastAuditTimestamp: string;
+  items: AgriculturalDataTruthAuditItem[];
+}
+
 
 
 

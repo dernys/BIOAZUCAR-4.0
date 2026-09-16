@@ -449,6 +449,158 @@ export class CopilotIntentClassifier {
     }
 
     // ========================================================================
+    // 3.5.7 BIOAZÚCAR 4.0 AGRICULTURAL INTELLIGENCE, DATA TRUTH & AUDIT INTENTS
+    // ========================================================================
+
+    // 1. RECONCILIATION & DATA TRUTH AUDIT
+    const isReconciliationQuery =
+      clean.includes("reconciliacion") ||
+      clean.includes("reconciliar") ||
+      clean.includes("data truth") ||
+      clean.includes("auditoria de datos") ||
+      clean.includes("auditoria agricola") ||
+      clean.includes("balance de area") ||
+      clean.includes("balance de produccion") ||
+      clean.includes("integridad agronomica") ||
+      clean.includes("descuadre agricola") ||
+      clean.includes("verificar coherencia") ||
+      clean.includes("matriz de trazabilidad");
+
+    if (isReconciliationQuery) {
+      return {
+        intent: "RECONCILIATION_AUDIT",
+        confidence: 0.99,
+        reason: "Consulta sobre reconciliación matemática agronómica y auditoría Data Truth de BioAzúcar 4.0",
+        targetModule: "agricultural_pda",
+        recommendedTool: "reconcile_agricultural_plan",
+      };
+    }
+
+    // 2. PLAN VS REAL
+    const isPlanVsRealQuery =
+      clean.includes("plan vs real") ||
+      clean.includes("plan versus real") ||
+      clean.includes("desviacion de labores") ||
+      clean.includes("ejecucion de labores") ||
+      clean.includes("horas reales") ||
+      clean.includes("diesel real") ||
+      clean.includes("avance de siembra") ||
+      clean.includes("avance de preparacion");
+
+    if (isPlanVsRealQuery) {
+      return {
+        intent: "PLAN_VS_REAL",
+        confidence: 0.98,
+        reason: "Consulta de comparación Plan vs Real y análisis de desviaciones de labores agrícolas",
+        targetModule: "agricultural_pda",
+        recommendedTool: "get_plan_vs_real_status",
+      };
+    }
+
+    // 3. FLEET DIMENSIONING & MACHINERY BALANCE
+    const isFleetQuery =
+      clean.includes("dimensionamiento de flota") ||
+      clean.includes("balance de maquinaria") ||
+      clean.includes("balance de traccion") ||
+      clean.includes("tractores requeridos") ||
+      clean.includes("cosechadoras requeridas") ||
+      clean.includes("deficit de maquinaria") ||
+      clean.includes("flota disponible") ||
+      clean.includes("horas maquina") ||
+      clean.includes("capex maquinaria");
+
+    if (isFleetQuery) {
+      return {
+        intent: "FLEET_DIMENSIONING",
+        confidence: 0.98,
+        reason: "Consulta de dimensionamiento y balance de maquinaria agrícola, capacidad efectiva y déficit",
+        targetModule: "agricultural_pda",
+        recommendedTool: "calculate_fleet_dimensioning",
+      };
+    }
+
+    // 4. CCT LOGISTICS
+    const isCctQuery =
+      clean.includes("cct") ||
+      clean.includes("corte alce y transporte") ||
+      clean.includes("camiones caneros") ||
+      clean.includes("ciclo de transporte") ||
+      clean.includes("frente de cosecha") ||
+      clean.includes("tiempo de ciclo") ||
+      clean.includes("camiones requeridos") ||
+      clean.includes("capacidad rodoviaria");
+
+    if (isCctQuery) {
+      return {
+        intent: "CCT_LOGISTICS",
+        confidence: 0.98,
+        reason: "Consulta de ciclo cinemático CCT y flota de transporte rodoviario para abastecimiento del ingenio",
+        targetModule: "agricultural_pda",
+        recommendedTool: "calculate_cct_logistics",
+      };
+    }
+
+    // 5. TCH CALCULATION & YIELD
+    const isTchQuery =
+      clean.includes("tch") ||
+      clean.includes("rendimiento agricola") ||
+      clean.includes("toneladas por hectarea") ||
+      clean.includes("decaimiento varietal") ||
+      clean.includes("estimacion de rendimiento") ||
+      clean.includes("curva de decaimiento");
+
+    if (isTchQuery) {
+      return {
+        intent: "TCH_CALCULATION",
+        confidence: 0.97,
+        reason: "Consulta sobre cálculo de TCH proyectado, rendimiento agrícola y curvas de decaimiento varietal",
+        targetModule: "agricultural_pda",
+        recommendedTool: "calculate_projected_tch",
+      };
+    }
+
+    // 6. AGRO-ECONOMICS
+    const isAgroEconQuery =
+      clean.includes("costo por tonelada") ||
+      clean.includes("costo por ton") ||
+      clean.includes("opex agricola") ||
+      clean.includes("capex agricola") ||
+      clean.includes("costo por hectarea") ||
+      clean.includes("rubros de costo agricola") ||
+      clean.includes("presupuesto zafra");
+
+    if (isAgroEconQuery) {
+      return {
+        intent: "AGRO_ECONOMICS",
+        confidence: 0.97,
+        reason: "Consulta sobre consolidación agro-económica, OPEX/CAPEX y costo unitario por tonelada de caña",
+        targetModule: "agricultural_pda",
+        recommendedTool: "get_agro_economics_summary",
+      };
+    }
+
+    // 7. GENERAL AGRICULTURAL PLANNING
+    const isAgroPlanQuery =
+      clean.includes("plan agricola") ||
+      clean.includes("zafra") ||
+      clean.includes("campana canera") ||
+      clean.includes("planificacion agricola") ||
+      clean.includes("preparacion de suelo") ||
+      clean.includes("siembra de cana") ||
+      clean.includes("renovacion de cepas") ||
+      (activeModule === "agricultural_pda" && (clean.includes("plan") || clean.includes("campaña") || clean.includes("lotes") || clean.includes("parcelas")));
+
+    if (isAgroPlanQuery) {
+      return {
+        intent: "AGRICULTURAL_PLANNING",
+        confidence: 0.96,
+        reason: "Consulta sobre el Plan Agrícola soberano y parámetros de zafra en BioAzúcar 4.0",
+        targetModule: "agricultural_pda",
+        recommendedTool: "get_agricultural_plan_overview",
+      };
+    }
+
+    // ========================================================================
     // 3.6 INDUSTRIAL INTEGRATION & OT CONNECTIVITY (EROS, OPC UA, MODBUS, MQTT, SPARKPLUG, PLC, DCS, RTU, EDGE, UNS)
     // ========================================================================
 

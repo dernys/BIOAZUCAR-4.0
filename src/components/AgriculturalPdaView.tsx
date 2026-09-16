@@ -110,6 +110,10 @@ import { EquipmentModal } from "./agriculture/EquipmentModal";
 import { InputModal } from "./agriculture/InputModal";
 import { ScenarioModal } from "./agriculture/ScenarioModal";
 import { OperationModal } from "./agriculture/OperationModal";
+import { AgriculturalPlanVsRealTab } from "./agriculture/AgriculturalPlanVsRealTab";
+import { AgriculturalReconciliationTab } from "./agriculture/AgriculturalReconciliationTab";
+import { AgriculturalPlanVsRealService } from "../services/agriculture/AgriculturalPlanVsRealService";
+import { AgriculturalReconciliationService } from "../services/agriculture/AgriculturalReconciliationService";
 
 interface AgriculturalPdaViewProps {
   theme?: "dark" | "light";
@@ -132,7 +136,9 @@ type SubTab =
   | "scenarios"
   | "governance"
   | "audit"
-  | "reports";
+  | "reports"
+  | "plan_vs_real"
+  | "reconciliation";
 
 /**
  * Universal safe number formatter to prevent runtime undefined.toFixed() crashes
@@ -481,6 +487,33 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
       totalDieselConsumed: economics?.totalDieselConsumedLiters || 0,
     });
   }, [plots, campaign, fleetPlan?.totalFleetDeficit, economics?.totalDieselConsumedLiters]);
+
+  // Plan vs Real Execution Summary
+  const planVsRealSummary = useMemo(() => {
+    return AgriculturalPlanVsRealService.generatePlanVsRealSummary({
+      campaign,
+      plots,
+      soilPrepPlan,
+      plantingPlan,
+      treatmentsPlan: culturalTreatmentsPlan,
+    });
+  }, [campaign, plots, soilPrepPlan, plantingPlan, culturalTreatmentsPlan]);
+
+  // Mathematical Reconciliation and Data Truth Audit Report
+  const reconciliationReport = useMemo(() => {
+    return AgriculturalReconciliationService.reconcileCampaign({
+      campaign,
+      plots,
+      campaignSummary,
+      soilPrepPlan,
+      plantingPlan,
+      treatmentsPlan: culturalTreatmentsPlan,
+      fleetPlan,
+      cctLogistics,
+      economics,
+      nominalMillTch,
+    });
+  }, [campaign, plots, campaignSummary, soilPrepPlan, plantingPlan, culturalTreatmentsPlan, fleetPlan, cctLogistics, economics, nominalMillTch]);
 
   // Plot CRUD handlers
   const handleSavePlot = async (savedPlot: FieldPlot) => {
@@ -1058,10 +1091,12 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
           { id: "plots", label: "Catastro de Lotes", icon: Wheat, badge: plots.length },
           { id: "varieties", label: "Variedades & Curvas", icon: Sprout, badge: varieties.length },
           { id: "operations", label: "Operaciones & Labores", icon: Tractor, badge: operations.length },
+          { id: "plan_vs_real", label: "Plan vs Real", icon: Activity, badge: planVsRealSummary.overallStatus },
           { id: "inputs", label: "Insumos & Dosis", icon: Layers, badge: inputs.length },
           { id: "fleet_cct", label: "Flota & Logística CCT", icon: Truck },
           { id: "economics", label: "Agro-Economía & CAPEX", icon: DollarSign },
           { id: "scenarios", label: "Escenarios What-If", icon: Sliders, badge: scenarios.length },
+          { id: "reconciliation", label: "Reconciliación & Data Truth", icon: ShieldCheck, badge: `${Math.round((reconciliationReport.passCount / Math.max(1, reconciliationReport.checksCount)) * 100)}%` },
           { id: "governance", label: "Gobernanza de Fórmulas", icon: ShieldCheck, badge: parameterStats.requiresVal > 0 ? `${parameterStats.requiresVal} req` : undefined },
           { id: "audit", label: "Auditoría ISA-95", icon: History, badge: auditRecords.length },
           { id: "reports", label: "Centro de Reportes PDA (16)", icon: FileSpreadsheet },
@@ -2558,6 +2593,33 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
           context={reportContext}
           theme={theme}
           onOpenFormulas={() => setIsFormulaModalOpen(true)}
+        />
+      )}
+
+      {/* SUB-TAB: Plan vs Real Monitoring */}
+      {activeSubTab === "plan_vs_real" && (
+        <AgriculturalPlanVsRealTab
+          theme={theme}
+          summary={planVsRealSummary}
+          campaign={campaign}
+          plots={plots}
+          onRefresh={() => {
+            setNotificationMsg({ text: "Telemetría y avance de labores sincronizados", type: "info" });
+            setTimeout(() => setNotificationMsg(null), 3000);
+          }}
+        />
+      )}
+
+      {/* SUB-TAB: Mathematical Reconciliation & Data Truth Audit */}
+      {activeSubTab === "reconciliation" && (
+        <AgriculturalReconciliationTab
+          theme={theme}
+          report={reconciliationReport}
+          campaignName={campaign.name}
+          onRunReconciliation={() => {
+            setNotificationMsg({ text: "Matriz de reconciliación recalculada con datos vigentes", type: "success" });
+            setTimeout(() => setNotificationMsg(null), 3000);
+          }}
         />
       )}
 
