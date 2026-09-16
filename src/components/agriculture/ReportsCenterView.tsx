@@ -473,7 +473,7 @@ export const ReportsCenterView: React.FC<ReportsCenterViewProps> = ({
                 </span>
                 <div className="flex items-baseline gap-1 mt-1.5">
                   <span className={`text-lg font-bold font-mono ${kpi.color || (isLight ? "text-slate-900" : "text-slate-100")}`}>
-                    {kpi.value}
+                    {typeof kpi.value === "number" ? kpi.value.toLocaleString() : typeof kpi.value === "object" ? JSON.stringify(kpi.value) : String(kpi.value ?? "—")}
                   </span>
                   {kpi.unit && <span className="text-xs text-slate-500">{kpi.unit}</span>}
                 </div>

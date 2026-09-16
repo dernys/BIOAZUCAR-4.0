@@ -1396,6 +1396,16 @@ export interface AgriculturalDataTruthSummary {
   items: AgriculturalDataTruthAuditItem[];
 }
 
+export {
+  formatGovernedValue,
+  formatGovernedValueWithUnit,
+  detectGovernedValueType,
+  validateGovernedJson,
+  parseGovernedInput,
+  type GovernedValueType,
+  type FormatGovernedValueOptions,
+} from "../utils/governedValueFormatter";
+
 
 
 

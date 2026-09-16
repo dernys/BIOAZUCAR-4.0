@@ -19,6 +19,7 @@ import {
   PdaFormulaMaster,
   CalculationTrace,
 } from "../../types/agriculture";
+import { formatGovernedValue } from "../../utils/governedValueFormatter";
 import { PdaFormulaRegistry } from "../../services/agriculture/PdaFormulaRegistry";
 
 interface FormulaViewerModalProps {
@@ -436,7 +437,7 @@ export const FormulaViewerModal: React.FC<FormulaViewerModalProps> = ({
                       <div>
                         <div className="flex items-baseline gap-2 mt-1">
                           <span className="text-2xl font-black font-mono text-emerald-400">
-                            {testResult.result}
+                            {formatGovernedValue(testResult.result)}
                           </span>
                           <span className="font-mono text-slate-400 font-bold">{testResult.unit}</span>
                         </div>

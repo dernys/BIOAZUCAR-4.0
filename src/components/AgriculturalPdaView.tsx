@@ -51,6 +51,8 @@ import {
   Calculator,
   History,
   Minimize2,
+  Braces,
+  Code,
 } from "lucide-react";
 import {
   FieldPlot,
@@ -91,6 +93,11 @@ import {
 import {
   validateParamValue,
 } from "../services/agriculture/agriculturalValidation";
+import {
+  formatGovernedValue,
+  formatGovernedValueWithUnit,
+  validateGovernedJson,
+} from "../utils/governedValueFormatter";
 import {
   INITIAL_AGRICULTURAL_CAMPAIGN,
   INITIAL_FIELD_PLOTS,
@@ -750,7 +757,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
     setParameters(AgriculturalParameterRegistry.getAllParameters());
     setAuditRecords(AgriculturalPersistenceService.getAuditHistory(campaign.tenantId));
     setNotificationMsg({
-      text: `Parámetro ${savedParam.key} guardado (${savedParam.value} ${savedParam.unit}).`,
+      text: `Parámetro ${savedParam.key} guardado (${formatGovernedValue(savedParam.value, savedParam.type, { maxLength: 40 })}${savedParam.unit && savedParam.unit !== "object" && savedParam.unit !== "-" ? ` ${savedParam.unit}` : ""}).`,
       type: "success",
     });
     setTimeout(() => setNotificationMsg(null), 4000);
@@ -804,18 +811,43 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
       return;
     }
 
-    const numVal = parseFloat(paramEditValue);
-    const rangeError = validateParamValue(editingParam, numVal);
-    if (rangeError) {
-      setParamValidationError(rangeError);
-      setNotificationMsg({ text: rangeError, type: "error" });
-      return;
-    }
-
     if (!paramChangeReason.trim()) {
       setParamValidationError("Debe indicar el motivo técnico del cambio para la auditoría formal.");
       setNotificationMsg({ text: "Debe ingresar el motivo de cambio para la auditoría de gobernanza.", type: "error" });
       return;
+    }
+
+    // Determine type and parse safely
+    const isObjOrArray = editingParam.type === "object" || typeof editingParam.value === "object";
+    const isBool = editingParam.type === "boolean" || typeof editingParam.value === "boolean";
+    let finalValue: any;
+
+    if (isObjOrArray) {
+      const jsonRes = validateGovernedJson(paramEditValue);
+      if (!jsonRes.valid) {
+        setParamValidationError(jsonRes.error || "El JSON ingresado no es válido.");
+        setNotificationMsg({ text: jsonRes.error || "Error de sintaxis JSON", type: "error" });
+        return;
+      }
+      finalValue = jsonRes.parsed;
+    } else if (isBool) {
+      finalValue = paramEditValue === "true";
+    } else if (editingParam.type === "text" || typeof editingParam.value === "string") {
+      finalValue = paramEditValue;
+    } else {
+      const numVal = parseFloat(paramEditValue);
+      if (isNaN(numVal)) {
+        setParamValidationError("Debe ingresar un valor numérico válido.");
+        setNotificationMsg({ text: "Debe ingresar un valor numérico válido.", type: "error" });
+        return;
+      }
+      const rangeError = validateParamValue(editingParam, numVal);
+      if (rangeError) {
+        setParamValidationError(rangeError);
+        setNotificationMsg({ text: rangeError, type: "error" });
+        return;
+      }
+      finalValue = numVal;
     }
 
     const previousVal = editingParam.value;
@@ -824,7 +856,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
 
     const updated: AgriculturalParameter = {
       ...editingParam,
-      value: numVal,
+      value: finalValue,
       updatedAt: new Date().toISOString(),
     };
 
@@ -836,7 +868,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
     setParamChangeReason("");
     setParamValidationError(null);
     setNotificationMsg({
-      text: `Parámetro ${updated.key} actualizado: ${previousVal} → ${updated.value} ${updated.unit}. Auditoría inmutable registrada por ${userIdentifier}.`,
+      text: `Parámetro ${updated.key} actualizado: ${formatGovernedValue(previousVal, editingParam.type, { maxLength: 30 })} → ${formatGovernedValue(updated.value, updated.type, { maxLength: 30 })}${updated.unit && updated.unit !== "object" && updated.unit !== "-" ? ` ${updated.unit}` : ""}. Auditoría inmutable registrada por ${userIdentifier}.`,
       type: "success",
     });
     setTimeout(() => setNotificationMsg(null), 5000);
@@ -2404,10 +2436,10 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                             {rec.user}
                           </td>
                           <td className="p-3 font-mono text-slate-400">
-                            {rec.previousValue?.value != null ? `${rec.previousValue.value} ${rec.previousValue.unit || ""}` : "Línea Base"}
+                            {rec.previousValue?.value != null ? formatGovernedValueWithUnit(rec.previousValue.value, rec.previousValue.unit) : "Línea Base"}
                           </td>
                           <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            {rec.newValue?.value != null ? `${rec.newValue.value} ${rec.newValue.unit || ""}` : "N/A"}
+                            {rec.newValue?.value != null ? formatGovernedValueWithUnit(rec.newValue.value, rec.newValue.unit) : "N/A"}
                           </td>
                           <td className={`p-3 max-w-xs ${isLight ? "text-slate-700" : "text-slate-300"}`}>
                             {rec.reason || "Sin motivo especificado"}
@@ -2528,7 +2560,17 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                             <span className="text-[11px] text-slate-400 line-clamp-1">{param.description}</span>
                           </td>
                           <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            {typeof param.value === "number" ? param.value.toLocaleString() : String(param.value)}
+                            {typeof param.value === "object" && param.value !== null ? (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-violet-500/10 text-violet-400 border border-violet-500/20 max-w-[200px]"
+                                title={formatGovernedValue(param.value, param.type, { multiline: true })}
+                              >
+                                <Braces className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{formatGovernedValue(param.value, param.type, { maxLength: 25 })}</span>
+                              </span>
+                            ) : (
+                              formatGovernedValue(param.value, param.type)
+                            )}
                           </td>
                           <td className="p-3 text-slate-400 font-mono">{param.unit}</td>
                           <td className="p-3 font-mono text-[11px] text-slate-400">
@@ -2541,7 +2583,12 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                               <button
                                 onClick={() => {
                                   setEditingParam(param);
-                                  setParamEditValue(String(param.value));
+                                  const isObj = param.type === "object" || typeof param.value === "object";
+                                  setParamEditValue(
+                                    isObj
+                                      ? formatGovernedValue(param.value, undefined, { multiline: true, indent: 2 })
+                                      : formatGovernedValue(param.value)
+                                  );
                                   setParamChangeReason("");
                                   setParamValidationError(null);
                                 }}
@@ -2688,31 +2735,122 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                 <p className="text-[11px] text-slate-400 mt-1">{editingParam.description}</p>
                 <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-slate-400 border-t border-slate-800/40 pt-1.5">
                   <span>Procedencia: <strong className="text-emerald-500">{editingParam.provenanceDoc || editingParam.category}</strong></span>
-                  <span>Valor Actual: <strong className={isLight ? "text-slate-800" : "text-slate-200"}>{editingParam.value} {editingParam.unit}</strong></span>
+                  <span>Valor Actual: <strong className={isLight ? "text-slate-800" : "text-slate-200"}>{formatGovernedValueWithUnit(editingParam.value, editingParam.unit, editingParam.type, { maxLength: 40 })}</strong></span>
                 </div>
               </div>
 
-              <div>
-                <label className={`font-semibold block mb-1 ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                  Nuevo Valor ({editingParam.unit}):
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  disabled={!canEditGovernance}
-                  value={paramEditValue}
-                  onChange={(e) => {
-                    setParamEditValue(e.target.value);
-                    setParamValidationError(null);
-                  }}
-                  className={`w-full text-sm font-mono px-3 py-2 rounded-lg border focus:outline-hidden ${
-                    isLight
-                      ? "bg-slate-50 border-slate-300 text-slate-900 focus:border-emerald-500"
-                      : "bg-slate-950 border-slate-700 text-white focus:border-emerald-500"
-                  }`}
-                  placeholder={`Ej: ${editingParam.value}`}
-                />
-              </div>
+              {/* Editor depending on whether editingParam is object/array, boolean, or scalar */}
+              {(() => {
+                const isEditingObj = editingParam.type === "object" || typeof editingParam.value === "object";
+                const isEditingBool = editingParam.type === "boolean" || typeof editingParam.value === "boolean";
+                const jsonValidation = isEditingObj ? validateGovernedJson(paramEditValue) : { valid: true };
+
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={`font-semibold block ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                        Nuevo Valor {editingParam.unit && editingParam.unit !== "object" && editingParam.unit !== "-" ? `(${editingParam.unit})` : ""}:
+                      </label>
+                      {isEditingObj && (
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-mono ${jsonValidation.valid ? "text-emerald-400" : "text-rose-400"}`}>
+                            {jsonValidation.valid ? "✓ JSON Válido" : "✗ JSON Inválido"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (jsonValidation.valid && jsonValidation.parsed !== undefined) {
+                                setParamEditValue(JSON.stringify(jsonValidation.parsed, null, 2));
+                                setParamValidationError(null);
+                              }
+                            }}
+                            className="text-[10px] font-mono text-violet-400 hover:text-violet-300 flex items-center gap-1"
+                          >
+                            <Code className="w-3 h-3" />
+                            <span>Formatear</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {isEditingBool ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          disabled={!canEditGovernance}
+                          onClick={() => {
+                            setParamEditValue("true");
+                            setParamValidationError(null);
+                          }}
+                          className={`p-2 rounded-lg border font-mono text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                            paramEditValue === "true"
+                              ? "bg-emerald-500/20 border-emerald-500 text-emerald-400"
+                              : isLight
+                              ? "bg-slate-100 border-slate-300 text-slate-700"
+                              : "bg-slate-800 border-slate-700 text-slate-400"
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>VERDADERO (true)</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!canEditGovernance}
+                          onClick={() => {
+                            setParamEditValue("false");
+                            setParamValidationError(null);
+                          }}
+                          className={`p-2 rounded-lg border font-mono text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                            paramEditValue === "false"
+                              ? "bg-rose-500/20 border-rose-500 text-rose-400"
+                              : isLight
+                              ? "bg-slate-100 border-slate-300 text-slate-700"
+                              : "bg-slate-800 border-slate-700 text-slate-400"
+                          }`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>FALSO (false)</span>
+                        </button>
+                      </div>
+                    ) : isEditingObj ? (
+                      <textarea
+                        rows={7}
+                        disabled={!canEditGovernance}
+                        value={paramEditValue}
+                        onChange={(e) => {
+                          setParamEditValue(e.target.value);
+                          setParamValidationError(null);
+                        }}
+                        className={`w-full text-xs font-mono p-2.5 rounded-lg border focus:outline-hidden ${
+                          !jsonValidation.valid
+                            ? "border-rose-500 bg-rose-950/20 text-rose-200"
+                            : isLight
+                            ? "bg-slate-50 border-slate-300 text-slate-900 focus:border-emerald-500"
+                            : "bg-slate-950 border-slate-700 text-emerald-300 focus:border-emerald-500"
+                        }`}
+                        placeholder={`{\n  "ejemplo": 1.0\n}`}
+                      />
+                    ) : (
+                      <input
+                        type={editingParam.type === "text" ? "text" : "number"}
+                        step="any"
+                        disabled={!canEditGovernance}
+                        value={paramEditValue}
+                        onChange={(e) => {
+                          setParamEditValue(e.target.value);
+                          setParamValidationError(null);
+                        }}
+                        className={`w-full text-sm font-mono px-3 py-2 rounded-lg border focus:outline-hidden ${
+                          isLight
+                            ? "bg-slate-50 border-slate-300 text-slate-900 focus:border-emerald-500"
+                            : "bg-slate-950 border-slate-700 text-white focus:border-emerald-500"
+                        }`}
+                        placeholder={`Ej: ${formatGovernedValue(editingParam.value, editingParam.type)}`}
+                      />
+                    )}
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className={`font-semibold block mb-1 ${isLight ? "text-slate-800" : "text-slate-200"}`}>
@@ -2843,7 +2981,7 @@ export const AgriculturalPdaView: React.FC<AgriculturalPdaViewProps> = ({
                       >
                         <span className="font-mono text-slate-400">{key}:</span>
                         <span className="font-mono font-bold text-slate-200">
-                          {typeof val === "number" ? val.toLocaleString() : String(val ?? "—")}{" "}
+                          {formatGovernedValue(val, undefined, { maxLength: 60 })}{" "}
                           {unit && <span className="text-slate-500 font-normal">{unit}</span>}
                         </span>
                       </div>

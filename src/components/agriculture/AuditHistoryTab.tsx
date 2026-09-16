@@ -12,6 +12,7 @@ import {
   Database,
 } from "lucide-react";
 import { AgriculturalAuditChangeRecord } from "../../types/agriculture";
+import { formatGovernedValue, formatGovernedValueWithUnit } from "../../utils/governedValueFormatter";
 
 interface AuditHistoryTabProps {
   auditRecords: AgriculturalAuditChangeRecord[];
@@ -38,10 +39,11 @@ export const AuditHistoryTab: React.FC<AuditHistoryTabProps> = ({
     return matchEntity && matchAction && matchSearch;
   });
 
-  const formatValue = (val: any) => {
-    if (val === undefined || val === null) return "null";
-    if (typeof val === "object") return JSON.stringify(val);
-    return String(val);
+  const formatValue = (item: any) => {
+    if (item === undefined || item === null) return "—";
+    const val = typeof item === "object" && item !== null && "value" in item ? item.value : item;
+    const unit = typeof item === "object" && item !== null && "unit" in item ? item.unit : undefined;
+    return formatGovernedValueWithUnit(val, unit, undefined, { maxLength: 80 });
   };
 
   return (

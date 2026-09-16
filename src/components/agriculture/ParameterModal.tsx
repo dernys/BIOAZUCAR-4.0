@@ -1,6 +1,12 @@
-import React, { useState, useEffect } from "react";
-import { X, Sliders, Check, AlertCircle, Sparkles } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { X, Sliders, Check, AlertCircle, Sparkles, Code, CheckCircle2, Braces, ListFilter } from "lucide-react";
 import { AgriculturalParameter, AgroParameterCategory, ValidationStatus } from "../../types/agriculture";
+import {
+  formatGovernedValue,
+  detectGovernedValueType,
+  validateGovernedJson,
+  parseGovernedInput,
+} from "../../utils/governedValueFormatter";
 
 interface ParameterModalProps {
   isOpen: boolean;
@@ -23,6 +29,8 @@ const CATEGORIES: { value: AgroParameterCategory; label: string }[] = [
   { value: "THRESHOLDS", label: "Límites, Factores de Seguridad & Umbrales" },
 ];
 
+type SupportedValueType = "numeric" | "text" | "boolean" | "object" | "array";
+
 export const ParameterModal: React.FC<ParameterModalProps> = ({
   isOpen,
   onClose,
@@ -36,6 +44,7 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
   const [name, setName] = useState("");
   const [key, setKey] = useState("");
   const [category, setCategory] = useState<AgroParameterCategory>("AGRO_OPERATIONS");
+  const [valueType, setValueType] = useState<SupportedValueType>("numeric");
   const [value, setValue] = useState<string>("");
   const [unit, setUnit] = useState("");
   const [source, setSource] = useState("Calibración Agronómica Local");
@@ -49,11 +58,26 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
       setName(initialParam.name);
       setKey(initialParam.key);
       setCategory(initialParam.category);
-      setValue(
-        typeof initialParam.value === "object"
-          ? JSON.stringify(initialParam.value, null, 2)
-          : String(initialParam.value)
-      );
+
+      // Detect original type with high precision
+      let detectedType: SupportedValueType = "numeric";
+      if (initialParam.type === "object" || typeof initialParam.value === "object") {
+        detectedType = Array.isArray(initialParam.value) ? "array" : "object";
+      } else if (initialParam.type === "boolean" || typeof initialParam.value === "boolean") {
+        detectedType = "boolean";
+      } else if (initialParam.type === "text" || typeof initialParam.value === "string") {
+        detectedType = "text";
+      } else {
+        detectedType = "numeric";
+      }
+      setValueType(detectedType);
+
+      if (detectedType === "object" || detectedType === "array") {
+        setValue(formatGovernedValue(initialParam.value, undefined, { multiline: true, indent: 2 }));
+      } else {
+        setValue(formatGovernedValue(initialParam.value));
+      }
+
       setUnit(initialParam.unit);
       setSource(initialParam.source || "Calibración Agronómica Local");
       setDescription(initialParam.description || "");
@@ -69,6 +93,7 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
       setName("");
       setKey("");
       setCategory("MAQUINARIA");
+      setValueType("numeric");
       setValue("1.0");
       setUnit("L/ha");
       setSource("Calibración Agronómica Local");
@@ -79,7 +104,47 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
     setErrorMsg(null);
   }, [initialParam, isOpen]);
 
+  // Live JSON validation for object/array
+  const jsonStatus = useMemo(() => {
+    if (valueType !== "object" && valueType !== "array") return { valid: true };
+    return validateGovernedJson(value);
+  }, [value, valueType]);
+
   if (!isOpen) return null;
+
+  const handlePrettifyJson = () => {
+    if (jsonStatus.valid && jsonStatus.parsed !== undefined) {
+      setValue(JSON.stringify(jsonStatus.parsed, null, 2));
+      setErrorMsg(null);
+    } else {
+      setErrorMsg(jsonStatus.error || "No se puede formatear JSON inválido.");
+    }
+  };
+
+  const handleTypeChange = (newType: SupportedValueType) => {
+    setValueType(newType);
+    setErrorMsg(null);
+
+    // Provide default valid templates when switching type on new parameter
+    if (!initialParam) {
+      if (newType === "boolean") {
+        setValue("true");
+        setUnit("bool");
+      } else if (newType === "object") {
+        setValue("{\n  \"factor\": 1.0\n}");
+        setUnit("object");
+      } else if (newType === "array") {
+        setValue("[\n  1.0,\n  0.9\n]");
+        setUnit("array");
+      } else if (newType === "numeric") {
+        setValue("1.0");
+        setUnit("L/ha");
+      } else {
+        setValue("");
+        setUnit("-");
+      }
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,18 +157,11 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
       return;
     }
 
-    // Try parsing value as number, boolean or object if applicable
-    let parsedValue: any = value;
-    if (value === "true") parsedValue = true;
-    else if (value === "false") parsedValue = false;
-    else if (!isNaN(Number(value)) && value.trim() !== "") parsedValue = Number(value);
-    else if (value.startsWith("{") || value.startsWith("[")) {
-      try {
-        parsedValue = JSON.parse(value);
-      } catch {
-        setErrorMsg("El valor JSON ingresado no es válido.");
-        return;
-      }
+    // Validate and parse value strictly according to valueType
+    const parsed = parseGovernedInput(value, valueType);
+    if (!parsed.success) {
+      setErrorMsg(parsed.error || "El valor ingresado no es válido para el tipo seleccionado.");
+      return;
     }
 
     const paramToSave: AgriculturalParameter = {
@@ -112,10 +170,11 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
       name: name.trim(),
       key: key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_"),
       category,
-      value: parsedValue,
-      unit: unit.trim() || "-",
+      value: parsed.value,
+      unit: unit.trim() || (valueType === "object" || valueType === "array" ? "object" : "-"),
+      type: (initialParam?.type && initialParam.type !== "object" ? initialParam.type : valueType) as any,
       source: source.trim(),
-      provenanceDoc: "Gestor Dinámico de Parámetros",
+      provenanceDoc: initialParam?.provenanceDoc || "Gestor Dinámico de Parámetros",
       version: initialParam?.version || "1.0.0",
       effectiveFrom: initialParam?.effectiveFrom || new Date().toISOString(),
       status: validationStatus as any,
@@ -132,7 +191,7 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
       <div
-        className={`w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden transition-all my-8 ${
+        className={`w-full max-w-2xl rounded-2xl border shadow-2xl overflow-hidden transition-all my-8 ${
           isLight ? "bg-white border-slate-200 text-slate-900" : "bg-slate-900 border-slate-800 text-slate-100"
         }`}
       >
@@ -147,7 +206,7 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
                 {initialParam ? "Modificar Parámetro / Fórmula" : "Crear Nuevo Parámetro o Fórmula"}
               </h2>
               <p className="text-xs text-slate-400">
-                Ajuste dinámico de coeficientes, rendimientos mecánicos y precios
+                Gobernanza de coeficientes escalares, booleanos y estructuras complejas JSON
               </p>
             </div>
           </div>
@@ -220,20 +279,171 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                Valor Actual *
-              </label>
-              <input
-                type="text"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder="Ej. 0.95"
-                className={`w-full px-3 py-2 rounded-lg border text-sm font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-amber-500 ${
-                  isLight ? "bg-white border-slate-300 text-slate-900" : "bg-slate-800 border-slate-700 text-white"
-                }`}
-                required
-              />
+            {/* Type Selector and Indicator */}
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <span>Tipo de Dato Gobernado</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    {valueType === "numeric"
+                      ? "Escalar Numérico"
+                      : valueType === "boolean"
+                      ? "Booleano (True/False)"
+                      : valueType === "object"
+                      ? "Objeto Estructurado JSON ({...})"
+                      : valueType === "array"
+                      ? "Lista / Array JSON ([...])"
+                      : "Texto / String"}
+                  </span>
+                </label>
+
+                {(valueType === "object" || valueType === "array") && (
+                  <button
+                    type="button"
+                    onClick={handlePrettifyJson}
+                    className="text-[11px] font-mono text-amber-400 hover:text-amber-300 flex items-center gap-1 transition"
+                    title="Formatear e indentar JSON"
+                  >
+                    <Code className="w-3.5 h-3.5" />
+                    <span>Formatear JSON</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Segmented type switcher */}
+              <div className={`grid grid-cols-5 p-1 rounded-lg border text-xs text-center ${
+                isLight ? "bg-slate-100 border-slate-300" : "bg-slate-950 border-slate-800"
+              }`}>
+                {(["numeric", "boolean", "object", "array", "text"] as SupportedValueType[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => handleTypeChange(t)}
+                    className={`py-1 rounded font-mono transition ${
+                      valueType === t
+                        ? "bg-amber-500 text-black font-bold shadow-xs"
+                        : isLight
+                        ? "text-slate-600 hover:text-slate-900"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {t === "numeric"
+                      ? "Numérico"
+                      : t === "boolean"
+                      ? "Booleano"
+                      : t === "object"
+                      ? "Objeto"
+                      : t === "array"
+                      ? "Array"
+                      : "Texto"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Value Editor based on valueType */}
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Valor Actual *
+                </label>
+                {(valueType === "object" || valueType === "array") && (
+                  <span className={`text-[11px] font-mono flex items-center gap-1 ${
+                    jsonStatus.valid ? "text-emerald-400" : "text-rose-400"
+                  }`}>
+                    {jsonStatus.valid ? (
+                      <>
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>Sintaxis JSON Válida</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-3 h-3" />
+                        <span>JSON Inválido</span>
+                      </>
+                    )}
+                  </span>
+                )}
+              </div>
+
+              {valueType === "boolean" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setValue("true")}
+                    className={`p-2.5 rounded-lg border font-mono font-bold text-sm transition flex items-center justify-center gap-2 ${
+                      value === "true"
+                        ? "bg-emerald-500/20 border-emerald-500 text-emerald-400"
+                        : isLight
+                        ? "bg-slate-100 border-slate-300 text-slate-700"
+                        : "bg-slate-800 border-slate-700 text-slate-400"
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>VERDADERO (true)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setValue("false")}
+                    className={`p-2.5 rounded-lg border font-mono font-bold text-sm transition flex items-center justify-center gap-2 ${
+                      value === "false"
+                        ? "bg-rose-500/20 border-rose-500 text-rose-400"
+                        : isLight
+                        ? "bg-slate-100 border-slate-300 text-slate-700"
+                        : "bg-slate-800 border-slate-700 text-slate-400"
+                    }`}
+                  >
+                    <X className="w-4 h-4" />
+                    <span>FALSO (false)</span>
+                  </button>
+                </div>
+              ) : valueType === "object" || valueType === "array" ? (
+                <div className="space-y-1.5">
+                  <textarea
+                    rows={8}
+                    value={value}
+                    onChange={(e) => {
+                      setValue(e.target.value);
+                      setErrorMsg(null);
+                    }}
+                    placeholder={valueType === "object" ? '{\n  "param": 1.0\n}' : '[\n  1.0,\n  2.0\n]'}
+                    className={`w-full p-3 rounded-lg border text-xs font-mono font-medium focus:outline-hidden focus:ring-2 focus:ring-amber-500 ${
+                      !jsonStatus.valid
+                        ? "border-rose-500 bg-rose-950/20 text-rose-200"
+                        : isLight
+                        ? "bg-slate-50 border-slate-300 text-slate-900"
+                        : "bg-slate-950 border-slate-700 text-emerald-300"
+                    }`}
+                    required
+                  />
+                  {!jsonStatus.valid && jsonStatus.error && (
+                    <p className="text-[11px] font-mono text-rose-400">{jsonStatus.error}</p>
+                  )}
+                </div>
+              ) : valueType === "numeric" ? (
+                <input
+                  type="number"
+                  step="any"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="Ej. 0.95"
+                  className={`w-full px-3 py-2 rounded-lg border text-sm font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-amber-500 ${
+                    isLight ? "bg-white border-slate-300 text-slate-900" : "bg-slate-800 border-slate-700 text-white"
+                  }`}
+                  required
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="Texto o valor alfanumérico"
+                  className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-hidden focus:ring-2 focus:ring-amber-500 ${
+                    isLight ? "bg-white border-slate-300 text-slate-900" : "bg-slate-800 border-slate-700 text-white"
+                  }`}
+                  required
+                />
+              )}
             </div>
 
             <div>
@@ -244,7 +454,7 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
                 type="text"
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                placeholder="Ej. USD/L, t/ha, h, km/h"
+                placeholder="Ej. USD/L, t/ha, h, km/h, object"
                 className={`w-full px-3 py-2 rounded-lg border text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-amber-500 ${
                   isLight ? "bg-white border-slate-300 text-slate-900" : "bg-slate-800 border-slate-700 text-white"
                 }`}
@@ -268,7 +478,7 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
               </select>
             </div>
 
-            <div>
+            <div className="md:col-span-2">
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
                 Fuente / Justificación
               </label>
@@ -311,7 +521,12 @@ export const ParameterModal: React.FC<ParameterModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl text-sm font-bold bg-amber-500 hover:bg-amber-400 text-black flex items-center gap-2 transition-all shadow-lg shadow-amber-500/20"
+              disabled={(valueType === "object" || valueType === "array") && !jsonStatus.valid}
+              className={`px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg ${
+                (valueType === "object" || valueType === "array") && !jsonStatus.valid
+                  ? "bg-slate-700 text-slate-400 cursor-not-allowed opacity-50"
+                  : "bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20 cursor-pointer"
+              }`}
             >
               <Check className="w-4 h-4" />
               <span>Guardar Parámetro</span>
