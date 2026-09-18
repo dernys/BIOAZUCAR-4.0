@@ -1,9 +1,9 @@
 # BioAzúcar 4.0 — Documento Maestro de Desarrollo y Hoja de Ruta Industrial
 
-> **Versión:** 4.2.0-REBASELINE-INDUSTRIAL-REV2  
-> **Estado:** DOCUMENTO MAESTRO ACTIVO DE INGENIERÍA — SEGUNDA REVISIÓN INDEPENDIENTE  
-> **Auditoría Técnica:** Ejecutada contra el código fuente real del repositorio  
-> **Ámbito:** Industrial Edge Daemon, Conectividad OT Real Wire-Level con Bibliotecas Maduras, Data Truth Inviolable, Ciberseguridad IEC 62443 por Fases de Madurez, Historiador Embebido Mínimo, Arquitectura ISA-95 L0–L4, Pipeline BioAI con Safety Boundaries, HIL, Protocolos FAT/SAT Reproducibles y Comisionamiento en Zafra.
+> **Versión:** 4.3.0-FROZEN-ARCHITECTURE-SPEC  
+> **Estado:** ESPECIFICACIÓN TÉCNICA CONGELADA Y AUDITADA — LISTA PARA EJECUCIÓN (I22 READY)  
+> **Auditoría Técnica:** Auditoría de Arquitectura Industrial y Cierre de Brechas de Hardware/Runtime  
+> **Ámbito:** Industrial Edge Daemon, Runtime Profiles (SIMULATION/LAB/PRODUCTION), Fail-Closed Mandatorio, Data Provenance Canónica (17 Atributos), Desacoplo de Calidad de Datos, Calificación de Dependencias (DQT), Benchmarking SQLite WAL y Modo Síncrono, Seguridad de Comandos (LLM ⨉ PLC), Arquitectura Driver en 4 Capas, DAG Paralelo Optimizado, Clasificación Formal de Métricas y Criterios Inviolables.
 
 ---
 
@@ -36,6 +36,50 @@ $$\text{PLANNED} \longrightarrow \text{PARTIAL} \longrightarrow \text{IMPLEMENTE
 │ IMPLEMENTED ≠ TESTED  │  TESTED ≠ INTEGRATED  │  INTEGRATED ≠ VERIFIED  │  COMMISSIONED ≠ PROD_READY    │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### 1.3 Taxonomía de Hardware y Entornos de Prueba
+
+Para no inventar hardware ni asumir disponibilidad no verificada de controladores físicos (Siemens S7, Rockwell CIP, Modbus RTU/TCP, servidores OPC UA y DCS EROS), se establece una taxonomía formal de entornos de prueba y la evidencia técnica específica que aporta cada uno:
+
+| Entorno / Dispositivo | Descripción Técnica | Evidencia que Aporta | Limitaciones Técnicas |
+| :--- | :--- | :--- | :--- |
+| **`SIMULATOR`** | Proceso software en bucle local (`localhost`) o contenedor Docker que emula respuestas a nivel de protocolo (e.g. sockets emulados, generadores sintéticos). | Valida sintaxis de tramas, máquinas de estados de sesión, serialización/deserialización y manejo de excepciones en CI/CD. | **No valida** comportamiento de red física, latencias de bus, temporización $t_{3.5}$ de UART serie ni saturación de CPU de PLCs reales. |
+| **`REFERENCE SERVER`** | Servidor o broker de referencia estándar de la industria ejecutándose en un host de red independiente (e.g. Prosys OPC UA Simulation Server, broker Eclipse Mosquitto con TLS, Diagslave Modbus). | Valida conformidad estricta con el estándar, handshakes TCP/TLS, negociación de seguridad X.509, suscripciones y reconexión ante fallas de enlace. | **No valida** restricciones de memoria de PLCs embebidos, tiempos de ciclo de scan de CPU ni jitter de buses de campo industriales. |
+| **`LAB DEVICE`** | Controlador físico (PLC S7/ControlLogix), módulo de I/O remota o instrumento real montado en banco de pruebas de ingeniería fuera de la línea de proceso. | Valida compatibilidad eléctrica, stacks de firmware específicos de fabricante, direccionamiento de memoria real (DBs S7, CIP tags) y comportamiento tras reinicio del autómata. | Operación con señales eléctricas estáticas o simuladas mediante potenciómetros; no experimenta la dinámica de proceso real de zafra. |
+| **`HIL (Hardware-in-the-Loop)`** | Banco donde PLCs reales ejecutan lógica de control conectados a un simulador de proceso en tiempo real que emula la dinámica de molienda y calderas. | Valida lazos cerrados de control, tiempos de respuesta extremo a extremo, respuesta ante fallas catastróficas simuladas y saturación de comunicaciones. | Requiere modelos matemáticos rigurosos validados de tándem de molinos y calderas; costo de instrumentación de banco. |
+| **`FIELD DEVICE`** | Instrumento de medición, actuador o PLC de control instalado en la línea de producción activa de un ingenio azucarero (e.g. transmisor de presión hidráulica de masa superior). | Valida operación bajo severidad industrial real: armónicos de variadores de frecuencia, temperaturas elevadas, vibración mecánica, polvillo de bagazo y dinámica de caña. | Acceso restringido al calendario de zafra y protocolos de parada; pruebas destructivas estrictamente prohibidas en producción. |
+
+### 1.4 Arquitectura de Runtime Profiles Industriales
+
+Se sustituye cualquier dependencia exclusiva de variables ad-hoc por una arquitectura explícita de **Runtime Profiles** tipados: `SIMULATION`, `LAB` y `PRODUCTION`.
+
+El perfil activo se establece de forma mandatoria mediante la variable de entorno `INDUSTRIAL_RUNTIME_PROFILE`.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ REGLA ABSOLUTA DE SEGURIDAD (INVIOLABLE):                                                               │
+│ PRODUCTION MUST FAIL CLOSED.                                                                            │
+│ Un error de configuración, valor nulo, no reconocido o inconsistencia de certificados JAMÁS debe        │
+│ permitir accidentalmente una transición o degradación silenciosa: SIMULATION ──> LIVE_OT.               │
+│ Si la configuración es ambigua o inválida, el Edge Daemon ABORTA DE INMEDIATO (process.exit(1)).       │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Matriz Exhaustiva de Runtime Profiles
+
+| Dimensión de Control | Perfil `SIMULATION` | Perfil `LAB` | Perfil `PRODUCTION` |
+| :--- | :--- | :--- | :--- |
+| **Objetivo Operativo** | Desarrollo local, CI/CD automatizado, tests unitarios en memoria. | Banco de pruebas de ingeniería, validación HIL y homologación de drivers. | Operación industrial continua en IPC conectado a planta azucarera. |
+| **Drivers Permitidos** | Virtual / Mock / Loopback drivers. | Drivers reales (`node-opcua`, `modbus-serial`, etc.) + Reference Servers. | **Únicamente adaptadores de protocolo reales** con transporte físico OT. |
+| **Generación de Datos Sintéticos** | **PERMITIDO** (ondas senoidales, rampas, ruido estocástico). | **PROHIBIDO en canal OT del driver**. Permitido sólo en el peer/simulador externo. | **ESTRICTAMENTE PROHIBIDO** (`FAIL CLOSED`). Cero líneas sintéticas. |
+| **Uso de Mocks** | **PERMITIDO**. | **PROHIBIDO en runtime daemon**. Permitido sólo en suites de test de integración aisladas. | **ESTRICTAMENTE PROHIBIDO**. Mocks eliminados del factory de producción. |
+| **Requisito de PLC** | Ninguno (autocontenido). | PLC de banco, HIL o Reference Server externo verificado en red. | **Hardware físico en planta obligatorio** (enlace OT vivo verificado). |
+| **Permisos de Comandos (Escritura)** | Loopback virtual / Dry-run sin efecto físico. | Habilitado en banco de pruebas con confirmación manual de operador. | **Estrictamente subordinado al Secure Command Gateway** + Enclavamientos + Doble factor / cuatro ojos. |
+| **Permisos de BioAI** | Modo experimental / sandbox (sin restricciones de actuador). | Modo prescriptivo evaluado contra telemetría de banco/HIL. | **Sólo recomendaciones advisory** a través de la Envolvente de Seguridad Hugot. Prohibido control directo a PLC. |
+| **Historiador Local** | En memoria o SQLite temporal en `/tmp`. | SQLite WAL persistente con rotación de pruebas. | **SQLite WAL duradero** en almacenamiento no volátil con particionado calificado. |
+| **Store & Forward** | Mock sink o bypass local. | Activo hacia servidor DMZ local de prueba. | **Motor WAL transaccional** hacia DMZ/Cloud con comprobación de `fsync` y RPO $\le 100	ext{ ms}$. |
+| **Auditoría Criptográfica** | Log estructurado a consola / stdout. | Log firmado localmente con hash SHA-256. | **Audit trail inmutable SHA-256** + Syslog industrial redundante remoto. |
+| **Observabilidad** | Métricas locales en memoria. | Prometheus exporter activo en puerto local de diagnóstico. | **Prometheus + Node Exporter + Watchdog kernel (`/dev/watchdog`) activo**. |
 
 ---
 
@@ -126,7 +170,36 @@ BioAzúcar 4.0 opera bajo una estricta segmentación conforme al modelo jerárqu
   Cuchillas picadoras, desmenuzadora, molinos 1..5, calderas de bagazo, turbinas
 ```
 
-### 3.1 Regla de Oro ISA-95
+### 3.1 Pipeline Inviolable de Seguridad de Comandos: LLM ⨉ PLC
+
+Queda formalmente tipificada la prohibición absoluta de cualquier conexión o comando directo originado en modelos de lenguaje o algoritmos generativos hacia autómatas de control de planta:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ REGLA DE SEGURIDAD OPERACIONAL P0:                                                                      │
+│                   ┌─────────┐                                                                           │
+│                   │   LLM   │ ─── ⨉ ───> [ PLC / CONTROLADOR L1 ]  (ESTRICTAMENTE PROHIBIDO)            │
+│                   └─────────┘                                                                           │
+│ Ningún componente de inteligencia generativa tiene permitido generar, canalizar ni emitir setpoints,    │
+│ paquetes de red ni señales de control hacia el Nivel 1 o Nivel 0 de la pirámide ISA-95.                │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+El único flujo prescriptivo de optimización autorizado en BioAzúcar 4.0 opera bajo el siguiente pipeline secuencial de 9 etapas con compuertas de seguridad físicas y humanas:
+
+$$egin{aligned}
+	ext{LLM / ML (Nivel 4/Cloud)} & \longrightarrow 	ext{1. Recomendación Operativa (Advisory Only)} \
+& \longrightarrow 	ext{2. Safety Envelope (Ecuaciones Físicas Canónicas de Hugot/Spencer-Meade)} \
+& \longrightarrow 	ext{3. Policy Validation (Enclavamientos de Nivel 1 y Rangos Permitidos)} \
+& \longrightarrow 	ext{4. Human Approval (Doble Factor y Principio de Cuatro Ojos en HMI/SCADA)} \
+& \longrightarrow 	ext{5. Secure Command Gateway (Edge Daemon con Token Criptográfico Efímero)} \
+& \longrightarrow 	ext{6. Protocol Driver Calificado (OPC UA / Modbus / S7 / CIP)} \
+& \longrightarrow 	ext{7. PLC / Autómata Físico (Escritura en Registro/Tag)} \
+& \longrightarrow 	ext{8. Read-After-Write Verification (Confirmación de Setpoint Alcanzado)} \
+& \longrightarrow 	ext{9. Cryptographic Audit Trail (Registro Inmutable SHA-256 de la Acción)}
+\end{aligned}$$
+
+### 3.2 Regla de Oro ISA-95
 **LA NUBE NUNCA SE COMUNICA DIRECTAMENTE CON EL NIVEL 1 O NIVEL 0.**  
 Queda terminantemente prohibido cualquier túnel directo, puerto entrante en el firewall de planta o polling de la nube hacia PLCs. Toda comunicación está mediada por el Edge Daemon en Nivel 3, con terminación completa de protocolos y filtrado de comandos por el Secure Command Gateway.
 
@@ -134,15 +207,75 @@ Queda terminantemente prohibido cualquier túnel directo, puerto entrante en el 
 
 ## 4. POLÍTICA FUNDAMENTAL DE DATA TRUTH (P0 ABSOLUTO)
 
-La integridad de las decisiones industriales y agronómicas depende de la pureza de la señal de datos. Se define el pipeline canónico unidireccional:
+La premisa central de ingeniería de BioAzúcar 4.0 es que **los datos no confiables son peores que la ausencia de datos**. Un setpoint, diagnóstico o inferencia de molienda generado a partir de datos sintéticos, interpolados o no verificados puede provocar daños mecánicos severos en molinos (fractura de masa superior por sobrepresión hidráulica) o explosiones en calderas de bagazo.
 
-$$\text{RAW OT} \longrightarrow \text{NORMALIZED} \longrightarrow \text{QUALITY CHECKED} \longrightarrow \text{TRUSTED} \longrightarrow \text{HISTORIAN} \longrightarrow \text{ANALYTICS} \longrightarrow \text{BIOAI}$$
+### 4.1 Contrato Canónico de Datos Industriales con Proveniencia de Primera Clase
 
-### 4.1 Axiomas Inviolables de Calidad de Datos
-1. **`SIMULATED ≠ LIVE_OT`**: Ningún dato sintético o generado por modelo matemático puede adquirir proveniencia física. La mutación de proveniencia constituye una falla crítica de seguridad.
-2. **`STALE ≠ GOOD`**: Una señal congelada (*flatline*) en una variable de proceso dinámico (temperatura de vapor, nivel de imbibición) tras el tiempo de timeout ($t > 180\text{ s}$) transiciona automáticamente a `UNCERTAIN` o `BAD`.
-3. **`BAD ≠ TRUSTED`**: Muestras marcadas con calidad `BAD` (fuera de rango de ingeniería, error de CRC, timeout de socket) jamás entran silenciosamente en modelos analíticos ni en cálculos de balance de materia/energía.
-4. **`FALLBACK DE SEGURIDAD`**: Ante cualquier señal en `BAD` en un lazo de optimización, el sistema revierte al setpoint seguro por defecto (*safe state*) fijado por ingeniería de planta.
+Todo dato que circule por el ecosistema BioAzúcar 4.0 debe implementar estrictamente el contrato tipado `IndustrialDataPoint`, el cual eleva la proveniencia al nivel de requerimiento arquitectónico indispensable:
+
+```typescript
+export interface IndustrialDataPoint {
+  // --- Metadatos de Runtime y Origen ---
+  readonly runtimeMode: 'SIMULATION' | 'LAB' | 'PRODUCTION';
+  readonly sourceType: 'PLC' | 'DCS' | 'SENSOR' | 'LAB_INSTRUMENT' | 'SIMULATOR' | 'MOCK';
+  readonly sourceId: string;          // e.g. "PLC-MOLINO-01", "SIM-TURBINA-02"
+  readonly driverId: string;          // e.g. "driver-modbus-tcp-01", "driver-opcua-client-01"
+  readonly protocol: 'OPC_UA' | 'MODBUS_TCP' | 'MODBUS_RTU' | 'SPARKPLUG_B' | 'SIEMENS_S7' | 'ROCKWELL_CIP' | 'EROS' | 'CANONICAL_TEST';
+  readonly deviceId: string;          // e.g. "DEV-TANDEM-M1"
+  readonly assetId: string;           // e.g. "MOLINO-01-MASA-SUPERIOR"
+  readonly tagId: string;             // e.g. "M1_HYDR_PRESS_DS"
+
+  // --- Carga Útil y Tipado de Ingeniería ---
+  readonly value: number | boolean | string;
+  readonly engineeringUnit: string;   // e.g. "bar", "t/h", "°C", "%", "rpm"
+  readonly dataType: 'FLOAT32' | 'FLOAT64' | 'INT16' | 'INT32' | 'UINT16' | 'UINT32' | 'BOOLEAN' | 'STRING';
+
+  // --- Estampas Temporales y Secuencia ---
+  readonly deviceTimestamp: string;   // ISO-8601 UTC estampa del reloj del dispositivo emisor
+  readonly ingestionTimestamp: string;// ISO-8601 UTC estampa monótona del Edge Daemon al recibir la trama
+  readonly sequence: number;          // Contador monótono uint64 para detección de huecos/pérdida
+
+  // --- Calidad y Diagnóstico ---
+  readonly quality: 'GOOD' | 'BAD' | 'UNCERTAIN' | 'STALE' | 'SIMULATED';
+  readonly qualityReason: 'NORMAL' | 'TIMEOUT' | 'COMM_FAILURE' | 'CRC_ERROR' | 'OUT_OF_RANGE' | 'RATE_OF_CHANGE_EXCEEDED' | 'CONFIG_ERROR' | 'UNVERIFIED_SOURCE' | 'PROVENANCE_MISMATCH';
+  readonly calibrationState: 'CALIBRATED' | 'EXPIRED' | 'UNCALIBRATED' | 'NOT_APPLICABLE';
+  readonly schemaVersion: string;     // SemVer del contrato canónico, e.g. "1.0.0"
+}
+```
+
+### 4.2 Cadena Inviolable de Procesamiento de Datos
+
+Todo flujo de telemetría debe recorrer obligatoriamente y sin atajos la siguiente cadena de transformación:
+
+$$	ext{SOURCE} \longrightarrow 	ext{PROVENANCE} \longrightarrow 	ext{NORMALIZATION} \longrightarrow 	ext{DATA QUALITY} \longrightarrow 	ext{TRUST} \longrightarrow 	ext{HISTORIAN} \longrightarrow 	ext{ANALYTICS} \longrightarrow 	ext{BIOAI}$$
+
+1. **SOURCE**: Origen físico o virtual del dato (PLC, instrumento, simulador de laboratorio).
+2. **PROVENANCE**: Asignación inmutable de metadatos de origen (`runtimeMode`, `sourceType`, `protocol`, `deviceId`, `driverId`, `sequence`).
+3. **NORMALIZATION**: Conversión de representación binaria/endianness a unidades de ingeniería canónicas y timestamp ISO-8601.
+4. **DATA QUALITY**: Evaluación de límites de rango, tasa de cambio máxima ($\Delta v/\Delta t$), estancamiento temporal y validez de calibración.
+5. **TRUST**: Clasificación criptográfica del dato (`TRUSTED_OT`, `UNVERIFIED`, `REJECTED`). Los datos con calidad distinta de `GOOD` jamás reciben estatus `TRUSTED_OT`.
+6. **HISTORIAN**: Persistencia en el historiador local SQLite WAL con índices de tiempo y calidad.
+7. **ANALYTICS**: Cálculo de KPIs de ingeniería (balance de masa, eficiencias térmicas, indicadores de extracción).
+8. **BIOAI**: Modelos prescriptivos y predictivos. **Requisito de Linaje**: Todo valor consumido por BioAI debe ser 100% reconstruible y auditable hasta su sensor físico, PLC, driver y estampa temporal original.
+
+### 4.3 Política de Fail-Closed en Perfil de Producción
+
+En perfil `PRODUCTION`, rigen las siguientes prohibiciones absolutas sin excepción:
+- `synthetic fallback = FORBIDDEN` (Prohibido generar valores sintéticos ante falla de enlace).
+- `mock driver = FORBIDDEN` (Prohibido registrar o instanciar adaptadores mock en el factory de producción).
+- `fake timestamps = FORBIDDEN` (Prohibido inventar estampas temporales no recibidas del dispositivo).
+- `random data = FORBIDDEN` (Prohibido el uso de `Math.random()` o generadores pseudoaleatorios).
+- `silent fallback = FORBIDDEN` (Prohibido silenciar errores o responder con valores por defecto sin degradar calidad).
+
+**Comportamiento ante Desconexión de PLC o Sensor en Producción**:
+$$egin{aligned}
+	ext{Pérdida de Enlace OT} & \longrightarrow 	ext{1. Driver emite error explícito de comunicación} \
+& \longrightarrow 	ext{2. Quality transiciona a BAD o UNCERTAIN (Reason: COMM\_FAILURE o TIMEOUT)} \
+& \longrightarrow 	ext{3. Metadatos de Provenance se conservan intactos para auditoría forense} \
+& \longrightarrow 	ext{4. Se dispara alarma industrial inmediata a SCADA/Prometheus} \
+& \longrightarrow 	ext{5. Historiador registra la muestra con su calidad BAD explícita} \
+& \longrightarrow 	ext{6. Motores de BioAI excluyen inmediatamente la muestra de sus cálculos}
+\end{aligned}$$
 
 ---
 
@@ -156,13 +289,58 @@ Para erradicar la sobreingeniería y prevenir que el equipo desarrolle innecesar
 3. **PEER REAL**: Interlocutor real (PLC de laboratorio, simulador de campo independiente de referencia, o broker industrial).
 4. **PRUEBA DE INTEROPERABILIDAD**: Conformidad validada con analizador de red (Wireshark) o herramientas de prueba de la industria.
 
-### 5.2 Justificación de Tecnologías Seleccionadas (Rule of Minimality)
-- **OPC UA**: Se adopta `node-opcua-client` (^2.115.0, MIT). Justificación: Es la biblioteca open-source más madura y probada en Node.js para OPC UA binario con mTLS; evita implementar desde cero el complejísimo stack de SecureChannel y serialization de la OPC Foundation.
-- **Modbus**: Se adopta `modbus-serial` (^8.0.8, BSD-3-Clause). Justificación: Soporta tanto Modbus TCP como RTU sobre RS-485 serial nativo; minimiza la superficie de código y cuenta con miles de despliegues industriales probados.
-- **Sparkplug B**: Se adopta `mqtt` (^5.3.5, MIT) + `sparkplug-payload` (^1.0.3, Apache-2.0 / Eclipse Tahu). Justificación: Permite codificación y decodificación oficial de Google Protobuf según especificación Eclipse Tahu v2.2/v3.0 sin reinventar el compilador binario.
-- **Siemens S7**: Se adopta `nodes7` (^0.4.3, MIT). Justificación: Implementa RFC 1006 COTP e ISO-on-TCP maduro para Siemens S7-300/400/1200/1500 sin requerir drivers propietarios de Siemens.
-- **Rockwell CIP**: Se adopta `ethernet-ip` (^1.2.6, MIT). Justificación: Maneja la encapsulación TCP CIP (puerto 44818) y mensajería explícita sin requerir licencias de RSLinx.
-- **Historiador Local**: Se adopta `better-sqlite3` (^11.8.0, MIT) con esquema time-series y modo WAL. Justificación: Persistencia ACID duradera, cero procesos demonio externos, cero puertos de red expuestos en el IPC, huella de RAM < 30 MB y retención garantizada de 90 días con purga automática. InfluxDB/TimescaleDB se descartan por sobrecarga innecesaria para el IPC Edge.
+### 5.2 Tarea Obligatoria de Calificación de Dependencias (Dependency Qualification Task - DQT)
+
+Antes de incorporar cualquier biblioteca externa (`node-opcua-client`, `modbus-serial`, `mqtt`, `sparkplug-payload`, `nodes7`, `ethernet-ip`, `better-sqlite3`), el equipo de ingeniería debe ejecutar y documentar formalmente la **Calificación de Dependencias (DQT)**.
+
+Queda terminantemente prohibido asumir que versiones documentadas previamente siguen siendo actuales o seguras. Las versiones deben verificarse en vivo en el registro oficial en el momento exacto de su implementación.
+
+#### Ficha de Calificación Requerida para Cada Dependencia:
+1. **Current Stable Version**: Versión semántica estable verificada en vivo en NPM registry.
+2. **Node.js Compatibility**: Compatibilidad comprobada con el motor Node.js activo en producción (Node.js 20+ LTS).
+3. **TypeScript Compatibility**: Soporte completo de tipado estático (`d.ts` nativos o paquete `@types/*` auditado).
+4. **License Audit**: Licencia de código abierto permisiva (MIT, Apache-2.0, BSD-3-Clause). Prohibidas licencias virales copyleft (GPL/AGPL) en drivers industriales embebidos.
+5. **Maintenance & Community Status**: Actividad de commits en los últimos 90 días, cadencia de releases y volumen de issues abiertos.
+6. **Security Vulnerabilities**: Auditoría de vulnerabilidades conocidas (CVEs en NVD, `npm audit` cero vulnerabilidades críticas/altas).
+7. **Protocol Standard Conformance**: Cobertura demostrada de especificaciones oficiales (OPC Foundation, Modbus-IDA, Eclipse Sparkplug, RFC 1006).
+8. **API Stability & Memory Leak Profile**: Estabilidad de interfaces públicas y ausencia de memory leaks en benchmarks de estrés de sockets.
+9. **Evaluated Alternatives**: Mínimo 2 alternativas técnicas evaluadas y descartadas con justificación técnica.
+10. **Reason for Selection**: Criterio de ingeniería decisorio para la selección final.
+
+### 5.3 Arquitectura de Drivers Industriales en Cuatro Capas Desacopladas
+
+Para prevenir código monolítico o acoplamiento entre la lógica de dominio y los sockets de transporte, todo driver en BioAzúcar 4.0 debe implementar la siguiente arquitectura en cuatro capas desacopladas:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CAPA 1: IIndustrialDriver (Contrato Canónico de Dominio)                                                │
+│         Define interfaces unificadas: connect(), disconnect(), readTags(), writeTag(), subscribe()     │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ CAPA 2: Protocol Adapter (Traductor de Semántica Industrial)                                            │
+│         Traduce direcciones industriales (DB1.DBD0, 40001, ns=2;s=Tag) al contrato canónico            │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ CAPA 3: Transport Layer (Gestor de Enlace Físico / Sockets)                                            │
+│         TCP / TLS / Serial / ISO-on-TCP gestionado mediante biblioteca madura calificada por DQT        │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ CAPA 4: Industrial Peer (Dispositivo Remoto en Planta o Laboratorio)                                    │
+│         PLC Siemens S7, Allen-Bradley ControlLogix, Instrumento Modbus RTU/TCP, Servidor OPC UA         │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Flujos de Implementación Específicos**:
+- **OPC UA**: `OpcUaDriverAdapter` $\longrightarrow$ `node-opcua-client` $\longrightarrow$ Socket TCP con SecureChannel / TLS $\longrightarrow$ Servidor OPC UA de Planta (puerto 4840).
+- **Modbus**: `ModbusDriverAdapter` $\longrightarrow$ `modbus-serial` $\longrightarrow$ Socket TCP (puerto 502) o Puerto Serie `/dev/ttyUSB0` (RS-485) $\longrightarrow$ Dispositivo Modbus Esclavo.
+- **MQTT Sparkplug B**: `MqttSparkplugAdapter` $\longrightarrow$ `mqtt` + `sparkplug-payload` $\longrightarrow$ Socket TLS (puerto 8883) $\longrightarrow$ Broker MQTT Central con decodificación Protobuf.
+- **Siemens S7**: `SiemensS7Adapter` $\longrightarrow$ `nodes7` $\longrightarrow$ Socket ISO-on-TCP (RFC 1006, puerto 102) $\longrightarrow$ CPU S7-300 / S7-1200 / S7-1500.
+- **Rockwell CIP**: `EtherNetIpAdapter` $\longrightarrow$ `ethernet-ip` $\longrightarrow$ Socket TCP/IP Encapsulado (puerto 44818) $\longrightarrow$ ControlLogix / CompactLogix.
+
+### 5.4 Justificación de Tecnologías Seleccionadas (Rule of Minimality)
+- **OPC UA**: Se pre-selecciona `node-opcua-client` sujeto a DQT. Evita implementar desde cero el complejísimo stack de SecureChannel y serialización binaria de la OPC Foundation.
+- **Modbus**: Se pre-selecciona `modbus-serial` sujeto a DQT. Soporta Modbus TCP (502) y RTU sobre RS-485 serial nativo; minimiza la superficie de código.
+- **Sparkplug B**: Se pre-selecciona `mqtt` + `sparkplug-payload` sujeto a DQT. Codificación binaria Google Protobuf según especificación Eclipse Tahu v2.2/v3.0 sin reinventar el serializador.
+- **Siemens S7**: Se pre-selecciona `nodes7` sujeto a DQT. Implementa RFC 1006 COTP e ISO-on-TCP maduro para Siemens S7 sin requerir drivers propietarios.
+- **Rockwell CIP**: Se pre-selecciona `ethernet-ip` sujeto a DQT. Maneja encapsulación TCP CIP (puerto 44818) sin licencias privativas.
+- **Historiador Local**: Se pre-selecciona `better-sqlite3` sujeto a DQT. Persistencia ACID duradera en proceso, cero daemons externos, cero puertos expuestos, consumo de RAM < 30 MB y **objetivo de retención de 90 días sujeto a calificación técnica**. InfluxDB/TimescaleDB se descartan por sobrecarga innecesaria para el IPC Edge.
 
 ---
 
@@ -172,24 +350,21 @@ A continuación se despliegan las 31 iteraciones obligatorias requeridas para tr
 
 ---
 
-### I22 — Rebaseline Técnico y Eliminación de Simulaciones Críticas en Ingestión
-- **Objetivo**: Desacoplar completamente las fuentes de datos simuladas del pipeline principal del Edge Daemon y garantizar que el modo de producción rechace cualquier generación de valores sintéticos (`Math.random()`, `sin()`).
-- **Problema actual**: Los adaptadores de drivers generan ruido sintético cuando una variable no existe o cuando operan sin configuración física.
-- **Estado inicial real**: `SIMULATED` / `IMPLEMENTED`.
-- **Archivos/componentes afectados**: `src/services/edge/drivers/*DriverAdapter.ts`, `src/services/edge/daemon.ts`, `src/services/edge/BioAzucarIndustrialEdge.ts`.
-- **Cambios técnicos requeridos**: Introducir flag estricto `ALLOW_SIMULATION=false` en el runtime de producción del Daemon. Si no hay conexión física, el driver debe transicionar a `FAULTED` y emitir tags con calidad `BAD` y código `NO_COMMUNICATION`.
-- **Cambios de arquitectura**: Prohibir la autogeneración de datos dentro de los adaptadores de drivers; delegar las simulaciones exclusivamente a un simulador de proceso externo aislado y explícitamente etiquetado como tal.
-- **Implementación**: Refactorizar métodos `readTag()` en todos los drivers para eliminar `Math.random()` y volcados de Maps de prueba cuando no estén en perfil explícito de pruebas unitarias.
-- **Pruebas automatizadas**: Suite de pruebas que valida que con `ALLOW_SIMULATION=false`, la ausencia de hardware físico genera error determinístico y calidad `BAD`.
-- **Pruebas de integración**: Arranque del daemon sin red OT comprobando que ningún tag sea emitido como `GOOD`.
-- **Pruebas físicas/HIL**: N/A en esta fase de software.
-- **Evidencia requerida**: Logs estructurados mostrando rechazo de generación sintética y calidad `BAD` inmediata.
-- **Criterios de aceptación**: Cero llamadas a funciones estocásticas en modo de producción; propagación de calidad `BAD` con código `COMMUNICATION_FAILURE`.
-- **Criterios de NO aceptación**: Cualquier tag que reporte calidad `GOOD` o genere valores numéricos fluctuantes sin comunicación física establecida.
-- **Dependencias**: I1, I14.
-- **Riesgos**: Rotura de interfaces gráficas que esperaban valores fluctuantes continuos en demostraciones.
-- **Rollback**: Habilitación temporal mediante variable de entorno `BIOAZUCAR_DEMO_MODE=true` exclusivamente en ambientes de desarrollo.
-- **Definition of Done**: Código refactorizado, tests unitarios verdes, linteo estricto y configuración de producción sin simulación.
+### I22 — Rebaseline Técnico, Arquitectura de Runtime Profiles y Contrato Canónico
+- **Objetivo**: Establecer la frontera estricta entre desarrollo, banco de pruebas y producción mediante Runtime Profiles y consolidar el contrato canónico `IndustrialDataPoint` con proveniencia de primera clase.
+- **Alcance**:
+  - Implementación formal de los tres perfiles: `SIMULATION`, `LAB` y `PRODUCTION` mediante `INDUSTRIAL_RUNTIME_PROFILE`.
+  - **Fail-Closed de Producción**: Si el perfil es `PRODUCTION`, queda prohibido cualquier fallback sintético, mock o dato aleatorio. Si la configuración es inválida, ambigua o ausente, el Daemon aborta de inmediato (`process.exit(1)`).
+  - Implementación del contrato unificado `IndustrialDataPoint` con los 17 atributos mandatorios de proveniencia y calidad (`runtimeMode`, `sourceType`, `sourceId`, `driverId`, `protocol`, `deviceId`, `assetId`, `tagId`, `value`, `engineeringUnit`, `dataType`, `deviceTimestamp`, `ingestionTimestamp`, `sequence`, `quality`, `qualityReason`, `calibrationState`, `schemaVersion`).
+  - Refactorización de la interfaz `IIndustrialDriver` desacoplada del protocolo subyacente (`Capa 1` de la arquitectura de drivers).
+  - Garantizar que las 338 pruebas existentes sigan pasando en CI configurando explícitamente el perfil `SIMULATION` en los entornos de prueba unitaria automatizada.
+- **Entregables**:
+  1. `src/services/edge/config/runtimeProfile.ts` con validación exhaustiva de perfiles y política Fail-Closed.
+  2. `src/types/industrialDataPoint.ts` con la definición canónica del contrato de proveniencia y validadores Zod.
+  3. `src/services/edge/drivers/IIndustrialDriver.ts` refactorizado con soporte nativo de `IndustrialDataPoint`.
+  4. Guardias de aserción en los adaptadores existentes para bloquear cualquier emisión simulada en perfil `PRODUCTION`.
+  5. Suite de pruebas unitarias que verifique la detención inmediata ante configuraciones inválidas en producción.
+- **Criterio de Aprobación**: Cero emisiones sintéticas en perfil `PRODUCTION`, fallo cerrado garantizado y 100% de pruebas unitarias de la suite base (338/338) pasando en perfil `SIMULATION`.
 - **Estado**: `PLANNED`.
 - **Evidencia**: Pendiente de ejecución.
 
@@ -383,67 +558,83 @@ A continuación se despliegan las 31 iteraciones obligatorias requeridas para tr
 
 ---
 
-### I27 — Pipeline Industrial Data Quality Gate End-to-End
-- **Objetivo**: Insertar síncronamente el motor de validación de calidad de datos en el camino crítico de recolección de todos los drivers antes de la persistencia o sincronización.
-- **Problema actual**: El motor de calidad está implementado en clases aisladas, pero no está cableado como un paso obligatorio de paso único en el daemon de producción.
-- **Estado inicial real**: `IMPLEMENTED` / `TESTED`.
-- **Flujo de Ejecución en Línea**:
-  `Punto Crudo Driver` $\rightarrow$ `Filtro Falsificación (SIMULATED ≠ REAL)` $\rightarrow$ `Comprobación Rango Ingeniería (engMin/engMax)` $\rightarrow$ `Detección Señal Congelada (Flatline)` $\rightarrow$ `Detección Tasa de Cambio (Spike)` $\rightarrow$ `Auditoría Clock Skew` $\rightarrow$ `Asignación Proveniencia y Hash` $\rightarrow$ `Entrada a Historiador / Store & Forward`.
-- **Estrategia de Pruebas**: Suite automatizada con 50 escenarios de corrupción (sensores en cortocircuito, flatlines de 20 minutos, saltos de 500 bar en 10 ms).
-- **Criterios de aceptación**: 100% de muestras evaluadas en < 50 microsegundos por muestra; ninguna muestra simulada admitida como física; descarte o marcado a `BAD` inmediato.
-- **Dependencias**: I22, I23, I24, I25, I26.
+### I27 — Pipeline Industrial Data Quality Gate End-to-End (Desacoplado de Drivers Específicos)
+- **Objetivo**: Filtrar, clasificar y validar la integridad y calidad de cada muestra antes de que ingrese al historiador o a los motores de BioAI, operando sobre el contrato canónico `IndustrialDataPoint`.
+- **Dependencias**: I22 (Contrato Canónico y Runtime Profiles). **Desacoplo Arquitectural**: No depende de la finalización de todos los drivers físicos (I23/I24/I25/I26); se valida y desarrolla contra el contrato canónico utilizando arneses de prueba de laboratorio (`Canonical Test Harness`).
+- **Alcance**:
+  - Implementación de compuertas de calidad en línea:
+    1. *Validación de Proveniencia*: Verificación de que `runtimeMode`, `sourceType` y `driverId` coincidan con el perfil activo de la planta; rechazo inmediato con `qualityReason = PROVENANCE_MISMATCH` ante discrepancias.
+    2. *Rango de Instrumento*: Rechazo o marcado `BAD (OUT_OF_RANGE)` si el valor excede límites físicos del sensor (e.g. presión hidráulica > 350 bar o < 0 bar).
+    3. *Tasa de Cambio Máxima ($\Delta v / \Delta t$)*: Detección de picos de ruido impulsivo o escalones no físicos según la inercia mecánica del molino o térmica de calderas.
+    4. *Filtro de Congelamiento (Frozen/Stale)*: Detección de pérdida de dinámica en variables intrínsecamente ruidosas (vibración, presión de molienda), marcando `UNCERTAIN (FROZEN_SENSOR)`.
+    5. *Verificación de Timestamp y Deriva*: Detección de desviación entre `deviceTimestamp` e `ingestionTimestamp` ($|\Delta t| > 1000	ext{ ms}$).
+  - Marcado estricto conforme a OPC UA / IEC 61158 (`GOOD`, `UNCERTAIN`, `BAD`, `STALE`, `SIMULATED`).
+- **Entregables**:
+  1. `src/services/edge/quality/DataQualityGate.ts` operando sobre `IndustrialDataPoint`.
+  2. Motor de reglas de validación física configurables por tipo de activo y variable agroindustrial.
+  3. `src/services/edge/quality/CanonicalTestHarness.ts` para pruebas automatizadas completas del motor sin requerir PLCs físicos conectados.
+- **Criterio de Aprobación**: El 100% de los datos que ingresan al bus interno poseen proveniencia verificada y estatus de calidad auditado; ningún dato `BAD`, `STALE` o `SIMULATED` es admitido en BioAI.
 - **Estado**: `PLANNED`.
 
 ---
 
-### I28 — Historiador Local On-Premise Duradero en Almacenamiento No Volátil (Regla de Mínima Complejidad)
-- **Objetivo**: Proveer persistencia duradera, eficiente y autónoma de series de tiempo en el IPC (Nivel 3) sin depender de conexión externa y sin sobrecargar el hardware.
-- **Problema actual**: `LocalTimeSeriesDatabase.ts` opera en un arreglo en memoria RAM que se destruye por completo al reiniciar el daemon.
-- **Estado inicial real**: `MOCK` / `IMPLEMENTED`.
-- **Evaluación Tecnológica y Justificación de Mínima Complejidad**:
-  - *InfluxDB / TimescaleDB*: Descartados para el IPC Edge. Requieren daemons pesados en segundo plano, puertos de red adicionales expuestos, consumo de memoria base > 500 MB y complejidad innecesaria de mantenimiento para operadores de planta.
-  - *DuckDB*: Excelente para analítica OLAP, pero menos optimizado para inserciones concurrentes continuas de alta frecuencia punto a punto.
-  - *Solución Seleccionada: SQLite Embebido con Motor WAL y Esquema Time-Series Optimizado*:
-    - **Librería**: `better-sqlite3` (enlace C++ nativo de alto rendimiento para Node.js).
-    - **Versión**: `^11.8.0`.
-    - **Licencia**: MIT.
-    - **Por qué**: Cero procesos externos (embebido en el proceso del daemon), cero puertos de red adicionales (superficie de ataque mínima), consumo de memoria < 30 MB, transaccionalidad ACID y modo WAL (Write-Ahead Logging) altamente optimizado para escrituras concurrentes.
-- **Especificación de Almacenamiento y Retención**:
-  - Esquema relacional con tablas particionadas por mes: `ts_data_YYYY_MM (tag_id INTEGER, timestamp INTEGER, value REAL, quality INTEGER, flags INTEGER)`.
-  - Índice B-Tree compuesto sobre `(tag_id, timestamp)`.
-  - Configuración SQLite: `PRAGMA journal_mode = WAL;`, `PRAGMA synchronous = NORMAL;`, `PRAGMA cache_size = -16000;` (16 MB de caché en RAM).
-  - Compacting & Retention: Job cron diario que purga datos más antiguos a la política de retención configurada (por defecto 90 días de zafra) y ejecuta compresión de bloques históricos.
-- **Estrategia de Pruebas**:
-  - *Software Test*: Inserción de 1,000,000 de registros y ejecución de consultas de agregación (AVG, MIN, MAX, P95) comprobando tiempos de respuesta < 50 ms.
-  - *Durability Test*: Terminación abrupta del proceso con `kill -9` durante inserción activa verificando recuperación automática del archivo WAL sin corrupción.
-- **Criterios de aceptación**: Inserción sostenida de 2,000 puntos/s consumiendo < 10% de CPU en IPC; persistencia de 90 días comprobada; cero pérdidas tras reinicio del proceso.
-- **Dependencias**: I22, I27.
+### I28 — Historiador Local On-Premise en SQLite con Benchmark de Calificación y Evaluación de Modo Síncrono
+- **Objetivo**: Proporcionar persistencia local duradera de series temporales industriales en el IPC, estableciendo un objetivo de retención de 90 días de zafra sujeto a calificación empírica, evaluando rigurosamente el modo de sincronización.
+- **Dependencias**: I27 (Data Quality Gate).
+- **Alcance**:
+  - Ejecución de la tarea **Dependency Qualification Task (DQT)** para `better-sqlite3`.
+  - Integración de SQLite embebido de alto rendimiento operando en proceso sin exponer puertos de red adicionales.
+  - **Evaluación y Selección de Modo Síncrono (`PRAGMA synchronous`)**:
+    No se fija de forma arbitraria `NORMAL`. Se evalúan empíricamente en laboratorio las opciones:
+    1. `OFF`: Máximo throughput, vulnerable a corrupción física de la base de datos si ocurre un corte eléctrico antes del flush del sistema operativo.
+    2. `NORMAL`: Consistente y seguro en modo WAL frente a caídas del daemon; seguro frente a cortes eléctricos si el disco cuenta con Power Loss Protection (PLP).
+    3. `FULL`: Sincronización a disco en cada transacción; máxima durabilidad pero mayor latencia y desgaste de memoria flash.
+    - *Criterio de Selección*: Se seleccionará mediante matriz de decisión basada en: (a) prueba destructiva de corte intempestivo de energía en banco de hardware, (b) presencia de SSD de grado industrial con PLP (supercondensadores), (c) protección de la fuente 24 VDC por UPS/buffer, (d) latencia de escritura y (e) RPO demostrado ($\le 100	ext{ ms}$).
+  - **Batería Formal de Benchmark de Calificación de Capacidad y Rendimiento**:
+    El compromiso de retención se define formalmente como: **"90-day retention target subject to qualification"**. Se ejecuta un benchmark reproducible que mide y documenta:
+    1. Cantidad de tags concurrentes (500, 1,000 y 5,000 tags).
+    2. Frecuencia de muestreo (sample rate de 100 ms, 500 ms y 1,000 ms).
+    3. Tamaño de payload por registro (bytes promedio por punto persistido).
+    4. Volumen de filas por día (rows/day) y proyección acumulada a 7, 30 y 90 días.
+    5. Tamaño del archivo WAL bajo carga y tras checkpoints automáticos pasivos y activos.
+    6. Tamaño final del archivo de base de datos `.db` particionado mensualmente.
+    7. Latencia de consulta (query latency p50, p95, p99 en ventanas de 1 hora, 24 horas y 7 días).
+    8. Latencia de escritura (write latency por bloque de inserción transaccional).
+    9. Consumo porcentual de CPU sostenido en el IPC durante ráfagas de ingestión.
+    10. Huella de memoria RAM (working set resident) del proceso SQLite.
+    11. Tasa de I/O de disco (MB/s de escritura sostenida en almacenamiento eMMC/NVMe).
+    12. Tiempo e impacto de I/O de la purga automática de particiones históricas vencidas.
+    13. Tiempo de recuperación de la base de datos tras parada intempestiva (WAL recovery).
+- **Entregables**:
+  1. Documento DQT de calificación técnica de `better-sqlite3`.
+  2. Informe de laboratorio justificando la selección de `PRAGMA synchronous` con prueba de corte eléctrico.
+  3. `src/services/edge/historian/SqliteHistorian.ts` con transacciones por lotes e inserción del contrato canónico `IndustrialDataPoint`.
+  4. Informe del Benchmark de Calificación con curvas de proyección para el objetivo de retención de 90 días.
+- **Criterio de Aprobación**: Benchmark de inserción transaccional completado y documentado; selección de `PRAGMA synchronous` respaldada por pruebas de corte físico de energía; cero exposición de puertos de red.
 - **Estado**: `PLANNED`.
 
 ---
 
 ### I29 — Store & Forward Transaccional con Motor WAL y RPO Demostrado
-- **Objetivo**: Implementar un búfer de Store & Forward de grado industrial que garantice la integridad de la telemetría ante pérdidas de enlace WAN o cortes de energía, con un RPO demostrado bajo condiciones definidas.
-- **Problema actual**: El motor actual almacena en un arreglo en memoria y hace un volcado JSON debounced en disco, vulnerable a pérdidas masivas por corte eléctrico.
-- **Estado inicial real**: `PARTIAL` / `IMPLEMENTED`.
-- **Definición Rigurosa de RPO y Condiciones**:
-  - **RPO Objetivo**: 0 segundos para todas las transacciones confirmadas en el búfer transaccional persistente (`durable commit`).
-  - **RPO Demostrado**: Se define como el intervalo máximo entre el último `fsync` a disco no volátil y el momento exacto del corte de energía. Bajo el esquema transaccional por lotes (cada 100 ms o cada 100 puntos), el RPO máximo garantizado bajo corte intempestivo de suministro eléctrico es $\le 100\text{ ms}$.
-- **Arquitectura de Persistencia Transaccional**:
-  - Motor de cola persistente basado en archivo de log rotativo indexado (WAL binario con encabezados de bloque, timestamp, longitud y checksum CRC-32 por registro).
-  - Punteros de Confirmación:
-    - `Head Pointer`: Último punto registrado físicamente en disco.
-    - `Ack Pointer`: Último punto confirmado por el servidor central de la nube mediante ACK criptográfico.
-  - Replay y Deduplicación:
-    - Transmisión ordenada FIFO con clave de deduplicación canónica: `{tagId}:{deviceTimestamp}:{sequence}`.
-    - El backend central procesa los lotes de forma estrictamente idempotente.
-  - Gestión de Disco Lleno (Backpressure):
-    - Al alcanzar el 85% de la capacidad asignada del disco (ej. 20 GB), el daemon activa degradación elegante: incrementa la banda muerta de compresión para variables analógicas secundarias, preservando al 100% las alarmas y estados de enclavamiento de Nivel 1.
-- **Estrategia de Pruebas y Ensayo de Corte Eléctrico**:
-  - *Power-Loss Test en Laboratorio*: Desconexión física de la alimentación de 24 VDC del IPC mediante un contactor temporizado durante escritura continua de telemetría a 1,000 puntos/s.
-  - *Verificación Post-Reinicio*: Inspección de la bitácora WAL; verificación de que el 100% de los registros confirmados con `fsync` son leídos sin corrupción de archivo; drenaje completo hacia el servidor central sin pérdida de un solo punto previo al corte.
-- **Criterios de aceptación**: Cero registros corruptos tras corte eléctrico repentino; recuperación de punteros en < 2 segundos tras rearranque; sincronización completa con el servidor central al reanudar la conexión WAN.
-- **Dependencias**: I22, I27, I28.
+- **Objetivo**: Asegurar cero pérdida de datos telemetrados ante caídas de enlace WAN/Satélite durante zafra mediante almacenamiento persistente transaccional con RPO demostrado $\le 100	ext{ ms}$ (`ENGINEERING REQUIREMENT`) bajo corte intempestivo de energía.
+- **Dependencias**: I28 (Historiador SQLite WAL).
+- **Alcance**:
+  - Reemplazo total del almacenamiento volátil en memoria y buffers JSON por una cola persistente transaccional en SQLite WAL.
+  - Implementación de transacciones atómicas por lotes:
+    - Máquina de estados de sincronización: `PENDING` $\longrightarrow$ `IN_TRANSIT` $\longrightarrow$ `ACKNOWLEDGED`.
+    - En caso de caída de red WAN o corte eléctrico del IPC, las transacciones no confirmadas permanecen en el WAL y se recuperan de forma consistente al reiniciar el servicio.
+    - Confirmación obligatoria de escritura a disco no volátil (`fsync`) antes de marcar lotes de telemetría crítica como asegurados.
+  - Pipeline de transmisión con compresión gzip/zstd por lotes hacia la DMZ / Cloud.
+  - Deduplicación idempotente en recepción en el Servidor Central mediante clave única compuesta:
+    $$	ext{IdempotencyKey} = 	ext{hash}(	ext{sourceId} : 	ext{tagId} : 	ext{deviceTimestamp} : 	ext{sequence})$$
+  - Clasificación Formal de Métricas de Resiliencia:
+    - **RPO**: `ENGINEERING REQUIREMENT` fijado en $\le 100	ext{ ms}$ bajo corte intempestivo de energía eléctrica.
+    - **RTO**: `PROVISIONAL ENGINEERING TARGET` fijado en $\le 10	ext{ s}$ para reanudar el vaciado de cola tras restablecimiento de la interfaz WAN.
+- **Entregables**:
+  1. `src/services/edge/storeAndForward/PersistentQueue.ts` operando sobre el contrato canónico `IndustrialDataPoint`.
+  2. Protocolo de prueba destructiva de corte abrupto de proceso (`kill -9`) y corte de alimentación eléctrica en banco de pruebas.
+  3. Verificación criptográfica de cero duplicados y cero pérdidas en el receptor tras reconexión.
+- **Criterio de Aprobación**: Prueba de corte intempestivo de alimentación eléctrica con cola saturada demostrando recuperación íntegra sin pérdidas que superen los 100 ms y sin duplicados en el destino.
 - **Estado**: `PLANNED`.
 
 ---
@@ -905,91 +1096,118 @@ Para erradicar cualquier ambigüedad sobre el estado de la plataforma, cada subs
 
 ---
 
-## 8. GRAFO EXPLICITO DE DEPENDENCIAS (DAG DE EJECUCIÓN)
+## 8. GRAFO EXPLICITO DE DEPENDENCIAS (DAG DE EJECUCIÓN OPTIMIZADO)
 
-El siguiente grafo acíclico dirigido (DAG) define la única secuencia técnica válida de ejecución. Queda prohibido iniciar cualquier iteración sin haber completado y verificado todas sus dependencias previas:
+El siguiente Grafo Dirigido Acíclico (DAG) establece la secuencia formal de ejecución para las iteraciones I22 a I52, **optimizando el paralelismo seguro**:
+1. **Desacoplo del Núcleo de Calidad (I27)**: No se bloquea por la disponibilidad física de todos los drivers; se inicia inmediatamente contra el Contrato Canónico `IndustrialDataPoint` y el arnés de prueba de laboratorio (`Canonical Test Harness`).
+2. **Desarrollo Modular y Asíncrono de Drivers (I23, I24, I25, I26)**: Cada adaptador se conecta al contrato canónico de forma independiente según disponibilidad de hardware/servidores de referencia.
+3. **Paralelismo de Calificación y Pruebas (I42, I43, I44)**: Tras consolidar el runtime y las envolventes de seguridad, las pruebas de Rendimiento (I42), Seguridad (I43) y Chaos Testing (I44) se ejecutan en ramas concurrentes antes de la convergencia en el banco formal FAT (I45).
 
 ```
-[ I22: Rebaseline y Desacoplo de Simulaciones ]
-       │
-       ├──────────────────────────────┬──────────────────────────────┬──────────────────────────────┐
-       ▼                              ▼                              ▼                              ▼
-[ I23: OPC UA Real ]          [ I24: Modbus TCP/RTU ]        [ I25: Sparkplug B ]          [ I26: S7 / CIP / EROS Spec ]
-       │                              │                              │                              │
-       └──────────────────────────────┴──────────────┬───────────────┴──────────────────────────────┘
-                                                     ▼
-                                      [ I27: Data Quality Gate Inline ]
-                                                     │
-                                      ┌──────────────┴──────────────┐
-                                      ▼                             ▼
-                      [ I28: Historiador SQLite WAL ]  [ I29: Store & Forward WAL ]
-                                      │                             │
-                                      └──────────────┬──────────────┘
-                                                     ▼
-                                      [ I30: Watchdog Hardware y Sandbox ]
-                                                     │
-                       ┌─────────────────────────────┼─────────────────────────────┐
-                       ▼                             ▼                             ▼
-       [ I31: Secure Command Gateway ]    [ I32: Dual-NIC nftables ]    [ I33: Hardening CIS IPC ]
-                       │                             │                             │
-                       │                             └──────────────┬──────────────┘
-                       │                                            ▼
-                       │                             [ I34: PKI y Certificados X.509 ]
-                       │                                            │
-                       └─────────────────────────────┬──────────────┘
-                                                     ▼
-                                      [ I35: Observabilidad Prometheus ]
-                                                     │
-                                      [ I36: Multi-Tenant Cloud Hardening ]
-                                                     │
-                       ┌─────────────────────────────┴─────────────────────────────┐
-                       ▼                                                           ▼
-       [ I37: Gobernanza Datos PDA ]                               [ I39: BioAI Safety Boundary ]
-                       │                                                           │
-       [ I38: Trazabilidad SHA-256 ]                               [ I40: Calibración Empírica Zafra ]
-                       │                                                           │
-                       │                                           [ I41: Envolvente Operacional Hugot ]
-                       │                                                           │
-                       └─────────────────────────────┬─────────────────────────────┘
-                                                     ▼
-                                      [ I42: Calificación Rendimiento (5k tags/s) ]
-                                                     │
-                                      [ I43: Verificación Seguridad (SAST/DAST) ]
-                                                     │
-                                      [ I44: Chaos Testing Físico en Hardware ]
-                                                     │
-                                      [ I45: Protocolo FAT en Banco ]
-                                                     │
-                                      [ I46: Integración HIL con PLCs ]
-                                                     │
-                                      [ I47: Shadow Mode Planta Piloto (7 días) ]
-                                                     │
-                                      [ I48: Protocolo SAT en Planta Azucarera ]
-                                                     │
-                                      [ I49: Commissioning en Zafra (30 días A≥99.9%) ]
-                                                     │
-                                      [ I50: Production Readiness Review (PRR) ]
-                                                     │
-                       ┌─────────────────────────────┴─────────────────────────────┐
-                       ▼                                                           ▼
-       [ I51: Transferencia Operativa y Manuales ]                 [ I52: MLOps y Mantenimiento Continuo ]
+                      [ I22: Runtime Profiles, Fail-Closed y Contrato Canónico ]
+                                                  │
+                 ┌────────────────────────────────┴───────────────────────────────┐
+                 │                                                                │ (Desacoplo Inmediato)
+                 ▼                                                                ▼
+      [ RAMA DRIVERS INDUSTRIALES (DQT) ]                        [ I27: Data Quality Gate Inline ]
+      ├─► [ I23: OPC UA Real (node-opcua) ]                                       │  (Canónicamente probado)
+      ├─► [ I24: Modbus TCP/RTU (modbus-serial) ]                                 ├───────────────────────────────┐
+      ├─► [ I25: MQTT / Sparkplug B (Protobuf) ]                                  ▼                               ▼
+      └─► [ I26: S7 / CIP / EROS Spec RFI ]                       [ I28: Historiador SQLite WAL ]   [ I29: Store & Forward WAL ]
+                 │                                               (Benchmark 90d + Sync Eval)    (RPO ≤ 100 ms fsync)
+                 │ (Integración modular en contrato)                              │                               │
+                 └────────────────────────────────┬───────────────────────────────┴───────────────────────────────┘
+                                                  ▼
+                                 [ I30: Watchdog Hardware y Sandbox ]
+                                                  │
+                 ┌────────────────────────────────┼───────────────────────────────┐
+                 ▼                                ▼                               ▼
+   [ I31: Secure Command Gateway ]    [ I32: Dual-NIC nftables ]      [ I33: Hardening CIS IPC ]
+   (LLM ⨉ PLC / Human Approval)                   │                               │
+                 │                                └───────────────┬───────────────┘
+                 │                                                ▼
+                 │                                 [ I34: PKI y Certificados X.509 ]
+                 │                                                │
+                 └────────────────────────────────┬───────────────┘
+                                                  ▼
+                                 [ I35: Observabilidad Prometheus ]
+                                                  │
+                                 [ I36: Multi-Tenant Cloud Hardening ]
+                                                  │
+                 ┌────────────────────────────────┴───────────────────────────────┐
+                 ▼                                                                ▼
+   [ I37: Gobernanza Datos PDA ]                                  [ I39: BioAI Safety Boundary ]
+                 │                                                (Desacoplo Físico de LLM)
+   [ I38: Trazabilidad SHA-256 ]                                                  │
+                 │                                                [ I40: Calibración Empírica Zafra ]
+                 │                                                                │
+                 │                                                [ I41: Envolvente Operacional Hugot ]
+                 │                                                                │
+                 └────────────────────────────────┬───────────────────────────────┘
+                                                  ▼
+                 ┌────────────────────────────────┼───────────────────────────────┐
+                 │ (Ramas Paralelas de Calificación Técnica)                       │
+                 ▼                                ▼                               ▼
+   [ I42: Calificación Rendimiento ]  [ I43: Verificación Seguridad ]  [ I44: Chaos Testing Físico ]
+   (Target 5k tags/s, p99<25ms)       (SAST, DAST, Hardening)         (Power-loss destructivo)
+                 │                                │                               │
+                 └────────────────────────────────┼───────────────────────────────┘
+                                                  ▼
+                                   [ I45: Protocolo FAT en Banco ]
+                                   (Pruebas de Aceptación en Fábrica)
+                                                  │
+                                   [ I46: Integración HIL con PLCs ]
+                                   (Hardware-in-the-Loop con dinámica)
+                                                  │
+                                   [ I47: Shadow Mode Planta Piloto ]
+                                   (Read-Only 7 días continuos)
+                                                  │
+                                   [ I48: Protocolo SAT en Ingenio ]
+                                   (Site Acceptance Test con firmas)
+                                                  │
+                                   [ I49: Commissioning en Zafra ]
+                                   (30 días continuos A ≥ 99.9%)
+                                                  │
+                                   [ I50: Production Readiness Review (PRR) ]
+                                                  │
+                 ┌────────────────────────────────┴───────────────────────────────┐
+                 ▼                                                                ▼
+   [ I51: Transferencia Operativa y Manuales ]                    [ I52: MLOps Industrial y Ciclo Continuo ]
 ```
 
 ---
 
-## 9. DEFINICIÓN OBJETIVA DE PRODUCTION_READY (10 CONDICIONES AUDITABLES)
+## 9. DEFINICIÓN OBJETIVA DE PRODUCTION_READY Y CLASIFICACIÓN DE MÉTRICAS
+
+### 9.1 Matriz de Clasificación de Métricas y Valores de Ingeniería
+
+Queda terminantemente prohibido declarar como "100% completada" cualquier métrica o condición que dependa de hardware de planta, condiciones de zafra o validaciones de campo. Cada cifra utilizada en este documento se clasifica estrictamente en una de las siguientes categorías normativas:
+
+| Métrica / Parámetro | Valor Nominal | Clasificación Formal | Método y Evidencia de Validación |
+| :--- | :--- | :--- | :--- |
+| **Throughput de Ingestión** | $5,000	ext{ tags/s}$ | `PROVISIONAL ENGINEERING TARGET` | Benchmark sintético de estrés en laboratorio I42 sobre hardware IPC industrial final. |
+| **Latencia p99 de Ingestión** | $< 25	ext{ ms}$ | `PROVISIONAL ENGINEERING TARGET` | Telemetría monótona interna en arnés de prueba de estrés I42. |
+| **Utilización de CPU en IPC** | $< 65\%$ | `PROVISIONAL ENGINEERING TARGET` | Monitoreo continuo mediante cgroups de Linux y Node Exporter bajo carga plena en I42. |
+| **Retención en Historiador** | $90	ext{ días}$ | `PROVISIONAL ENGINEERING TARGET` | Benchmark de calificación de base de datos I28 con extrapolación volumétrica y particionado mensual. |
+| **RPO ante Corte Eléctrico** | $\le 100	ext{ ms}$ | `ENGINEERING REQUIREMENT` | Prueba física destructiva de corte intempestivo de alimentación de 24 VDC a plena carga en I29/I44. |
+| **RTO de Enlace WAN** | $\le 10	ext{ s}$ | `PROVISIONAL ENGINEERING TARGET` | Prueba de desconexión y restablecimiento de interfaz WAN en banco de pruebas I29. |
+| **Estabilidad en Shadow Mode** | $7	ext{ días continuos}$ | `QUALIFICATION CRITERION` | Registro ininterrumpido en modo sólo lectura en planta piloto (I47) sin fallas ni reinicios del daemon. |
+| **Disponibilidad Operativa ($A$)** | $\ge 99.9\%$ | `FIELD ACCEPTANCE CRITERION` | Medición matemática formal durante 30 días de zafra industrial continua en I49 sin downtime de BioAzúcar. |
+| **Comisionamiento en Zafra** | $30	ext{ días continuos}$ | `FIELD ACCEPTANCE CRITERION` | Operación en línea en tándem de molinos con acta formal de aceptación suscrita por la jefatura de planta (I49). |
+
+### 9.2 Diez Condiciones Auditables de Production Readiness
 
 Para certificar formalmente la plataforma como `PRODUCTION_READY`, cada una de las siguientes 10 condiciones debe contar con evidencia verificable, responsable asignado y criterio de aceptación formal:
 
 | # | Requisito Industrial | Artefacto de Evidencia Obligatorio | Responsable Técnico | Método de Verificación | Criterio de Aceptación Estricto | Estado Actual |
 | :-: | :--- | :--- | :--- | :--- | :--- | :---: |
-| **1** | **Conectividad OT Wire-Level Real** | Capturas `.pcap` de Wireshark de sesiones OPC UA mTLS, Modbus TCP/RTU y S7 ISO-on-TCP. | Especialista de Conectividad OT | Inspección profunda de paquetes contra PLCs físicos. | Cero llamadas sintéticas; tramas de red conformes a RFC/IEC. | `PENDING_I23_I26` |
-| **2** | **Data Truth Inviolable** | Logs estructurados de `DataQualityEngine` y métricas Prometheus de calidad. | Líder de Arquitectura de Datos | Inyección forzada de señales simuladas y flatlines. | 100% de datos sintéticos o anómalos marcados como no confiables. | `PENDING_I27` |
-| **3** | **Persistencia Duradera y RPO Demostrado** | Archivos de base de datos SQLite WAL recuperados tras corte de suministro eléctrico. | Ingeniero de Sistemas Embebidos | Ensayo de corte eléctrico intempestivo en banco de pruebas. | Cero corrupción de base de datos; RPO garantizado $\le 100\text{ ms}$. | `PENDING_I28_I29` |
-| **4** | **Aislamiento de Red Dual-NIC y Hardening** | Salida de `iptables -L`, reporte Lynis/OpenSCAP (>85/100) y escaneo nmap limpio. | Oficial de Ciberseguridad OT | Escaneo de puertos y pruebas de reenvío entre interfaces. | Cero paquetes reenviados entre OT y DMZ; AppArmor activo en modo enforce. | `PENDING_I32_I33` |
-| **5** | **Gateway de Comandos con Read-After-Write** | Bitácora de auditoría forense con firmas criptográficas y lecturas de confirmación. | Ingeniero de Control y Seguridad | Prueba de consignas sobre registros de PLC con interlocks activos. | 100% de escrituras verificadas por lectura síncrona previa a confirmación. | `PENDING_I31` |
-| **6** | **BioAI con Safety Boundary** | Trazas de inferencia demostrando desacoplo del LLM y límites de envolvente Hugot. | Científico de Datos / Especialista Azúcar | Inyección de setpoints extremos por optimizador de IA. | Ninguna recomendación de IA puede superar los límites mecánicos del molino. | `PENDING_I39_I41` |
-| **7** | **Calificación de Carga y Resiliencia** | Reporte de prueba de 24 horas a 5,000 tags/s firmado con métricas de jitter y recursos. | Líder de Pruebas y QA | Ensayo continuo de estrés en IPC físico en laboratorio. | p99 < 25 ms, CPU < 65%, 0 memoria fugada, 0 muestras perdidas. | `PENDING_I42_I44` |
+| **1** | **Conectividad OT Wire-Level Real** | Capturas `.pcap` de Wireshark de sesiones OPC UA mTLS, Modbus TCP/RTU y S7 ISO-on-TCP. | Especialista de Conectividad OT | Inspección profunda de paquetes contra PLCs físicos / reference servers. | Cero llamadas sintéticas; tramas de red conformes a RFC/IEC. | `PENDING_I23_I26` |
+| **2** | **Data Truth Inviolable** | Logs estructurados de `DataQualityGate` y métricas Prometheus de calidad. | Líder de Arquitectura de Datos | Inyección forzada de señales simuladas, deriva temporal y flatlines. | 100% de datos sintéticos o anómalos marcados como no confiables. | `PENDING_I27` |
+| **3** | **Persistencia Duradera y RPO Demostrado** | Archivos de base de datos SQLite WAL recuperados tras corte de suministro eléctrico. | Ingeniero de Sistemas Embebidos | Ensayo de corte eléctrico intempestivo en banco de pruebas con disco PLP. | Cero corrupción de base de datos; RPO garantizado $\le 100	ext{ ms}$. | `PENDING_I28_I29` |
+| **4** | **Aislamiento de Red Dual-NIC y Hardening** | Salida de `nftables -L`, reporte Lynis/OpenSCAP (>85/100) y escaneo nmap limpio. | Oficial de Ciberseguridad OT | Escaneo de puertos y pruebas de reenvío entre interfaces físicas `eth0`/`eth1`. | Cero paquetes reenviados entre OT y DMZ; AppArmor activo en modo enforce. | `PENDING_I32_I33` |
+| **5** | **Gateway de Comandos con Read-After-Write** | Bitácora de auditoría forense con firmas criptográficas y lecturas de confirmación. | Ingeniero de Control y Seguridad | Prueba de consignas sobre registros de PLC con interlocks activos y doble factor. | 100% de escrituras verificadas por lectura síncrona previa a confirmación. | `PENDING_I31` |
+| **6** | **BioAI con Safety Boundary** | Trazas de inferencia demostrando desacoplo físico del LLM y límites de envolvente Hugot. | Científico de Datos / Especialista Azúcar | Inyección de setpoints extremos por optimizador de IA. | Ninguna recomendación de IA puede superar los límites mecánicos del molino. | `PENDING_I39_I41` |
+| **7** | **Calificación de Carga y Resiliencia** | Reporte de prueba de 24 horas a 5,000 tags/s firmado con métricas de jitter y recursos. | Líder de Pruebas y QA | Ensayo continuo de estrés en IPC físico en laboratorio (I42/I44). | p99 < 25 ms, CPU < 65%, 0 memoria fugada, 0 muestras perdidas. | `PENDING_I42_I44` |
 | **8** | **Acta FAT de Banco Aprobada** | Documento FAT formal con firmas de ingeniería, números de serie y SHA de software. | Jefe de Aseguramiento de Calidad | Ejecución formal del cuaderno de pruebas FAT en laboratorio. | 100% de casos de prueba aprobados (PASS) sin excepciones abiertas. | `PENDING_I45` |
 | **9** | **Acta SAT de Sitio Azucarero Aprobada** | Documento SAT en planta suscrito por Superintendente de Molienda y Jefe de Automatización. | Director de Operaciones / Cliente | Pruebas funcionales en planta durante zafra activa. | Valores de proceso reales verificados y aprobados por la planta. | `PENDING_I48` |
 | **10** | **Comisionamiento y Disponibilidad en Zafra** | Bitácora de disponibilidad de 30 días continuos con cálculo de MTBF y MTTR. | Gerente de Puesta en Marcha | Monitoreo ininterrumpido en campaña de producción continua. | Disponibilidad de software $A \ge 99.9\%$; cero interrupciones de zafra. | `PENDING_I49_I50` |
@@ -998,9 +1216,9 @@ Para certificar formalmente la plataforma como `PRODUCTION_READY`, cada una de l
 
 ## 10. CRITERIOS TÉCNICOS DEFINITIVOS PARA INICIAR LA ITERACIÓN I22
 
-Antes de escribir una sola línea de código para la iteración I22, deben cumplirse de forma estricta e incontrovertible los siguientes pre-requisitos:
+La iteración I22 puede dar inicio formal de manera inmediata al haberse verificado satisfactoriamente los siguientes cuatro prerrequisitos:
 
-1. **Aprobación Formal del Roadmap**: El presente documento `developer_roadmap.md` (Versión 4.2.0-REBASELINE-INDUSTRIAL-REV2) debe quedar establecido como la única fuente de verdad técnica de ingeniería del proyecto.
-2. **Estado Inviolable de Pruebas Unitarias de Software**: La suite actual en memoria (338/338 pruebas) debe mantenerse verde en su totalidad como línea base de no-regresión antes de refactorizar los drivers.
-3. **Aislamiento de Entorno de Desarrollo**: La eliminación de simulaciones en los adaptadores debe respetar un mecanismo de switch (`ALLOW_SIMULATION=false` por defecto, con excepción controlada únicamente bajo `NODE_ENV=test` o `BIOAZUCAR_DEMO_MODE=true`) para no invalidar las pruebas unitarias existentes mientras se desarrolla la capa wire-level.
-4. **Adopción Inmediata de la Regla de Minimality**: Queda prohibido implementar stacks desde cero en I23, I24, I25 y I26; la preparación de I22 debe dejar los puntos de enganche (*hooks*) listos para las librerías industriales maduras seleccionadas (`node-opcua-client`, `modbus-serial`, `mqtt` / `sparkplug-payload`, `nodes7`, `ethernet-ip`).
+1. **Hoja de Ruta Bloqueada y Congelada**: El presente documento (`developer_roadmap.md` Versión 4.3.0-FROZEN-ARCHITECTURE-SPEC) ha sido congelado y auditado como la única especificación autoritativa de ingeniería para el proyecto.
+2. **Integridad de Pruebas de Línea Base**: La suite automatizada existente en memoria (338/338 pruebas) se mantiene pasando al 100% y la compilación del proyecto (`compile_applet`) es plenamente exitosa.
+3. **Arquitectura de Runtime Profiles y Fail-Closed Especificada**: El diseño de I22 incorpora formalmente los tres perfiles (`SIMULATION`, `LAB`, `PRODUCTION`) y la política mandatoria Fail-Closed en producción, superando cualquier dependencia exclusiva de variables binarias ad-hoc.
+4. **Contrato Canónico de Proveniencia de Primera Clase**: El contrato `IndustrialDataPoint` con sus 17 campos tipados y la cadena inviolable de datos (`SOURCE -> PROVENANCE -> NORMALIZATION -> DATA QUALITY -> TRUST -> HISTORIAN -> ANALYTICS -> BIOAI`) se encuentran formalmente definidos para su implementación inmediata.
