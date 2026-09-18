@@ -31,7 +31,8 @@ import {
   Building,
   RotateCcw,
   Wifi,
-  WifiOff
+  WifiOff,
+  Award
 } from "lucide-react";
 import { UserRole, SystemParameterConfig, UserAccount, TenantEnterprise } from "../types";
 import { INITIAL_SYSTEM_CONFIGS } from "../services/authService";
@@ -44,6 +45,7 @@ import {
   DatabaseHealthInfo
 } from "../services/dbService";
 import { IpcHardeningAndOfflineModal } from "./edge/IpcHardeningAndOfflineModal";
+import { IndustrialFatSatDeliveryModal } from "./edge/IndustrialFatSatDeliveryModal";
 
 interface SystemConfigVerificationProps {
   currentRole: UserRole;
@@ -83,6 +85,7 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
   // Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isIpcModalOpen, setIsIpcModalOpen] = useState(false);
+  const [isFatSatModalOpen, setIsFatSatModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<SystemParameterConfig | null>(null);
   const [deletingConfigId, setDeletingConfigId] = useState<string | null>(null);
 
@@ -363,6 +366,15 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
             >
               <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
               <span>Hardening IPC (Ola 4)</span>
+            </button>
+
+            <button
+              onClick={() => setIsFatSatModalOpen(true)}
+              className="px-3.5 py-2 bg-gradient-to-r from-amber-950 to-slate-800 hover:from-amber-900 hover:to-slate-700 text-amber-300 text-xs font-mono rounded-xl border border-amber-500/50 flex items-center gap-1.5 transition shadow-sm"
+              title="Panel de Verificación Formal FAT/SAT, OPC UA CTT y Entrega Industrial IEC 62443 SL3 (Ola 5)"
+            >
+              <Award className="w-3.5 h-3.5 text-amber-400" />
+              <span>FAT/SAT & Entrega (Ola 5)</span>
             </button>
           </div>
         </div>
@@ -886,6 +898,13 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
       <IpcHardeningAndOfflineModal
         isOpen={isIpcModalOpen}
         onClose={() => setIsIpcModalOpen(false)}
+        currentRole={currentRole}
+      />
+
+      {/* Ola 5: Industrial FAT/SAT, OPC UA CTT & IEC 62443 SL3 Delivery Modal */}
+      <IndustrialFatSatDeliveryModal
+        isOpen={isFatSatModalOpen}
+        onClose={() => setIsFatSatModalOpen(false)}
         currentRole={currentRole}
       />
     </div>

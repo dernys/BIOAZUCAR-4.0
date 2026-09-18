@@ -24,6 +24,7 @@ import { BioAzucarCopilot } from "./copilot/components/BioAzucarCopilot";
 import { ExecutivePresentation } from "./components/ExecutivePresentation";
 import { IndustrialConnectionModal } from "./components/IndustrialConnectionModal";
 import { IpcHardeningAndOfflineModal } from "./components/edge/IpcHardeningAndOfflineModal";
+import { IndustrialFatSatDeliveryModal } from "./components/edge/IndustrialFatSatDeliveryModal";
 import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import {
@@ -101,6 +102,7 @@ export default function App() {
   const [isCopilotOpen, setIsCopilotOpen] = useState<boolean>(false);
   const [isIndustrialModalOpen, setIsIndustrialModalOpen] = useState<boolean>(false);
   const [isIpcHardeningModalOpen, setIsIpcHardeningModalOpen] = useState<boolean>(false);
+  const [isFatSatModalOpen, setIsFatSatModalOpen] = useState<boolean>(false);
   const [selectedLineage, setSelectedLineage] = useState<DataLineageInfo | null>(null);
   const [dbLatencyMs, setDbLatencyMs] = useState<number>(24);
 
@@ -607,6 +609,7 @@ export default function App() {
         onOpenPresentation={() => setActiveTab("presentation")}
         onOpenIndustrialConnectionModal={() => setIsIndustrialModalOpen(true)}
         onOpenIpcHardening={() => setIsIpcHardeningModalOpen(true)}
+        onOpenIndustrialFatSat={() => setIsFatSatModalOpen(true)}
         runtimeMode={runtimeMode}
         telemetry={telemetry}
         scenario={scenario}
@@ -961,6 +964,13 @@ export default function App() {
       <IpcHardeningAndOfflineModal
         isOpen={isIpcHardeningModalOpen}
         onClose={() => setIsIpcHardeningModalOpen(false)}
+        currentRole={currentRole}
+      />
+
+      {/* 10. Ola 5: Industrial FAT/SAT, OPC UA CTT & IEC 62443 SL3 Delivery Modal */}
+      <IndustrialFatSatDeliveryModal
+        isOpen={isFatSatModalOpen}
+        onClose={() => setIsFatSatModalOpen(false)}
         currentRole={currentRole}
       />
     </div>

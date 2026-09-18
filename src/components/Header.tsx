@@ -29,7 +29,8 @@ import {
   Wifi,
   WifiOff,
   Layers,
-  Server
+  Server,
+  Award
 } from "lucide-react";
 import { UserRole, PlantStatus, AlarmEvent, SimulationScenario, UserAccount, TenantEnterprise, TelemetryData } from "../types";
 import { RuntimeMode } from "../services/runtime/types";
@@ -51,6 +52,7 @@ export interface HeaderProps {
   onOpenPresentation?: () => void;
   onOpenIndustrialConnectionModal?: () => void;
   onOpenIpcHardening?: () => void;
+  onOpenIndustrialFatSat?: () => void;
   runtimeMode?: RuntimeMode;
   telemetry?: TelemetryData;
   plantStatus?: PlantStatus;
@@ -83,6 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPresentation,
   onOpenIndustrialConnectionModal,
   onOpenIpcHardening,
+  onOpenIndustrialFatSat,
   runtimeMode = "SIMULATION",
   telemetry,
   plantStatus = "OPERACION_NORMAL",
@@ -393,6 +396,25 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden sm:inline">HARDENING IPC</span>
               <span className="px-1 py-0.2 rounded text-[9px] bg-cyan-500/20 text-cyan-300 font-bold">
                 OLA 4
+              </span>
+            </button>
+          )}
+
+          {/* Ola 5: FAT/SAT & Industrial Delivery Quick Access Button */}
+          {onOpenIndustrialFatSat && (
+            <button
+              onClick={onOpenIndustrialFatSat}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold font-mono transition border ${
+                isLight
+                  ? "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 font-bold"
+                  : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40"
+              }`}
+              title="Verificación Formal FAT/SAT, Conformidad OPC UA CTT, Chaos Testing y Entrega Industrial IEC 62443 SL3"
+            >
+              <Award className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">FAT/SAT</span>
+              <span className="px-1 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 font-bold">
+                OLA 5
               </span>
             </button>
           )}
