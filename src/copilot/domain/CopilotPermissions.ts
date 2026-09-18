@@ -479,6 +479,33 @@ export const COPILOT_TOOL_POLICIES: Record<string, ToolSecurityPolicy> = {
     description: "Consulta eficiencia energética diaria, pérdidas de caldera ASME PTC 4 y generación exportada",
     auditRequired: false,
   },
+  get_global_plant_snapshot: {
+    toolName: "get_global_plant_snapshot",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Genera diagnóstico situacional global 360 de molienda, vapor, cogeneración, alarmas, CBM y logística",
+    auditRequired: false,
+  },
+  get_system_event_predictions: {
+    toolName: "get_system_event_predictions",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Pronostica eventos y desviaciones operativas tempranas en tándem, caldera, evaporación y logística",
+    auditRequired: false,
+  },
+  get_proactive_suggestions: {
+    toolName: "get_proactive_suggestions",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Entrega recomendaciones estequiométricas y operacionales priorizadas con consignas y retorno de inversión",
+    auditRequired: false,
+  },
 
   // --------------------------------------------------------------------------
   // CRITICAL WRITE TOOLS (LEVEL 3 - CRITICAL)

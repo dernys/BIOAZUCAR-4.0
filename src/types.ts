@@ -105,7 +105,9 @@ export type IndustrialProtocol =
   | "REST-API"
   | "SIMULATOR"
   | "SIEMENS-S7"
-  | "SIEMENS_S7";
+  | "SIEMENS_S7"
+  | "ETHERNET_IP"
+  | "ALLEN_BRADLEY";
 
 export type ConnectionStatus =
   | "NOT_CONFIGURED"
@@ -870,13 +872,20 @@ export interface IndustrialDataPoint {
   id?: string;
   tag: string;
   equipmentId?: string;
+  deviceId?: string;
   assetId?: string;
   siteId?: string;
   areaId?: string;
   tenantId?: string;
   value: number | string | boolean;
+  rawValue?: number | string | boolean;
+  engValue?: number;
   unit: string;
   dataType?: "FLOAT" | "INTEGER" | "BOOLEAN" | "STRING";
+  scale?: number;
+  offset?: number;
+  deadband?: number;
+  samplingInterval?: number;
   source?: DataSourceType;
   protocol?: ProtocolType;
   quality: DataQuality;
@@ -889,12 +898,13 @@ export interface IndustrialDataPoint {
   sequenceNumber?: number;
   isHistorical?: boolean;
   isSimulated?: boolean;
-  provenance?: "SIMULATED_PROCESS_MODEL" | "OBSERVED_OT" | string;
+  provenance?: "SIMULATED_PROCESS_MODEL" | "OBSERVED_OT" | "PHYSICAL_OT" | "MANUAL_ENTRY" | string;
   securityClearanceLevel?: number;
   engMin?: number;
   engMax?: number;
   description?: string;
   correlationId?: string;
+  schemaVersion?: string;
 }
 
 export interface OTConnectionConfig {

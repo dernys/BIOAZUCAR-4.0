@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *, .dark, .dark *));
+
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -31,53 +33,93 @@ html.light body,
   background-image: none !important;
 }
 
+/* Modal Backdrops & Fullscreen Dialog Overlays: Refined industrial scrim */
+.light .fixed.inset-0.z-50,
+.light .fixed.inset-0.z-\[50\],
+.light .fixed.inset-0.z-\[100\],
+.light .fixed.inset-0.z-\[110\],
+.light .fixed.inset-0.z-\[120\],
+.light .fixed.inset-0[class*="bg-slate-950"],
+.light .fixed.inset-0[class*="bg-black"],
+.light div.fixed.inset-0.backdrop-blur-md,
+.light div.fixed.inset-0.backdrop-blur-sm,
+.light div.fixed.inset-0.backdrop-blur-xs {
+  background-color: rgba(15, 23, 42, 0.45) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  box-shadow: none !important;
+}
+
+/* Modal Dialog Containers & Cards inside backdrops: Crisp pure white with modern elevation */
+.light .fixed.inset-0 > div,
+.light [role="dialog"],
+.light .modal-content {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* Fullscreen Maximized Workspace Views in Light Mode */
+.light .fixed.inset-0.w-screen.h-screen,
+.light .fixed.inset-0[class*="w-screen"][class*="h-screen"] {
+  background-color: #f8fafc !important;
+  backdrop-filter: none !important;
+}
+
+/* Frosted Glass Panels, Floating Toolbars & Cards (Glassmorphism done right in Light Mode) */
+.light [class*="backdrop-blur"]:not(.fixed.inset-0):not([class*="fixed inset-0"]) {
+  background-color: rgba(255, 255, 255, 0.90) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border-color: rgba(226, 232, 240, 0.85) !important;
+  box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.04), 0 2px 4px -2px rgba(15, 23, 42, 0.02) !important;
+}
+
+/* Terminal & Console Code Blocks: Keep crisp dark styling with syntax readability */
+.light pre,
+.light .font-mono-terminal {
+  background-color: #090d16 !important;
+  color: #34d399 !important;
+  border-color: #1e293b !important;
+}
+
 /* Header, Navigation, Footer & Card Foundations */
 .light header,
 .light nav,
 .light footer,
 .light .bg-slate-950,
-.light .bg-slate-950\/95,
-.light .bg-slate-950\/90,
-.light .bg-slate-950\/80,
-.light .bg-slate-950\/70,
-.light .bg-slate-950\/60,
-.light .bg-slate-950\/50,
+.light [class*="bg-slate-950/"]:not(.fixed.inset-0):not([class*="fixed inset-0"]),
 .light .bg-slate-900,
-.light .bg-slate-900\/95,
-.light .bg-slate-900\/90,
-.light .bg-slate-900\/85,
-.light .bg-slate-900\/80,
-.light .bg-slate-900\/70,
-.light .bg-slate-900\/60,
-.light .bg-slate-900\/50 {
+.light [class*="bg-slate-900/"]:not(.fixed.inset-0):not([class*="fixed inset-0"]) {
   background-color: #ffffff !important;
   background-image: none !important;
-  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.05);
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
 }
 
-/* Secondary Panels, Tables, Inner Track Boxes */
-.light .bg-slate-950\/40,
-.light .bg-slate-950\/30,
-.light .bg-slate-950\/20,
-.light .bg-slate-900\/40,
-.light .bg-slate-900\/30,
-.light .bg-slate-900\/20,
+/* Secondary Panels, Nested Insets, Tables, Group Track Boxes */
+.light .bg-slate-900\/70,
+.light .bg-slate-900\/60,
+.light .bg-slate-900\/50,
+.light .bg-slate-850,
 .light .bg-slate-800,
-.light .bg-slate-800\/90,
-.light .bg-slate-800\/80,
-.light .bg-slate-800\/70,
-.light .bg-slate-800\/60,
-.light .bg-slate-800\/50 {
-  background-color: #f1f5f9 !important; /* Crisp Slate-100 */
+.light [class*="bg-slate-800/"],
+.light .bg-slate-750,
+.light .bg-slate-700 {
+  background-color: #f8fafc !important; /* Clean Slate-50 for nested boxes */
+  border-color: #e2e8f0 !important;
   background-image: none !important;
 }
 
-.light .bg-slate-800\/40,
-.light .bg-slate-800\/30,
-.light .bg-slate-800\/20,
-.light .bg-slate-800\/10 {
-  background-color: #f8fafc !important; /* Slate-50 */
-  background-image: none !important;
+/* Table Headers & Distinct Secondary Insets */
+.light thead,
+.light thead tr,
+.light thead th,
+.light .bg-slate-800\/90,
+.light .bg-slate-800\/80 {
+  background-color: #f1f5f9 !important; /* Crisp Slate-100 */
+  border-color: #e2e8f0 !important;
 }
 
 /* Subtle, crisp border definitions in Light Mode */
@@ -85,57 +127,63 @@ html.light body,
 .light .border-slate-900,
 .light .border-slate-850,
 .light .border-slate-800,
-.light .border-slate-800\/90,
-.light .border-slate-800\/80,
-.light .border-slate-800\/60,
-.light .border-slate-800\/50,
-.light .border-slate-800\/40 {
+.light [class*="border-slate-8"],
+.light [class*="border-slate-9"],
+.light [class*="border-white/"] {
   border-color: #e2e8f0 !important; /* Slate-200 */
 }
 
 .light .border-slate-700,
-.light .border-slate-700\/90,
-.light .border-slate-700\/80,
-.light .border-slate-700\/70,
-.light .border-slate-700\/60,
-.light .border-slate-700\/50 {
+.light [class*="border-slate-7"] {
   border-color: #cbd5e1 !important; /* Slate-300 */
 }
 
 /* ==========================================================================
-   High-Contrast Typography for Light Mode
-   Ensures headings, metrics, and labels are 100% sharp and legible.
+   Master Typography & Graphic Design Hierarchy for Light Mode
+   Follows Apple HIG & Material 3: Resolves overly dark grays and restores
+   optical balance, depth, and breathing room.
    ========================================================================== */
 
-/* Headings and primary text */
+/* Primary Headings & High-Emphasis Metric Values */
 .light h1, .light h2, .light h3, .light h4, .light h5, .light h6 {
-  color: #0f172a !important;
-}
-
-.light .text-slate-100,
-.light .text-slate-200 {
-  color: #1e293b !important; /* Slate-800 */
-}
-
-.light .text-slate-300 {
-  color: #334155 !important; /* Slate-700 */
-}
-
-.light .text-slate-400 {
-  color: #334155 !important; /* High contrast Slate-700 */
-}
-
-.light .text-slate-500 {
-  color: #475569 !important; /* Slate-600 */
-}
-
-.light .text-slate-600 {
-  color: #334155 !important; /* Slate-700 (Eliminates illegible washed-out gray) */
+  color: #0f172a !important; /* Deep Slate-900 (16:1 contrast on white) */
 }
 
 /* Base text-white becomes Slate-900 in Light Mode across all text, headers, and labels */
 .light .text-white {
-  color: #0f172a !important;
+  color: #0f172a !important; /* Slate-900 */
+}
+
+/* Primary Body Text & High-Emphasis Labels */
+.light .text-slate-100,
+.light .text-slate-200 {
+  color: #1e293b !important; /* Slate-800 (13.5:1 contrast) */
+}
+
+/* Subheadings, Section Title Labels & Active Indicators */
+.light .text-slate-300 {
+  color: #334155 !important; /* Slate-700 (9.3:1 contrast) */
+}
+
+/* Secondary Descriptive Text, Table Column Headers & Field Labels */
+.light .text-slate-400 {
+  color: #475569 !important; /* Slate-600: Elegant, clear separation from primary text (7.0:1 contrast) */
+}
+
+/* Tertiary Metadata, Timestamps, Industrial Engineering Units (kW, bar, °C, RPM), Inactive Icons */
+.light .text-slate-500 {
+  color: #64748b !important; /* Slate-500: Neutral optical gray (4.6:1 contrast - exceeds WCAG AA 4.5:1) */
+}
+
+/* Auxiliary Hints, Breadcrumb Dividers & Muted Placeholders */
+.light .text-slate-600 {
+  color: #64748b !important; /* Slate-500: Eliminates artificial dark mud and gives visual breathing space */
+}
+
+/* Inactive / Disabled subtle icons */
+.light .text-slate-500 svg,
+.light .text-slate-600 svg {
+  color: #94a3b8 !important; /* Slate-400 for balanced optical icon weight */
 }
 
 /* ==========================================================================
@@ -306,7 +354,7 @@ html.light body,
 .light button.bg-slate-800,
 .light button.bg-slate-900 {
   background-color: #f1f5f9 !important;
-  color: #0f172a !important;
+  color: #1e293b !important;
   border-color: #cbd5e1 !important;
 }
 
@@ -315,7 +363,7 @@ html.light body,
 .light button[class*="bg-slate-7"] *,
 .light button.bg-slate-800 *,
 .light button.bg-slate-900 * {
-  color: #0f172a !important;
+  color: #1e293b !important;
 }
 
 .light button[class*="bg-slate-9"]:hover,
@@ -324,7 +372,8 @@ html.light body,
 .light button.bg-slate-800:hover,
 .light button.bg-slate-900:hover {
   background-color: #e2e8f0 !important;
-  color: #020617 !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
 }
 
 .light button[class*="bg-slate-9"]:hover *,
@@ -332,7 +381,7 @@ html.light body,
 .light button[class*="bg-slate-7"]:hover *,
 .light button.bg-slate-800:hover *,
 .light button.bg-slate-900:hover * {
-  color: #020617 !important;
+  color: #0f172a !important;
 }
 
 /* ==========================================================================
@@ -443,7 +492,7 @@ html.light body,
 .light tr.hover\:bg-slate-800\/40:hover,
 .light [class*="hover:bg-slate-800\/"]:hover {
   background-color: #e2e8f0 !important; /* Slate 200 */
-  color: #020617 !important;
+  color: #0f172a !important;            /* Slate 900 */
 }
 
 /* Text color on hover: never white or washed out in Light Mode */
@@ -796,6 +845,11 @@ html.light body,
   background-color: #ffffff !important;
   color: #0f172a !important;
   border-color: #cbd5e1 !important;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: #94a3b8 !important; /* Slate-400 */
 }
 
 .light select:focus,

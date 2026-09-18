@@ -23,6 +23,7 @@ import { copilotAuditService } from "../services/copilotAuditService";
 import { commandService } from "../../services/edge/CommandService";
 import { industrialEdge } from "../../services/edge/BioAzucarIndustrialEdge";
 import { bioAiEngineService } from "../../services/bioai/BioAiEngineService";
+import { globalSystemAwarenessService } from "../../services/bioai/GlobalSystemAwarenessService";
 
 export interface ToolExecutionInput {
   toolName: string;
@@ -1517,6 +1518,169 @@ export class IndustrialToolExecutor {
                 ],
               },
             ],
+          };
+          break;
+        }
+
+        case "get_global_plant_snapshot": {
+          const snapshot = globalSystemAwarenessService.getGlobalSnapshot(
+            liveTelemetry,
+            alarmsList,
+            equipmentList,
+            activeTenant
+          );
+
+          result = {
+            success: true,
+            data: snapshot,
+            widgets: [
+              {
+                type: "KPI",
+                kpiId: "kpi-global-health",
+                name: "Salud Operativa Global",
+                value: `${snapshot.overallHealthScore}/100`,
+                unit: snapshot.operatingState,
+                target: 100,
+                trend: snapshot.overallHealthScore >= 80 ? "UP" : "DOWN",
+                quality: isSimulated ? "SIMULATED" : "GOOD",
+                source: isSimulated ? "SIMULATION" : "OPC_UA",
+                formula: "GlobalPlantHealth(Milling,Power,Steam,Alarms)",
+                category: "GLOBAL",
+                inputTagsCount: 5,
+                canViewLineage: false,
+              },
+              {
+                type: "TABLE",
+                title: "Resumen de Áreas de Producción",
+                columns: [
+                  { key: "area", header: "Frente Operativo" },
+                  { key: "kpi", header: "KPI Clave" },
+                  { key: "estado", header: "Diagnóstico" },
+                ],
+                rows: [
+                  { area: "Molienda", kpi: `${snapshot.milling.tch} TCH (${snapshot.milling.sucroseExtraction}% Extr.)`, estado: snapshot.milling.chokeRisk === "BAJO" ? "Estable" : "Riesgo Fluctuación" },
+                  { area: "Vapor HP", kpi: `${snapshot.steamAndPower.steamFlowHP} t/h @ ${snapshot.steamAndPower.boilerPressureHP} bar`, estado: `Eficiencia ${snapshot.steamAndPower.thermalEfficiencyPercent}%` },
+                  { area: "Cogeneración", kpi: `${snapshot.steamAndPower.netExportPowerGridMW} MW exportados`, estado: `$${snapshot.steamAndPower.spotPriceUSDPerMWh}/MWh Spot` },
+                  { area: "Alarmas ISA-18.2", kpi: `${snapshot.alarms.totalActive} activas (${snapshot.alarms.criticalCount} crít.)`, estado: snapshot.alarms.criticalCount === 0 ? "Bajo Control" : "Atención Requerida" },
+                  { area: "Activos Críticos", kpi: `${snapshot.assets.highestRiskEquipment}`, estado: `Vib: ${snapshot.assets.criticalVibrationRMS} mm/s (Riesgo ${snapshot.assets.maxFailureProbability48h}%)` },
+                ],
+              },
+            ],
+            actions: [
+              {
+                id: "act-nav-scada",
+                type: "NAVIGATE",
+                label: "Abrir SCADA Molienda",
+                payload: { targetRoute: "scada" },
+                level: 1,
+              },
+              {
+                id: "act-nav-cogen",
+                type: "NAVIGATE",
+                label: "Abrir Cogeneración",
+                payload: { targetRoute: "energy_dispatch" },
+                level: 1,
+              },
+              {
+                id: "act-nav-alarms",
+                type: "NAVIGATE",
+                label: "Ver Alarmas ISA-18.2",
+                payload: { targetRoute: "alarms" },
+                level: 1,
+              },
+            ],
+          };
+          break;
+        }
+
+        case "get_system_event_predictions": {
+          const predictions = globalSystemAwarenessService.getEventPredictions(
+            liveTelemetry,
+            alarmsList,
+            equipmentList,
+            activeTenant
+          );
+
+          result = {
+            success: true,
+            data: {
+              totalPredictions: predictions.length,
+              predictions,
+            },
+            widgets: [
+              {
+                type: "TABLE",
+                title: "Eventos Predictivos Anticipados — BioAI",
+                columns: [
+                  { key: "horizonte", header: "Horizonte" },
+                  { key: "area", header: "Área" },
+                  { key: "evento", header: "Evento Pronosticado" },
+                  { key: "probabilidad", header: "Probabilidad" },
+                  { key: "severidad", header: "Severidad" },
+                ],
+                rows: predictions.map((p) => ({
+                  horizonte: p.timeHorizonMinutes >= 60 ? `${(p.timeHorizonMinutes / 60).toFixed(0)}h` : `${p.timeHorizonMinutes}m`,
+                  area: p.area,
+                  evento: p.title,
+                  probabilidad: `${p.probabilityPercent}%`,
+                  severidad: p.severity,
+                })),
+              },
+            ],
+            actions: predictions.map((p) => ({
+              id: `act-pred-${p.id}`,
+              type: "NAVIGATE",
+              label: `Ver ${p.area}`,
+              payload: { targetRoute: p.navigationTarget || "dashboard" },
+              level: 1,
+            })),
+          };
+          break;
+        }
+
+        case "get_proactive_suggestions": {
+          const suggestions = globalSystemAwarenessService.getProactiveSuggestions(
+            liveTelemetry,
+            alarmsList,
+            equipmentList,
+            activeTenant
+          );
+
+          result = {
+            success: true,
+            data: {
+              totalSuggestions: suggestions.length,
+              suggestions,
+            },
+            widgets: [
+              {
+                type: "TABLE",
+                title: "Sugerencias Proactivas de Optimización",
+                columns: [
+                  { key: "prioridad", header: "Prioridad" },
+                  { key: "area", header: "Área" },
+                  { key: "accion", header: "Acción Sugerida" },
+                  { key: "retorno", header: "Retorno / Impacto" },
+                ],
+                rows: suggestions.map((s) => ({
+                  prioridad: s.priority,
+                  area: s.area,
+                  accion: s.recommendedAction,
+                  retorno: s.estimatedImpact.text,
+                })),
+              },
+            ],
+            actions: suggestions.map((s) => ({
+              id: `act-sug-${s.id}`,
+              type: "APPLY_SUGGESTION",
+              label: `Ajustar ${s.targetTag || s.area}`,
+              payload: {
+                tag: s.targetTag,
+                value: s.proposedSetpoint,
+                unit: s.unit,
+              },
+              level: 2,
+            })),
           };
           break;
         }

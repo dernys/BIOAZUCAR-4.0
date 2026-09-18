@@ -68,6 +68,7 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
   userRole = "administrador",
   theme = "dark",
 }) => {
+  const isLight = theme === "light";
   const resolvedTenantId = activeTenant?.id || tenantId || "tenant-default";
   const resolvedTenantName = activeTenant?.name || tenantName || "Central Azucarero";
   const resolvedTenantCode = activeTenant?.code || "CENTRAL-01";
@@ -414,12 +415,18 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
   };
 
   return (
-    <div className={`fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 backdrop-blur-md overflow-y-auto font-sans ${isFullscreen ? "p-0" : "p-3 sm:p-4"} ${theme === "dark" ? "dark" : ""}`}>
-      <div className={`relative w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 shadow-2xl overflow-hidden font-mono text-xs duration-150 text-slate-900 dark:text-slate-100 flex flex-col ${
-        isFullscreen
-          ? "fixed inset-0 z-[130] w-screen h-screen max-w-none max-h-none rounded-none border-0 m-0"
-          : "max-w-5xl rounded-2xl my-auto max-h-[92vh] animate-in zoom-in-95"
-      }`}>
+    <div
+      className={`fixed inset-0 z-[120] flex items-center justify-center backdrop-blur-md overflow-y-auto font-sans ${
+        isFullscreen ? "p-0" : "p-3 sm:p-4"
+      } ${isLight ? "bg-slate-900/40 light" : "bg-slate-950/80 dark"}`}
+    >
+      <div
+        className={`relative w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 shadow-2xl overflow-hidden font-mono text-xs duration-150 text-slate-900 dark:text-slate-100 flex flex-col ${
+          isFullscreen
+            ? "fixed inset-0 z-[130] w-screen h-screen max-w-none max-h-none rounded-none border-0 m-0"
+            : "max-w-5xl rounded-2xl my-auto max-h-[92vh] animate-in zoom-in-95"
+        }`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70 shrink-0">
           <div className="flex items-center gap-3">
@@ -923,7 +930,7 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
                     <span>{isCopiedPrometheusYaml ? "Copiado al portapapeles" : "Copiar Configuración"}</span>
                   </button>
                 </div>
-                <pre className="p-3 bg-slate-900 text-emerald-300 rounded-lg text-[11px] font-mono overflow-x-auto border border-slate-800">
+                <pre className="p-3 bg-[#0a0f1d] text-emerald-400 rounded-lg text-[11px] font-mono overflow-x-auto border border-slate-800 shadow-inner">
                   {prometheusYamlConfig}
                 </pre>
               </div>
@@ -944,7 +951,7 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
                     <span>Actualizar Muestra</span>
                   </button>
                 </div>
-                <pre className="p-3 bg-slate-900 text-slate-200 rounded-lg text-[10px] font-mono overflow-x-auto max-h-48 border border-slate-800">
+                <pre className="p-3 bg-[#0a0f1d] text-slate-200 rounded-lg text-[10px] font-mono overflow-x-auto max-h-48 border border-slate-800 shadow-inner">
                   {metricsSample || "Cargando métricas de /metrics..."}
                 </pre>
               </div>
@@ -1189,7 +1196,7 @@ export const IndustrialConnectionModal: React.FC<IndustrialConnectionModalProps>
 
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition shadow-sm"
+            className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white font-bold transition shadow-sm"
           >
             Aceptar y Cerrar
           </button>

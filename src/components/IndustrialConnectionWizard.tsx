@@ -628,7 +628,7 @@ export const IndustrialConnectionWizard: React.FC<IndustrialConnectionWizardProp
   return (
     <div
       className={`flex flex-col h-full bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm ${
-        theme === "dark" ? "dark" : ""
+        theme === "dark" ? "dark" : "light"
       }`}
     >
       {/* Step Indicator Header */}
@@ -1438,7 +1438,7 @@ export const IndustrialConnectionWizard: React.FC<IndustrialConnectionWizardProp
 
             <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3 font-mono text-xs">
               <span className="text-slate-500 block">Tópico UNS Jerárquico Canónico:</span>
-              <div className="p-2.5 bg-slate-900 text-emerald-400 rounded border border-slate-800 break-all select-all">
+              <div className="p-2.5 bg-[#0a0f1d] text-emerald-400 rounded border border-slate-800 break-all select-all font-mono">
                 bioazucar/v1/{tenantId}/{siteId}/{areaId}/{processCellId}/{assetId}/{selectedDeviceId}/{tagsList[0]?.canonicalName || "VARIABLE"}
               </div>
 

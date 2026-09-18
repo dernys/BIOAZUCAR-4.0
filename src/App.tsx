@@ -23,6 +23,7 @@ import { DataLineageModal } from "./components/DataLineageModal";
 import { BioAzucarCopilot } from "./copilot/components/BioAzucarCopilot";
 import { ExecutivePresentation } from "./components/ExecutivePresentation";
 import { IndustrialConnectionModal } from "./components/IndustrialConnectionModal";
+import { IpcHardeningAndOfflineModal } from "./components/edge/IpcHardeningAndOfflineModal";
 import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import {
@@ -99,6 +100,7 @@ export default function App() {
   const [isCreateWizardOpen, setIsCreateWizardOpen] = useState<boolean>(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState<boolean>(false);
   const [isIndustrialModalOpen, setIsIndustrialModalOpen] = useState<boolean>(false);
+  const [isIpcHardeningModalOpen, setIsIpcHardeningModalOpen] = useState<boolean>(false);
   const [selectedLineage, setSelectedLineage] = useState<DataLineageInfo | null>(null);
   const [dbLatencyMs, setDbLatencyMs] = useState<number>(24);
 
@@ -604,6 +606,7 @@ export default function App() {
         onOpenCopilot={() => setIsCopilotOpen(true)}
         onOpenPresentation={() => setActiveTab("presentation")}
         onOpenIndustrialConnectionModal={() => setIsIndustrialModalOpen(true)}
+        onOpenIpcHardening={() => setIsIpcHardeningModalOpen(true)}
         runtimeMode={runtimeMode}
         telemetry={telemetry}
         scenario={scenario}
@@ -952,6 +955,13 @@ export default function App() {
         onModeChange={handleRuntimeModeChange}
         telemetry={telemetry}
         theme={theme}
+      />
+
+      {/* 9. Ola 4: IPC Infrastructure Hardening, Dual-NIC & Offline Modal */}
+      <IpcHardeningAndOfflineModal
+        isOpen={isIpcHardeningModalOpen}
+        onClose={() => setIsIpcHardeningModalOpen(false)}
+        currentRole={currentRole}
       />
     </div>
   );

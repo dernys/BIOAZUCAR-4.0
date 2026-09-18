@@ -1,0 +1,12 @@
+# ==============================================================================
+# BIOAZÚCAR 4.0 — UDEV USB MASS STORAGE BLOCKING RULE (CIS BENCHMARK & IEC 62443)
+# ==============================================================================
+# Target: /etc/udev/rules.d/99-usb-storage-block.rules
+# Purpose: Prevents unauthorized physical USB memory insertion into industrial IPCs
+# ==============================================================================
+
+# Block USB Mass Storage driver probing
+ACTION=="add", SUBSYSTEMS=="usb", ATTRS{bInterfaceClass}=="08", RUN+="/bin/sh -c 'echo 0 > /sys$DEVPATH/authorized'"
+
+# Immediate audit log entry on unauthorized USB connection attempt
+ACTION=="add", SUBSYSTEMS=="usb", ATTRS{bInterfaceClass}=="08", RUN+="/usr/bin/logger -p authpriv.alert -t BIOAZUCAR_USB_GUARD 'SECURITY ALERT: Unauthorized USB Mass Storage drive blocked on IPC hardware'"

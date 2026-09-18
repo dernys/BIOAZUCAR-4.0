@@ -43,6 +43,7 @@ import {
   checkDatabaseHealth,
   DatabaseHealthInfo
 } from "../services/dbService";
+import { IpcHardeningAndOfflineModal } from "./edge/IpcHardeningAndOfflineModal";
 
 interface SystemConfigVerificationProps {
   currentRole: UserRole;
@@ -81,6 +82,7 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
 
   // Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isIpcModalOpen, setIsIpcModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<SystemParameterConfig | null>(null);
   const [deletingConfigId, setDeletingConfigId] = useState<string | null>(null);
 
@@ -352,6 +354,15 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
             >
               <Download className="w-3.5 h-3.5 text-slate-400" />
               <span>Exportar Informe JSON</span>
+            </button>
+
+            <button
+              onClick={() => setIsIpcModalOpen(true)}
+              className="px-3.5 py-2 bg-gradient-to-r from-cyan-950 to-slate-800 hover:from-cyan-900 hover:to-slate-700 text-cyan-300 text-xs font-mono rounded-xl border border-cyan-600/50 flex items-center gap-1.5 transition shadow-sm"
+              title="Panel de Hardening de Infraestructura IPC, Dual-NIC y Modo Offline (Ola 4)"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Hardening IPC (Ola 4)</span>
             </button>
           </div>
         </div>
@@ -870,6 +881,13 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
           </div>
         </div>
       )}
+
+      {/* Ola 4: IPC Infrastructure Hardening, Dual-NIC & Offline Modal */}
+      <IpcHardeningAndOfflineModal
+        isOpen={isIpcModalOpen}
+        onClose={() => setIsIpcModalOpen(false)}
+        currentRole={currentRole}
+      />
     </div>
   );
 };

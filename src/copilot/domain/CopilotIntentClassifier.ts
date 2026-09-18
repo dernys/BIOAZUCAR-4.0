@@ -1078,10 +1078,10 @@ export class CopilotIntentClassifier {
       };
     }
 
-    // 7. NAVIGATION
-    // e.g. "llévame a cogeneración", "abre molienda", "muéstrame las alarmas", "quiero ver el balance energético"
+    // 7. NAVIGATION & SYSTEM GUIDANCE
+    // e.g. "llévame a cogeneración", "abre molienda", "muéstrame las alarmas", "cómo llego a...", "guíame a..."
     const navigationPrefixes = [
-      /\b(llevame a|ir a|abre|abrir|mostrar|muestrame|quiero ver|ver pantalla|navegar a|dirigeme a)\b/,
+      /\b(llevame a|ir a|abre|abrir|mostrar|muestrame|quiero ver|ver pantalla|navegar a|dirigeme a|guiame a|como llego a|donde veo|donde esta|donde encuentro)\b/,
     ];
 
     const hasNavPrefix = navigationPrefixes.some((p) => p.test(clean));
@@ -1109,6 +1109,16 @@ export class CopilotIntentClassifier {
         targetModule = "users_roles";
       } else if (clean.includes("empresa") || clean.includes("tenant") || clean.includes("ingenios")) {
         targetModule = "enterprises";
+      } else if (clean.includes("bioai") || clean.includes("inteligencia") || clean.includes("centro de ia") || clean.includes("ai center")) {
+        targetModule = "ai_center";
+      } else if (clean.includes("agricola") || clean.includes("agronomia") || clean.includes("campo") || clean.includes("cosecha") || clean.includes("zafra")) {
+        targetModule = "agricultural_pda";
+      } else if (clean.includes("conexion") || clean.includes("conectividad") || clean.includes("observabilidad") || clean.includes("industrial connections")) {
+        targetModule = "industrial_connections";
+      } else if (clean.includes("configuracion") || clean.includes("ajustes") || clean.includes("setup")) {
+        targetModule = "system_config";
+      } else if (clean.includes("presentacion") || clean.includes("pitch") || clean.includes("demo")) {
+        targetModule = "presentation";
       } else if (clean.includes("dashboard") || clean.includes("inicio") || clean.includes("principal")) {
         targetModule = "dashboard";
       }
@@ -1117,7 +1127,7 @@ export class CopilotIntentClassifier {
         return {
           intent: "NAVIGATION",
           confidence: 0.96,
-          reason: `Solicitud explícita de navegación al módulo ${targetModule.toUpperCase()}`,
+          reason: `Solicitud de navegación y guía al módulo ${targetModule.toUpperCase()}`,
           targetModule,
           recommendedTool: "navigate_to",
         };
@@ -1242,6 +1252,55 @@ export class CopilotIntentClassifier {
     }
 
     // 12. BIOAI INTELLIGENCE ENGINE & AI SUGAR INDUSTRY ENGINEER QUERIES
+    // 12.0 Global Situational Awareness & Executive Plant Overview
+    const globalOverviewPatterns = [
+      /\bestado global\b/,
+      /\bestado general del ingenio\b/,
+      /\bpanorama global\b/,
+      /\bdiagnostico global\b/,
+      /\bvision 360\b/,
+      /\bresumen 360\b/,
+      /\bcomo esta todo el ingenio\b/,
+      /\bcomo esta toda la planta\b/,
+      /\bsituacion general\b/,
+      /\bsituacion global\b/,
+      /\bmonitoreo global\b/,
+    ];
+    for (const pattern of globalOverviewPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "GLOBAL_OVERVIEW",
+          confidence: 0.99,
+          reason: "Consulta de estado situacional global 360 del ingenio azucarero",
+          recommendedTool: "get_global_plant_snapshot",
+        };
+      }
+    }
+
+    // 12.0.1 System Event Predictions ("¿Qué eventos predices?", "¿Qué va a pasar en las próximas horas?")
+    const systemPredictionPatterns = [
+      /\bque eventos predices\b/,
+      /\bque predices\b/,
+      /\bpronostico de eventos\b/,
+      /\bprediccion de eventos\b/,
+      /\bque va a pasar\b/,
+      /\bproyeccion de eventos\b/,
+      /\beventos proyectados\b/,
+      /\bpredicciones del sistema\b/,
+      /\bpredicciones de bioai\b/,
+      /\bpronostico operacional\b/,
+    ];
+    for (const pattern of systemPredictionPatterns) {
+      if (pattern.test(clean)) {
+        return {
+          intent: "PREDICTIVE_ANALYTICS",
+          confidence: 0.99,
+          reason: "Consulta de pronósticos y eventos predictivos anticipados por BioAI",
+          recommendedTool: "get_system_event_predictions",
+        };
+      }
+    }
+
     // 12.1 Daily Energy Efficiency ("¿Cuál fue la eficiencia energética de hoy?")
     const energyEfficiencyPatterns = [
       /\bcual fue la eficiencia energetica de hoy\b/,
@@ -1315,14 +1374,18 @@ export class CopilotIntentClassifier {
       /\bcomo optimizar la planta\b/,
       /\boptimizaciones recomendadas\b/,
       /\bsugerencias de la ia\b/,
+      /\bsugerencias proactivas\b/,
+      /\bsugerencias de optimizacion\b/,
+      /\bque sugieres\b/,
+      /\bque propones\b/,
     ];
     for (const pattern of recommendationsPatterns) {
       if (pattern.test(clean)) {
         return {
           intent: "RECOMMENDATIONS",
           confidence: 0.98,
-          reason: "Consulta de recomendaciones industriales generadas por BioAI Intelligence Engine",
-          recommendedTool: "get_industrial_recommendations",
+          reason: "Consulta de recomendaciones y sugerencias industriales generadas por BioAI Intelligence Engine",
+          recommendedTool: "get_proactive_suggestions",
         };
       }
     }

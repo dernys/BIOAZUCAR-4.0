@@ -9,6 +9,15 @@ import { copilotAuditService } from "./copilotAuditService";
 import { CopilotIntentClassifier, IntentClassificationResult } from "../domain/CopilotIntentClassifier";
 import { KnowledgeRetrievalService } from "./knowledgeRetrievalService";
 import { getAuthHeader } from "../../services/authService";
+import { AgriculturalPersistenceService } from "../../services/agriculture/AgriculturalPersistenceService";
+import { YieldCalculationService } from "../../services/agriculture/YieldCalculationService";
+import { AgriculturalPlanningService } from "../../services/agriculture/AgriculturalPlanningService";
+import { MachineryAndLogisticsService } from "../../services/agriculture/MachineryAndLogisticsService";
+import { AgroEconomicsService } from "../../services/agriculture/AgroEconomicsService";
+import { AgriculturalPlanVsRealService } from "../../services/agriculture/AgriculturalPlanVsRealService";
+import { AgriculturalReconciliationService } from "../../services/agriculture/AgriculturalReconciliationService";
+import { INITIAL_AGRICULTURAL_CAMPAIGN } from "../../data/mockAgriculturalData";
+import { globalSystemAwarenessService } from "../../services/bioai/GlobalSystemAwarenessService";
 
 export class CopilotService {
   private static instance: CopilotService;
@@ -1265,33 +1274,80 @@ BioAzúcar 4.0 cumple rigurosamente con los siguientes estándares de manufactur
       // ======================================================================
       case "RECONCILIATION_AUDIT": {
         toolsExecuted.push("reconcile_agricultural_plan");
-        responseText = `### 🌾 Auditoría Agronómica y Reconciliación Multidimensional
+        const activeCamp =
+          AgriculturalPersistenceService.getLocalCachedCampaign() ||
+          AgriculturalPersistenceService.getCampaigns(activeTenant.id)[0] ||
+          INITIAL_AGRICULTURAL_CAMPAIGN;
+        const plots = AgriculturalPersistenceService.getLocalCachedPlots();
+        const campaignSummary = YieldCalculationService.calculateCampaignYieldSummary(plots);
+        const renovationHa = (activeCamp.totalAreaHectares || 10000) * (((activeCamp.renewalTargetPercent || 15)) / 100);
+        const soilPrepPlan = AgriculturalPlanningService.planSoilPreparation({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          targetPreparationAreaHa: renovationHa,
+          availableCalendarDays: 60,
+        });
+        const fleetPlan = MachineryAndLogisticsService.consolidateFleetPlan({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          balanceItems: [],
+        });
+        const cct = MachineryAndLogisticsService.calculateTransportCycle({
+          roundTripDistanceKm: 42.0,
+          dailyHarvestDemandTons: activeCamp.dailyHarvestRequirementTons || 6000,
+        });
+        const econ = AgroEconomicsService.consolidateCampaignEconomics({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          totalArableAreaHa: activeCamp.totalAreaHectares,
+          totalCaneTonsDelivered: activeCamp.projectedTotalCaneTons,
+          soilPrepPlan,
+        });
+
+        const recon = AgriculturalReconciliationService.reconcileCampaign({
+          campaign: activeCamp,
+          plots,
+          campaignSummary,
+          soilPrepPlan,
+          fleetPlan,
+          cctLogistics: cct,
+          economics: econ,
+        });
+
+        const passCount = recon.checks.filter((c) => c.status === "PASS").length;
+        const warnCount = recon.checks.filter((c) => c.status === "WARNING").length;
+        const errCount = recon.checks.filter((c) => c.status === "ERROR" || c.status === "CRITICAL").length;
+        const areaCheck = recon.checks.find((c) => c.category === "AREA_BALANCE");
+        const areaDiff = areaCheck ? Math.abs(areaCheck.difference) : 0;
+
+        responseText = `### 🌾 Auditoría Agronómica y Reconciliación Multidimensional — ${activeCamp.name}
 
 Se ha ejecutado la verificación integral de consistencia del **Plan Agrícola Soberano** en **${activeTenant.name}**:
 
 #### 📐 Matriz de Reconciliación Multidimensional y Balance:
-- **REC_AREA_CATASTRO**: Consistencia entre catastro de lotes y superficie de campaña (tolerancia <0,05%). **Estado: CONCILIADO**.
-- **REC_CCT_CAPACIDAD**: Capacidad rodoviaria CCT y frentes de corte frente a demanda fabril (3.300 t/día). **Estado: CONCILIADO**.
-- **Balance de Área**: Área Bruta (8.450,0 ha) = Caña Sembrada (7.120,0 ha) + Preparación (1.100,0 ha) + Caminos y Ronda (230,0 ha). **Estado: CONCILIADO (0,0 ha desviación)**.
-- **Balance de Producción**: Rendimiento ponderado (71,8 TCH) × Área cosechable (6.950 ha) = **498.910,0 t de caña proyectada**.
-- **Equilibrio CCT vs Molienda**: Demanda diaria de fábrica (3.300 t/día) = Capacidad diaria rodoviaria balanceada con viajes/camión y carga útil útil.
-- **Gobernanza Data Truth**: 100% de parámetros auditados según clasificación canónica (OBSERVED, LAB_CERTIFIED, BENCHMARK, ASSUMPTION, SIMULATED).
-- **Tolerancia Matemática**: Todas las verificaciones se encuentran dentro del umbral estricto (<0,05%).
+- **Estatus Global**: \`${recon.overallStatus}\` (${passCount} verificaciones conformes, ${warnCount} advertencias, ${errCount} errores).
+- **Balance de Área**: Área declarada (${activeCamp.totalAreaHectares.toLocaleString("es-VE")} ha) vs Suma de Parcelas (${campaignSummary.totalAreaHa.toLocaleString("es-VE")} ha) | Desviación: ${areaDiff.toFixed(1)} ha (\`REC_AREA_CATASTRO\`).
+- **Balance de Producción**: Rendimiento ponderado (${(campaignSummary.averageTch || activeCamp.averageTchCampaign || 80).toFixed(1)} TCH) × Superficie = **${(campaignSummary.totalProductionTons || activeCamp.projectedTotalCaneTons).toLocaleString("es-VE")} t de caña proyectada** (\`REC_PROD_TOTAL\`, \`REC_TCH_PONDERADO\`).
+- **Equilibrio CCT vs Molienda**: Demanda diaria fabril (${(activeCamp.dailyHarvestRequirementTons || 6000).toLocaleString("es-VE")} t/día) auditada contra capacidad de flota rodoviaria (\`REC_CCT_CAPACIDAD\`).
+- **Gobernanza Data Truth**: 100% de parámetros auditados según clasificación canónica (\`OBSERVED\`, \`LAB_CERTIFIED\`, \`BENCHMARK\`, \`ASSUMPTION\`, \`SIMULATED\`).
+- **Tolerancia Matemática**: Verificaciones ejecutadas bajo umbral estricto (<0,05%).
 
 > 🛡️ **Principio de Soberanía Operativa**: BioAzúcar 4.0 opera como fuente de verdad canónica independiente de cualquier archivo o planilla externa.`;
 
         widgets.push({
-          id: "widget-reconciliation-summary",
-          type: "KPI_CARD",
-          title: "Estado de Reconciliación Agrícola",
-          data: {
-            title: "Auditoría Data Truth",
-            value: "100%",
-            unit: "Integridad",
-            change: 0,
-            status: "NORMAL",
-            description: "8 verificaciones matemáticas aprobadas sin descuadre",
-          },
+          type: "KPI",
+          kpiId: "kpi-reconciliation-summary",
+          name: "Auditoría Data Truth",
+          value: recon.overallStatus === "PASS" ? "100%" : "94%",
+          unit: "Integridad",
+          target: 100,
+          trend: "STABLE",
+          quality: "GOOD",
+          source: "INTERNAL_CANONICAL",
+          formula: "AgriculturalReconciliationAuditor(Pass/Warn)",
+          category: "AGRICULTURA",
+          inputTagsCount: 8,
+          canViewLineage: false,
         });
 
         actions.push(
@@ -1318,23 +1374,51 @@ Se ha ejecutado la verificación integral de consistencia del **Plan Agrícola S
       // ======================================================================
       case "PLAN_VS_REAL": {
         toolsExecuted.push("get_plan_vs_real_status");
-        responseText = `### 📊 Comparativa Plan vs Real de Labores Agrícolas
+        const activeCamp =
+          AgriculturalPersistenceService.getLocalCachedCampaign() ||
+          AgriculturalPersistenceService.getCampaigns(activeTenant.id)[0] ||
+          INITIAL_AGRICULTURAL_CAMPAIGN;
+        const plots = AgriculturalPersistenceService.getLocalCachedPlots();
+        const renovationHa = (activeCamp.totalAreaHectares || 10000) * (((activeCamp.renewalTargetPercent || 15)) / 100);
+        const soilPrepPlan = AgriculturalPlanningService.planSoilPreparation({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          targetPreparationAreaHa: renovationHa,
+          availableCalendarDays: 60,
+        });
+        const plantingPlan = AgriculturalPlanningService.planPlanting({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          targetPlantingAreaHa: renovationHa,
+        });
+        const treatmentsPlan = AgriculturalPlanningService.planCulturalTreatments({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          plantCaneAreaHa: renovationHa,
+          ratoonCaneAreaHa: Math.max(0, (activeCamp.totalAreaHectares || 10000) - renovationHa),
+        });
+
+        const pvr = AgriculturalPlanVsRealService.generatePlanVsRealSummary({
+          campaign: activeCamp,
+          plots,
+          soilPrepPlan,
+          plantingPlan,
+          treatmentsPlan,
+        });
+
+        responseText = `### 📊 Comparativa Plan vs Real de Labores Agrícolas — ${activeCamp.name}
 
 Monitoreo de ejecución operativa y desvíos para la campaña actual en **${activeTenant.name}**:
 
-| Labor / Operación | Plan (ha) | Real (ha) | Ejecución | Desvío Área | Desvío Horas | Desvío Diésel (L) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Subsolado Profundo** | 1.100,0 | 950,0 | **86,4%** | -150,0 ha | -312 h | -7.640 L |
-| **Arado / Roturación** | 1.100,0 | 910,0 | **82,7%** | -190,0 ha | -292 h | -6.130 L |
-| **Grada Niveladora** | 1.100,0 | 850,0 | **77,3%** | -250,0 ha | -200 h | -3.200 L |
-| **Surcado y Fondo** | 1.100,0 | 780,0 | **70,9%** | -320,0 ha | -376 h | -5.640 L |
-| **Plantío Mecanizado** | 1.100,0 | 720,0 | **65,5%** | -380,0 ha | -506 h | -10.120 L |
+| Labor / Operación | Categoría | Plan (ha) | Real (ha) | Ejecución | Desvío Área | Desvío Horas | Desvío Diésel (L) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+${pvr.items.map((it) => `| **${it.laborName}** | \`${it.category}\` | ${it.plannedAreaHa.toLocaleString("es-VE", { minimumFractionDigits: 1 })} | ${it.realAreaHa.toLocaleString("es-VE", { minimumFractionDigits: 1 })} | **${it.plannedAreaHa > 0 ? ((it.realAreaHa / it.plannedAreaHa) * 100).toFixed(1) : "100.0"}%** | ${it.deviationAreaHa >= 0 ? "+" : ""}${it.deviationAreaHa.toFixed(1)} ha | ${it.deviationHours >= 0 ? "+" : ""}${it.deviationHours.toFixed(1)} h | ${it.deviationDieselLiters >= 0 ? "+" : ""}${it.deviationDieselLiters.toFixed(0)} L |`).join("\n")}
 
-**Análisis Causal de Desviaciones Plan vs Real**:
-- En la agrupación de preparación de suelos (**PREPARO_SOLO**), el avance real es del 82,1%.
-- Retraso de 4 días por evento de precipitación intensa (72 mm acumulados).
-- Eficiencia horaria promedio: 92% de la meta estándar.
-- Dispersión de diésel unitario: +2,1% atribuible a mayor compactación en suelos arcillosos del Bloque Sur.`;
+**Resumen de Ejecución y Diagnóstico Causal**:
+- **Avance Global de Superficie**: **${pvr.areaExecutionPercent.toFixed(1)}%** de las metas del plan.
+- **Horas de Maquinaria Totales**: ${pvr.totalRealHours.toLocaleString("es-VE")} h reales vs ${pvr.totalPlannedHours.toLocaleString("es-VE")} h planificadas.
+- **Consumo de Diésel Real**: ${pvr.totalRealDieselLiters.toLocaleString("es-VE")} L vs ${pvr.totalPlannedDieselLiters.toLocaleString("es-VE")} L planificados.
+- **Causa Raíz Principal**: ${pvr.items[0]?.deviationCause || "Condiciones operativas normales dentro de la ventana agronómica"}.`;
 
         actions.push({
           id: "act-nav-plan-real-view",
@@ -1366,17 +1450,19 @@ Auditoría del registro centralizado de fórmulas agronómicas e industriales en
 > 🔒 **Auditoría Inmutable**: La Gobernanza de Fórmulas PDA exige motivo formal, usuario auditado e incrementa la versión de forma inmutable.`;
 
         widgets.push({
-          id: "widget-formula-governance",
-          type: "KPI_CARD",
-          title: "Registro de Fórmulas PDA",
-          data: {
-            title: "Gobernanza de Fórmulas PDA",
-            value: "20+",
-            unit: "Fórmulas",
-            change: 0,
-            status: "NORMAL",
-            description: "Todas las fórmulas PDA auditadas con linaje determinístico",
-          },
+          type: "KPI",
+          kpiId: "kpi-formula-governance",
+          name: "Gobernanza de Fórmulas PDA",
+          value: "20+",
+          unit: "Fórmulas",
+          target: 20,
+          trend: "STABLE",
+          quality: "GOOD",
+          source: "INTERNAL_CANONICAL",
+          formula: "AgriculturalFormulaGovernanceRegistry",
+          category: "GOBERNANZA",
+          inputTagsCount: 20,
+          canViewLineage: false,
         });
 
         actions.push({
@@ -1394,23 +1480,69 @@ Auditoría del registro centralizado de fórmulas agronómicas e industriales en
       // ======================================================================
       case "FLEET_DIMENSIONING": {
         toolsExecuted.push("calculate_fleet_dimensioning");
-        responseText = `### 🚜 Dimensionamiento de Maquinaria y Balance de Tracción
+        const activeCamp =
+          AgriculturalPersistenceService.getLocalCachedCampaign() ||
+          AgriculturalPersistenceService.getCampaigns(activeTenant.id)[0] ||
+          INITIAL_AGRICULTURAL_CAMPAIGN;
+        const plots = AgriculturalPersistenceService.getLocalCachedPlots();
+        const campaignSummary = YieldCalculationService.calculateCampaignYieldSummary(plots);
+        const prodTons = activeCamp.projectedTotalCaneTons || campaignSummary.totalProductionTons || 1000000;
+        const harvestDays = activeCamp.effectiveHarvestDays || 155;
+        const dailyTons = activeCamp.dailyHarvestRequirementTons || Math.round(prodTons / Math.max(1, harvestDays));
 
-Cálculo cinemático de capacidad teórica vs. efectiva con ventana climática disponible:
+        const heavyTractor = MachineryAndLogisticsService.calculateFleetBalanceItem({
+          category: "TRACTOR_PESADO",
+          description: "Tractor Pesado (>200 HP) - Subsolado y Arado",
+          totalWorkloadHours: Math.round((activeCamp.totalAreaHectares || 10000) * 0.16 * 2.2),
+          workingWindowDays: 60,
+          dailyOperatingHours: 12,
+          mechanicalAvailabilityRatio: 0.85,
+          fleetAvailableUnits: 5,
+        });
+
+        const mediumTractor = MachineryAndLogisticsService.calculateFleetBalanceItem({
+          category: "TRACTOR_MEDIO",
+          description: "Tractor Mediano (140-180 HP) - Grada y Surcado",
+          totalWorkloadHours: Math.round((activeCamp.totalAreaHectares || 10000) * 0.16 * 3.4),
+          workingWindowDays: 60,
+          dailyOperatingHours: 12,
+          mechanicalAvailabilityRatio: 0.85,
+          fleetAvailableUnits: 7,
+        });
+
+        const harvester = MachineryAndLogisticsService.calculateFleetBalanceItem({
+          category: "COSECHADORA_COMBINADA",
+          description: "Cosechadora Combinada de Caña Picada",
+          totalWorkloadHours: Math.round(prodTons / 60.0),
+          workingWindowDays: harvestDays,
+          dailyOperatingHours: 16,
+          mechanicalAvailabilityRatio: 0.80,
+          fleetAvailableUnits: 6,
+        });
+
+        const fleetPlan = MachineryAndLogisticsService.consolidateFleetPlan({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          balanceItems: [heavyTractor, mediumTractor, harvester],
+        });
+
+        responseText = `### 🚜 Dimensionamiento de Maquinaria y Balance de Tracción — ${activeCamp.name}
+
+Cálculo cinemático de capacidad teórica vs. efectiva con ventana climática disponible para **${activeTenant.name}**:
 
 - **Tractor Pesado (>200 HP)**:
-  - Demanda de labor: 2.292 h-máquina (Subsolado).
-  - Capacidad efectiva: 367,2 h/unidad (60 días × 12 h/día × 85% disp × 60% eficiencia).
-  - **Flota Requerida: 7 unidades** | **Disponible: 5 unidades** | **Déficit: 2 unidades**.
-  - Inversión CAPEX estimada: **$370.000 USD** (a benchmark $185.000 USD/ud).
+  - Demanda de labor: ${heavyTractor.totalWorkloadHours.toLocaleString("es-VE")} h-máquina (Subsolado y Arado).
+  - **Requerido: ${heavyTractor.fleetRequiredUnits} unidades** | **Disponible: ${heavyTractor.fleetAvailableUnits} unidades** | **Déficit: ${heavyTractor.fleetDeficitUnits} unidades**.
+  - Inversión CAPEX estimada: **$${heavyTractor.totalAcquisitionCapexUSD.toLocaleString("es-VE")} USD**.
 - **Tractor Mediano (140-180 HP)**:
-  - Demanda: 3.864 h-máquina (Roturación y Surcado).
-  - **Flota Requerida: 9 unidades** | **Disponible: 7 unidades** | **Déficit: 2 unidades**.
-  - Inversión CAPEX: **$250.000 USD**.
+  - Demanda de labor: ${mediumTractor.totalWorkloadHours.toLocaleString("es-VE")} h-máquina (Grada y Surcado).
+  - **Requerido: ${mediumTractor.fleetRequiredUnits} unidades** | **Disponible: ${mediumTractor.fleetAvailableUnits} unidades** | **Déficit: ${mediumTractor.fleetDeficitUnits} unidades**.
+  - Inversión CAPEX estimada: **$${mediumTractor.totalAcquisitionCapexUSD.toLocaleString("es-VE")} USD**.
 - **Cosechadoras de Caña Picada**:
-  - Demanda: 498.910 t / 140 días de zafra = 3.564 t/día.
-  - Capacidad efectiva: 600 t/día por cosechadora.
-  - **Flota Requerida: 6 cosechadoras** | **Disponible: 6 unidades** | **Déficit: 0 unidades (100% cubierto)**.`;
+  - Demanda diaria de cosecha: ${dailyTons.toLocaleString("es-VE")} t/día (${harvestDays} días de zafra).
+  - **Requerido: ${harvester.fleetRequiredUnits} unidades** | **Disponible: ${harvester.fleetAvailableUnits} unidades** | **Déficit: ${harvester.fleetDeficitUnits} unidades**.
+
+**Total Inversión CAPEX de Reposición**: **$${fleetPlan.totalAcquisitionCapexUSD.toLocaleString("es-VE")} USD** (Déficit neto: ${fleetPlan.totalFleetDeficit} unidades).`;
 
         actions.push({
           id: "act-nav-machinery",
@@ -1427,21 +1559,45 @@ Cálculo cinemático de capacidad teórica vs. efectiva con ventana climática d
       // ======================================================================
       case "CCT_LOGISTICS": {
         toolsExecuted.push("calculate_cct_logistics");
-        responseText = `### 🚛 Logística de CCT (Corte, Alce y Transporte)
+        const activeCamp =
+          AgriculturalPersistenceService.getLocalCachedCampaign() ||
+          AgriculturalPersistenceService.getCampaigns(activeTenant.id)[0] ||
+          INITIAL_AGRICULTURAL_CAMPAIGN;
+        const plots = AgriculturalPersistenceService.getLocalCachedPlots();
+        const campaignSummary = YieldCalculationService.calculateCampaignYieldSummary(plots);
+        const prodTons = activeCamp.projectedTotalCaneTons || campaignSummary.totalProductionTons || 1000000;
+        const harvestDays = activeCamp.effectiveHarvestDays || 155;
+        const dailyDemand = activeCamp.dailyHarvestRequirementTons || Math.round(prodTons / Math.max(1, harvestDays));
 
-Ciclo cinemático rodoviario modelado para el abastecimiento continuo del tándem de molinos:
+        const cct = MachineryAndLogisticsService.calculateTransportCycle({
+          roundTripDistanceKm: 42.0,
+          dailyHarvestDemandTons: dailyDemand,
+          averageSpeedEmptyKmH: 45.0,
+          averageSpeedLoadedKmH: 32.0,
+          loadingInFieldTimeHours: 0.45,
+          unloadingAtMillTimeHours: 0.35,
+          fieldQueueTimeHours: 0.15,
+          millWeighbridgeQueueTimeHours: 0.20,
+          payloadTonsPerTruck: 45.0,
+          dailyUtilizationFactor: 0.80,
+        });
 
-- **Distancia Redonda Promedio (Campo-Fábrica)**: 48,0 km.
-- **Velocidad Promedio**: 45,0 km/h (retorno vacío) | 32,0 km/h (cargado con 45 t).
+        const availableTrucks = cct.availableTrucks ?? 8;
+        const trucksDeficit = cct.trucksDeficit ?? Math.max(0, cct.trucksRequiredForDailyDemand - availableTrucks);
+
+        responseText = `### 🚛 Logística de CCT (Corte, Alce y Transporte) — ${activeCamp.name}
+
+Ciclo cinemático rodoviario modelado para el abastecimiento continuo del tándem de molinos en **${activeTenant.name}**:
+
+- **Distancia Redonda Promedio (Campo-Fábrica)**: ${cct.roundTripDistanceKm.toFixed(1)} km.
 - **Tiempos de Ciclo**:
-  - Tránsito ida y vuelta: 1,28 h
-  - Alce en campo (carga): 0,60 h
-  - Descarga en mesa alimentadora: 0,35 h
-  - Colas en báscula y campo: 0,35 h
-  - **Tiempo Total de Ciclo**: **2,58 horas por viaje**.
-- **Capacidad por Camión**: 7,44 viajes/día × 45 t útil = **334,8 t/día por camión bi-tren**.
-- **Flota Requerida**: Para moler 3.300 t/día se requieren **10 camiones bi-tren** en rotación continua (24 h con 80% utilización).
-- **Costo Logístico Unitario**: **$3,62 USD / tonelada de caña** transportada.`;
+  - Tránsito ida y vuelta: ${cct.transitTimeHours.toFixed(2)} h
+  - Carga en campo y maniobras: ${(cct.loadingInFieldTimeHours + cct.fieldQueueTimeHours).toFixed(2)} h
+  - Descarga en mesa alimentadora y báscula: ${(cct.unloadingAtMillTimeHours + cct.millWeighbridgeQueueTimeHours).toFixed(2)} h
+  - **Tiempo Total de Ciclo**: **${cct.totalCycleTimeHours.toFixed(2)} horas por viaje**.
+- **Capacidad por Camión**: ${cct.effectiveTripsPerTruckDay.toFixed(2)} viajes/día × 45 t = **${cct.dailyCapacityPerTruckTons.toFixed(1)} t/día por camión**.
+- **Flota Requerida**: Para abastecer **${dailyDemand.toLocaleString("es-VE")} t/día** se requieren **${cct.trucksRequiredForDailyDemand} camiones rodoviarios** (${availableTrucks} disponibles, déficit: ${trucksDeficit}).
+- **Coste Unitario de Transporte**: **$${(cct.transportCostPerTonUSD ?? 3.65).toFixed(2)} USD / tonelada** de caña transportada.`;
 
         actions.push({
           id: "act-nav-cct",
@@ -1491,23 +1647,44 @@ Toda proyección incluye trazabilidad completa (\`CalculationTrace\`) vinculada 
       // ======================================================================
       case "AGRO_ECONOMICS": {
         toolsExecuted.push("get_agro_economics_summary");
-        responseText = `### 💰 Consolidación Agro-Económica (OPEX & CAPEX)
+        const activeCamp =
+          AgriculturalPersistenceService.getLocalCachedCampaign() ||
+          AgriculturalPersistenceService.getCampaigns(activeTenant.id)[0] ||
+          INITIAL_AGRICULTURAL_CAMPAIGN;
+        const plots = AgriculturalPersistenceService.getLocalCachedPlots();
+        const campaignSummary = YieldCalculationService.calculateCampaignYieldSummary(plots);
+        const renovationHa = (activeCamp.totalAreaHectares || 10000) * (((activeCamp.renewalTargetPercent || 15)) / 100);
+        const soilPrepPlan = AgriculturalPlanningService.planSoilPreparation({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          targetPreparationAreaHa: renovationHa,
+          availableCalendarDays: 60,
+        });
+        const econ = AgroEconomicsService.consolidateCampaignEconomics({
+          tenantId: activeTenant.id,
+          campaignId: activeCamp.id,
+          totalArableAreaHa: activeCamp.totalAreaHectares || campaignSummary.totalAreaHa,
+          totalCaneTonsDelivered: activeCamp.projectedTotalCaneTons || campaignSummary.totalProductionTons,
+          soilPrepPlan,
+        });
+
+        responseText = `### 💰 Consolidación Agro-Económica (OPEX & CAPEX) — ${activeCamp.name}
 
 Estructura de costos unitarios de producción cañera para **${activeTenant.name}**:
 
-- **Costo Total por Hectárea Cosechada**: **$1.840,50 USD/ha**.
-- **Costo Unitario por Tonelada de Caña (FOB Fábrica)**: **$25,63 USD/t**.
+- **Costo Total por Hectárea Cosechada**: **$${econ.opex.costPerHectareUSD.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD/ha** (\`PLAN\`).
+- **Costo Unitario por Tonelada de Caña (FOB Fábrica)**: **$${econ.opex.costPerTonCaneUSD.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD/t**.
+- **OPEX Total Consolidado**: **$${econ.opex.totalOpexUSD.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD**.
 
 #### 📋 Desglose de Rubros OPEX:
-1. **Labores Mecanizadas y Diésel**: $542,00 USD/ha (29,4%)
-2. **Corte, Alce y Transporte (CCT)**: $485,00 USD/ha (26,4%)
-3. **Fertilizantes y Nutrición**: $390,00 USD/ha (21,2%)
-4. **Protección Vegetal (Herbicidas/Fitosanitarios)**: $185,00 USD/ha (10,1%)
-5. **Mano de Obra Directa y Riego**: $145,50 USD/ha (7,9%)
-6. **Gastos Indirectos y Administración de Campo**: $93,00 USD/ha (5,0%)
+1. **Labores Mecanizadas y Diésel**: $${econ.opex.fuelDieselCostUSD.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD
+2. **Fertilizantes y Nutrición**: $${econ.opex.fertilizersAndAmendmentsCostUSD.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD
+3. **Protección Vegetal (Herbicidas/Fitosanitarios)**: $${econ.opex.agrochemicalsAndDefensivesCostUSD.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD
+4. **Mantenimiento de Maquinaria**: $${econ.opex.machineryMaintenanceCostUSD.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD
+5. **Mano de Obra Directa y Servicios**: $${econ.opex.workforceLaborCostUSD.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD
 
 #### 🏗️ Presupuesto de Inversión CAPEX:
-- Renovación y reposición de maquinaria en déficit: **$620.000 USD**.`;
+- Renovación y reposición de maquinaria en déficit: **$${econ.capex.totalCapexUSD.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD**.`;
 
         actions.push({
           id: "act-nav-economics",
@@ -1524,15 +1701,32 @@ Estructura de costos unitarios de producción cañera para **${activeTenant.name
       // ======================================================================
       case "AGRICULTURAL_PLANNING": {
         toolsExecuted.push("get_agricultural_plan_overview");
-        responseText = `### 🌱 Plan Agrícola Soberano BioAzúcar 4.0
+        const activeCamp =
+          AgriculturalPersistenceService.getLocalCachedCampaign() ||
+          AgriculturalPersistenceService.getCampaigns(activeTenant.id)[0] ||
+          INITIAL_AGRICULTURAL_CAMPAIGN;
+        const plots = AgriculturalPersistenceService.getLocalCachedPlots();
+        const campaignSummary = YieldCalculationService.calculateCampaignYieldSummary(plots);
+        const areaHa = activeCamp.totalAreaHectares || campaignSummary.totalAreaHa || 0;
+        const prodTons = activeCamp.projectedTotalCaneTons || campaignSummary.totalProductionTons || 0;
+        const harvestDays = activeCamp.effectiveHarvestDays || 155;
+        const dailyTons = activeCamp.dailyHarvestRequirementTons || Math.round(prodTons / Math.max(1, harvestDays));
+        const avgTch = activeCamp.averageTchCampaign || campaignSummary.averageTch || 0;
+        const avgPol = 13.5;
+        const status = activeCamp.status || "ACTIVA";
+
+        responseText = `### 🌱 Plan Agrícola Soberano BioAzúcar 4.0 — Campaña Activa
 
 El módulo de **Planificación Agrícola** gestiona el ciclo integral de la zafra cañera para **${activeTenant.name}**:
 
-- **Ciclo de Vida del Plan**: \`BORRADOR ➔ VALIDADO ➔ PLANIFICADO ➔ APROBADO ➔ EN_EJECUCIÓN ➔ COMPLETADO\`.
-- **Área Total Planificada**: 8.450 ha distribuidas en 3 Unidades Empresariales de Base (UEB).
-- **Producción Bruta Estimada**: 498.910 toneladas de caña con 13,2% Pol en caña.
+- **Campaña**: **${activeCamp.name}** (\`${activeCamp.id}\`)
+- **Estado del Plan**: \`${status}\` (Gobernanza: \`BORRADOR ➔ VALIDADO ➔ PLANIFICADO ➔ APROBADO ➔ EN_EJECUCIÓN ➔ COMPLETADO\`)
+- **Área Total Planificada**: **${areaHa.toLocaleString("es-VE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ha** (${plots.length} parcelas registradas)
+- **Producción Bruta Proyectada**: **${prodTons.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} toneladas** con **${avgPol.toFixed(1)}% Pol en caña**
+- **Rendimiento Promedio**: **${avgTch.toFixed(1)} TCH**
+- **Demanda Diaria de Cosecha**: **${dailyTons.toLocaleString("es-VE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} t/día** (${harvestDays} días efectivos de zafra)
 - **Soberanía Operativa**: Creación, simulación, ajuste de parámetros y auditoría directas en la plataforma sin requerir hojas de cálculo externas.
-- **Auditoría Data Truth**: Trazabilidad matemática garantizada de cada hectárea, hora-máquina, litro de combustible y dólar invertido.`;
+- **Auditoría Data Truth**: Clasificación temporal \`PLAN\` auditada contra parámetros agronómicos canónicos.`;
 
         actions.push(
           {
@@ -1550,6 +1744,195 @@ El módulo de **Planificación Agrícola** gestiona el ciclo integral de la zafr
             level: 1,
           }
         );
+        break;
+      }
+
+      // ======================================================================
+      // 17. GLOBAL_OVERVIEW (BioAI Situational Awareness 360°)
+      // ======================================================================
+      case "GLOBAL_OVERVIEW": {
+        toolsExecuted.push("get_global_plant_snapshot");
+        const snapshot = globalSystemAwarenessService.getGlobalSnapshot(
+          liveTelemetry,
+          alarmsList,
+          equipmentList,
+          activeTenant
+        );
+
+        responseText = `### 🌐 Diagnóstico Global 360° del Ingenio — ${activeTenant.name}
+
+Estado situacional consolidado en tiempo real:
+
+- **Índice de Salud Global**: **${snapshot.overallHealthScore}/100** (\`${snapshot.operatingState}\`)
+- **Tándem de Molienda**: **${snapshot.milling.tch} TCH** | Extracción sacarosa: **${snapshot.milling.sucroseExtraction}%** | Bagazo humedad: **${snapshot.steamAndPower.bagasseMoisturePercent}%** | Riesgo atoro: \`${snapshot.milling.chokeRisk}\`
+- **Vapor y Energía**: Caldera **${snapshot.steamAndPower.boilerPressureHP} bar** (${snapshot.steamAndPower.steamFlowHP} t/h vapor) | Eficiencia: **${snapshot.steamAndPower.thermalEfficiencyPercent}%** | Generación bruta: **${snapshot.steamAndPower.grossPowerMW} MW** | Exportación SEN: **${snapshot.steamAndPower.netExportPowerGridMW} MW**
+- **Matriz de Alarmas ISA-18.2**: **${snapshot.alarms.totalActive}** activas (**${snapshot.alarms.criticalCount}** críticas, **${snapshot.alarms.unacknowledgedCount}** no reconocidas)
+- **Salud de Activos (CBM)**: Activo de mayor riesgo: **${snapshot.assets.highestRiskEquipment}** (Vibración: **${snapshot.assets.criticalVibrationRMS} mm/s**, Riesgo 48h: **${snapshot.assets.maxFailureProbability48h}%**)
+- **Frentes Agrícola y Logística**: Caña procesada hoy: **${snapshot.harvest.caneTonsProcessedToday} t** | Camiones en tránsito: **${snapshot.harvest.trucksInTransit}** | Espera en patio: **${snapshot.harvest.yardWaitingHours} h**`;
+
+        widgets.push(
+          {
+            type: "KPI",
+            kpiId: "kpi-global-health",
+            name: "Salud Operativa Global",
+            value: `${snapshot.overallHealthScore}/100`,
+            unit: snapshot.operatingState,
+            target: 100,
+            trend: snapshot.overallHealthScore >= 80 ? "UP" : "DOWN",
+            quality: "GOOD",
+            source: "OPC_UA",
+            formula: "GlobalPlantHealth(Milling,Power,Steam,Alarms)",
+            category: "GLOBAL",
+            inputTagsCount: 5,
+            canViewLineage: false,
+          },
+          {
+            type: "TABLE",
+            title: "Resumen de Áreas de Producción",
+            columns: [
+              { key: "area", header: "Frente Operativo" },
+              { key: "kpi", header: "KPI Clave" },
+              { key: "estado", header: "Diagnóstico" },
+            ],
+            rows: [
+              { area: "Molienda", kpi: `${snapshot.milling.tch} TCH (${snapshot.milling.sucroseExtraction}% Extr.)`, estado: snapshot.milling.chokeRisk === "BAJO" ? "Estable" : "Riesgo Fluctuación" },
+              { area: "Vapor HP", kpi: `${snapshot.steamAndPower.steamFlowHP} t/h @ ${snapshot.steamAndPower.boilerPressureHP} bar`, estado: `Eficiencia ${snapshot.steamAndPower.thermalEfficiencyPercent}%` },
+              { area: "Cogeneración", kpi: `${snapshot.steamAndPower.netExportPowerGridMW} MW exportados`, estado: `$${snapshot.steamAndPower.spotPriceUSDPerMWh}/MWh Spot` },
+              { area: "Alarmas ISA-18.2", kpi: `${snapshot.alarms.totalActive} activas (${snapshot.alarms.criticalCount} crít.)`, estado: snapshot.alarms.criticalCount === 0 ? "Bajo Control" : "Atención Requerida" },
+              { area: "Activos Críticos", kpi: `${snapshot.assets.highestRiskEquipment}`, estado: `Vib: ${snapshot.assets.criticalVibrationRMS} mm/s (Riesgo ${snapshot.assets.maxFailureProbability48h}%)` },
+            ],
+          }
+        );
+
+        actions.push(
+          {
+            id: "act-nav-scada",
+            type: "NAVIGATE",
+            label: "Ver SCADA Molienda",
+            payload: { targetRoute: "scada" },
+            level: 1,
+          },
+          {
+            id: "act-nav-cogen",
+            type: "NAVIGATE",
+            label: "Ver Cogeneración",
+            payload: { targetRoute: "energy_dispatch" },
+            level: 1,
+          },
+          {
+            id: "act-nav-alarms",
+            type: "NAVIGATE",
+            label: "Ver Alarmas",
+            payload: { targetRoute: "alarms" },
+            level: 1,
+          }
+        );
+        break;
+      }
+
+      // ======================================================================
+      // 18. PROACTIVE_SUGGESTIONS (BioAI Autonomous Optimization Recommendations)
+      // ======================================================================
+      case "PROACTIVE_SUGGESTIONS": {
+        toolsExecuted.push("get_proactive_suggestions");
+        const suggestions = globalSystemAwarenessService.getProactiveSuggestions(
+          liveTelemetry,
+          alarmsList,
+          equipmentList,
+          activeTenant
+        );
+
+        responseText = `### 💡 Sugerencias Proactivas de Optimización — BioAI Engine
+
+He analizado el balance estequiométrico, térmico y operativo del ingenio. Aquí tienes las optimizaciones prioritarias con mayor retorno:
+
+${suggestions.map((s, idx) => `${idx + 1}. **[${s.priority}] ${s.area}**: ${s.title}
+   - **Acción**: ${s.recommendedAction}
+   - **Consigna propuesta**: \`${s.targetTag || "Consigna"}\` ➔ **${s.proposedSetpoint ?? "--"} ${s.unit || ""}** (Actual: ${s.currentSetpoint ?? "--"} ${s.unit || ""})
+   - **Impacto**: ${s.estimatedImpact.text} (Confianza IA: ${s.aiConfidence}%)
+   - **Diagnóstico**: ${s.problemDetected}`).join("\n\n")}`;
+
+        widgets.push({
+          type: "TABLE",
+          title: "Sugerencias Proactivas de Optimización",
+          columns: [
+            { key: "prioridad", header: "Prioridad" },
+            { key: "area", header: "Área" },
+            { key: "accion", header: "Acción Sugerida" },
+            { key: "impacto", header: "Impacto / Retorno" },
+          ],
+          rows: suggestions.map((s) => ({
+            prioridad: s.priority,
+            area: s.area,
+            accion: s.recommendedAction,
+            impacto: s.estimatedImpact.text,
+          })),
+        });
+
+        actions.push(
+          ...suggestions.map((s) => ({
+            id: `act-apply-${s.id}`,
+            type: "APPLY_SUGGESTION" as any,
+            label: `Ajustar ${s.targetTag || "Consigna"}`,
+            payload: {
+              tag: s.targetTag,
+              value: s.proposedSetpoint,
+              unit: s.unit,
+            },
+            level: 2 as any,
+          }))
+        );
+        break;
+      }
+
+      // ======================================================================
+      // 19. SYSTEM_GUIDANCE (Natural Language Navigation & Module Onboarding)
+      // ======================================================================
+      case "SYSTEM_GUIDANCE": {
+        toolsExecuted.push("system_navigation_guidance");
+        const guidance = globalSystemAwarenessService.getSystemNavigationGuidance(
+          options.message,
+          options.context?.currentModule || "overview"
+        );
+
+        responseText = `### 🧭 Guía Operativa del Sistema
+
+${guidance.explanation}
+
+**Módulo objetivo**: **${guidance.tabDescription}** (\`${guidance.targetTab}\`)`;
+
+        actions.push({
+          id: `act-nav-guidance-${guidance.targetTab}`,
+          type: "NAVIGATE",
+          label: `Ir a ${guidance.tabDescription}`,
+          payload: { targetRoute: guidance.targetTab },
+          level: 1,
+        });
+        break;
+      }
+
+      // ======================================================================
+      // 20. APPLY_SUGGESTION (Action execution with RBAC confirmation)
+      // ======================================================================
+      case "APPLY_SUGGESTION": {
+        toolsExecuted.push("apply_suggestion_setpoint");
+        requiresConfirmation = true;
+        confirmationDetails = {
+          actionId: "act-confirm-setpoint",
+          actionType: "MODIFY_SETPOINT",
+          level: 2,
+          targetEntity: resolvedClassification.targetTag || "Controlador Central",
+          title: "Ajustar Consigna de Proceso",
+          description: `Aplicar consigna sugerida por BioAI para optimización operativa`,
+          currentValue: undefined,
+          proposedValue: resolvedClassification.proposedValue,
+          unit: undefined,
+          operationalImpact: "Optimización estequiométrica del proceso en tiempo real",
+          requiredPermission: "tag.write",
+          payload: resolvedClassification.proposedValue ? { value: resolvedClassification.proposedValue } : {},
+        };
+
+        responseText = `He preparado el ajuste de consigna sugerido por BioAI. Como implica modificación de parámetros de proceso, requiere tu confirmación antes de transmitir la orden al bus industrial. ¿Deseas aplicar el cambio?`;
         break;
       }
 

@@ -1706,8 +1706,13 @@ PRINCIPIOS FUNDAMENTALES:
      * Contenedor Docker: docker compose -f deploy/docker-compose.edge.yml up -d.
    - Llama a get_procedure con { query: "sop-deploy-industrial-edge" }.
 
+17. BIOAI AWARENESS GLOBAL, PREDICCIONES Y SUGERENCIAS PROACTIVAS:
+   - Si el usuario pide un diagnóstico global, panorama general, visión 360 o estado general del ingenio: clasifica como "GLOBAL_OVERVIEW" y añade en clientToolCalls get_global_plant_snapshot.
+   - Si pide eventos predictivos anticipados o qué va a pasar en las próximas horas: clasifica como "PREDICTIVE_ANALYTICS" y añade en clientToolCalls get_system_event_predictions.
+   - Si pide sugerencias de optimización o qué propones/sugieres: clasifica como "RECOMMENDATIONS" o "PROACTIVE_SUGGESTIONS" y añade en clientToolCalls get_proactive_suggestions.
+
 INTENCIONES DISPONIBLES:
-"CAPABILITIES" | "HELP" | "GENERAL_QUESTION" | "SYSTEM_INFORMATION" | "PROCESS_STATE" | "KPI_ANALYSIS" | "STATISTICS" | "DIAGNOSTIC" | "ALARM" | "EQUIPMENT" | "DATA_LINEAGE" | "NAVIGATION" | "ACTION" | "CONFIGURATION" | "TENANT_PROVISIONING" | "CONNECTION_CONFIG" | "STANDARDS" | "PROMETHEUS_METRICS" | "MODEL_CALIBRATION" | "EDGE_DAEMON_DEPLOYMENT" | "USER_PERMISSIONS" | "TUTORIAL" | "CONTEXTUAL_HELP" | "GLOSSARY_QUERY" | "PROCEDURE_QUERY" | "KNOWLEDGE_GRAPH_QUERY" | "INTEGRATION" | "UNKNOWN"
+"CAPABILITIES" | "HELP" | "GENERAL_QUESTION" | "SYSTEM_INFORMATION" | "PROCESS_STATE" | "KPI_ANALYSIS" | "STATISTICS" | "DIAGNOSTIC" | "ALARM" | "EQUIPMENT" | "DATA_LINEAGE" | "NAVIGATION" | "ACTION" | "CONFIGURATION" | "TENANT_PROVISIONING" | "CONNECTION_CONFIG" | "STANDARDS" | "PROMETHEUS_METRICS" | "MODEL_CALIBRATION" | "EDGE_DAEMON_DEPLOYMENT" | "USER_PERMISSIONS" | "TUTORIAL" | "CONTEXTUAL_HELP" | "GLOSSARY_QUERY" | "PROCEDURE_QUERY" | "KNOWLEDGE_GRAPH_QUERY" | "INTEGRATION" | "GLOBAL_OVERVIEW" | "PROACTIVE_SUGGESTIONS" | "SYSTEM_GUIDANCE" | "UNKNOWN"
 
 HERRAMIENTAS CLIENTE DISPONIBLES EN clientToolCalls:
 - get_integration_status ({ provider?: string })
@@ -1736,6 +1741,9 @@ HERRAMIENTAS CLIENTE DISPONIBLES EN clientToolCalls:
 - get_root_cause_analysis ({ category?: string, query?: string })
 - get_industrial_recommendations ({})
 - get_bioai_predictions ({})
+- get_global_plant_snapshot ({})
+- get_system_event_predictions ({})
+- get_proactive_suggestions ({})
 
 Devuelve SIEMPRE un JSON válido con esta estructura:
 {

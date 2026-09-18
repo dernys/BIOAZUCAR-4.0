@@ -50,6 +50,7 @@ export interface HeaderProps {
   onOpenCopilot?: () => void;
   onOpenPresentation?: () => void;
   onOpenIndustrialConnectionModal?: () => void;
+  onOpenIpcHardening?: () => void;
   runtimeMode?: RuntimeMode;
   telemetry?: TelemetryData;
   plantStatus?: PlantStatus;
@@ -81,6 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCopilot,
   onOpenPresentation,
   onOpenIndustrialConnectionModal,
+  onOpenIpcHardening,
   runtimeMode = "SIMULATION",
   telemetry,
   plantStatus = "OPERACION_NORMAL",
@@ -373,6 +375,25 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 </>
               )}
+            </button>
+          )}
+
+          {/* Ola 4: IPC Hardening & Offline-First Quick Access Button */}
+          {onOpenIpcHardening && (
+            <button
+              onClick={onOpenIpcHardening}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold font-mono transition border ${
+                isLight
+                  ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300 font-bold"
+                  : "bg-slate-800/80 hover:bg-slate-700 text-cyan-300 border-slate-700"
+              }`}
+              title="Hardening de Infraestructura IPC (Dual-NIC, Zero-Trust Bastion, CIS Benchmark, SCADA Offline-First)"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">HARDENING IPC</span>
+              <span className="px-1 py-0.2 rounded text-[9px] bg-cyan-500/20 text-cyan-300 font-bold">
+                OLA 4
+              </span>
             </button>
           )}
 

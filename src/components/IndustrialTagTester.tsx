@@ -171,7 +171,7 @@ export const IndustrialTagTester: React.FC<IndustrialTagTesterProps> = ({
   });
 
   return (
-    <div className={`flex flex-col h-full bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm ${theme === "dark" ? "dark" : ""}`}>
+    <div className={`flex flex-col h-full bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm ${theme === "dark" ? "dark" : "light"}`}>
       {/* Top Banner Header */}
       <div className="bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -503,7 +503,7 @@ export const IndustrialTagTester: React.FC<IndustrialTagTesterProps> = ({
 
       {/* Confirmation Modal for WRITE operation */}
       {isConfirmModalOpen && selectedTag && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className={`fixed inset-0 ${theme === "light" ? "bg-slate-900/40 light" : "bg-slate-950/70 dark"} backdrop-blur-sm z-50 flex items-center justify-center p-4`}>
           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-5 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-sm">
               <AlertTriangle className="w-5 h-5" />

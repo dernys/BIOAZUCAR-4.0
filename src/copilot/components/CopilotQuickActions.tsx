@@ -32,7 +32,22 @@ export const CopilotQuickActions: React.FC<QuickActionsProps> = ({
             icon: Sparkles,
           },
           {
-            label: "Resumen de Molienda TCH",
+            label: "Diagnóstico Global 360°",
+            prompt: "Muestra el estado global de la planta",
+            icon: Sparkles,
+          },
+          {
+            label: "Sugerencias Proactivas",
+            prompt: "¿Qué sugerencias de optimización tienes?",
+            icon: Zap,
+          },
+          {
+            label: "Eventos Predictivos",
+            prompt: "¿Qué eventos predices en las próximas horas?",
+            icon: TrendingUp,
+          },
+          {
+            label: "Resumen Molienda TCH",
             prompt: "¿Cuál es el estado actual de molienda TCH y extracción de sacarosa?",
             icon: Activity,
           },
@@ -40,11 +55,6 @@ export const CopilotQuickActions: React.FC<QuickActionsProps> = ({
             label: "Linaje de Datos OEE",
             prompt: "Muestra el linaje de datos y origen del OEE Global",
             icon: Layers,
-          },
-          {
-            label: "Balance Energético",
-            prompt: "Calcula el balance de vapor y generación eléctrica actual",
-            icon: Zap,
           },
         ];
 

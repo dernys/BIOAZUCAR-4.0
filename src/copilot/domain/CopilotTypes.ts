@@ -61,7 +61,11 @@ export type CopilotIntent =
   | "AGRO_ECONOMICS"
   | "RECONCILIATION_AUDIT"
   | "PLAN_VS_REAL"
-  | "FORMULA_GOVERNANCE";
+  | "FORMULA_GOVERNANCE"
+  | "GLOBAL_OVERVIEW"
+  | "PROACTIVE_SUGGESTIONS"
+  | "SYSTEM_GUIDANCE"
+  | "APPLY_SUGGESTION";
 
 export type IntegrationSubIntent =
   | "EROS_INTEGRATION"
@@ -273,6 +277,7 @@ export interface CopilotAction {
     | "OPEN_ALARM"
     | "ACKNOWLEDGE_ALARM"
     | "MODIFY_SETPOINT"
+    | "APPLY_SUGGESTION"
     | "GENERATE_REPORT";
   label: string;
   icon?: string;

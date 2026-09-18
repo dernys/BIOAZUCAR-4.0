@@ -22,6 +22,7 @@ import {
 import { TelemetryData, TenantEnterprise } from "../../types";
 import { IndustrialRecommendation } from "../../types/bioai";
 import { bioAiEngineService } from "../../services/bioai/BioAiEngineService";
+import { globalSystemAwarenessService } from "../../services/bioai/GlobalSystemAwarenessService";
 import { commandService } from "../../services/edge/CommandService";
 
 interface IndustrialRecommendationsViewProps {
@@ -53,7 +54,18 @@ export const IndustrialRecommendationsView: React.FC<IndustrialRecommendationsVi
         equipmentList,
         activeTenant
       );
-      setRecommendations(recs);
+      const suggestions = globalSystemAwarenessService.getProactiveSuggestions(
+        telemetry,
+        alarms,
+        equipmentList,
+        activeTenant
+      );
+      // Merge uniquely by title/id
+      const existingTitles = new Set(recs.map((r) => r.title.toLowerCase()));
+      const uniqueSuggestions = suggestions.filter(
+        (s) => !existingTitles.has(s.title.toLowerCase())
+      );
+      setRecommendations([...recs, ...uniqueSuggestions]);
     } catch (err) {
       console.error("Error loading recommendations:", err);
     } finally {

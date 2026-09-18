@@ -289,3 +289,83 @@ export interface IndustrialDataGatewayState {
   lastSyncTimestamp: string;
   activeSecurityStandard: "IEC-62443-SL3" | "TLS-1.3-MTLS" | "SIMULATION-ISOLATED";
 }
+
+/**
+ * MODULE 7: Global Situational Awareness & System Event Predictions
+ */
+export interface SystemEventPrediction {
+  id: string;
+  title: string;
+  area: "MOLIENDA" | "CALDERA" | "COGENERACION" | "EVAPORACION" | "AGRICOLA" | "ALARMAS" | "ACTIVOS";
+  eventCategory:
+    | "BOTTLENECK"
+    | "THERMAL_DROP"
+    | "MECHANICAL_FATIGUE"
+    | "LOGISTICS_DELAY"
+    | "ALARM_FLOOD"
+    | "SUCROSE_LOSS";
+  timeHorizonMinutes: number;
+  probabilityPercent: number;
+  severity: "CRITICA" | "ALTA" | "MEDIA" | "INFO";
+  leadingIndicator: string;
+  predictedImpact: string;
+  suggestedMitigation: string;
+  navigationTarget?: string;
+  confidenceScore: number;
+  isSimulated?: boolean;
+}
+
+export interface GlobalPlantSnapshot {
+  timestamp: string;
+  overallHealthScore: number; // 0 - 100
+  operatingState: "OPTIMO" | "ATENCION_REQUERIDA" | "CRITICO";
+  milling: {
+    tch: number;
+    nominalTch: number;
+    sucroseExtraction: number;
+    imbibitionRatioWF: number;
+    donnellyChuteLevelPercent: number;
+    chokeRisk: "BAJO" | "MEDIO" | "ALTO";
+  };
+  steamAndPower: {
+    steamFlowHP: number;
+    boilerPressureHP: number;
+    flueGasO2Percent: number;
+    bagasseMoisturePercent: number;
+    grossPowerMW: number;
+    internalFactoryDemandMW: number;
+    netExportPowerGridMW: number;
+    spotPriceUSDPerMWh: number;
+    thermalEfficiencyPercent: number;
+  };
+  alarms: {
+    totalActive: number;
+    criticalCount: number;
+    highCount: number;
+    unacknowledgedCount: number;
+    alarmRatePer10Min: number;
+    floodRisk: boolean;
+  };
+  assets: {
+    totalMonitored: number;
+    anomaliesCount: number;
+    highestRiskEquipment: string;
+    criticalVibrationRMS: number;
+    maxFailureProbability48h: number;
+  };
+  harvest: {
+    campaignName?: string;
+    caneTonsProcessedToday: number;
+    yardWaitingHours: number;
+    trucksInTransit: number;
+    estimatedPolInCane: number;
+  };
+  connectivity: {
+    protocol: string;
+    gatewayStatus: string;
+    dataQualityPercent: number;
+    origin: string;
+  };
+  predictions: SystemEventPrediction[];
+  proactiveSuggestions: IndustrialRecommendation[];
+}

@@ -10,6 +10,7 @@ import {
   CommandExecutionContract,
 } from "./types";
 import { StoreAndForwardQueue } from "./StoreAndForwardQueue";
+import { localTimeSeriesDatabase, TsdbQueryOptions, TimeSeriesBucket } from "./history/LocalTimeSeriesDatabase";
 import { OpcUaConnector } from "./connectors/OpcUaConnector";
 import { ModbusConnector } from "./connectors/ModbusConnector";
 import { ErosConnector } from "./connectors/ErosConnector";
@@ -199,6 +200,9 @@ export class BioAzucarIndustrialEdge implements CommandDispatcher {
     // 2. Buffer into Store & Forward queue (preserves original deviceTimestamp & sequence)
     this.storeAndForward.enqueue(normalizedPoint);
 
+    // 2b. Record to on-premise local Time Series Database (TSDB for offline >30d trends)
+    localTimeSeriesDatabase.record(normalizedPoint);
+
     // 3. Update memory map
     this.currentPoints.set(normalizedPoint.tag, normalizedPoint);
 
@@ -207,6 +211,18 @@ export class BioAzucarIndustrialEdge implements CommandDispatcher {
     if (subs) {
       subs.forEach((cb) => cb(normalizedPoint));
     }
+  }
+
+  /**
+   * Queries historical trends from the local on-premise TSDB without cloud dependency.
+   */
+  public queryLocalHistory(
+    tag: string,
+    fromMs: number,
+    toMs: number,
+    options?: TsdbQueryOptions
+  ): TimeSeriesBucket[] {
+    return localTimeSeriesDatabase.queryRange(tag, fromMs, toMs, options);
   }
 
   /**

@@ -21,6 +21,8 @@ import { SwingingDoorCompressor } from "./SwingingDoorCompressor";
 import { IndustrialDataPoint } from "../../types";
 import { edgeLogger } from "../logger/IndustrialLogger";
 import { prometheusMetrics } from "../monitoring/PrometheusMetrics";
+import { edgeRuntimeSupervisor } from "./supervisor/EdgeRuntimeSupervisor";
+import { localTimeSeriesDatabase } from "./history/LocalTimeSeriesDatabase";
 
 export interface EdgeDaemonConfig {
   tenantId: string;
@@ -102,13 +104,17 @@ export class BioAzucarEdgeDaemon {
       }
     });
 
-    // 3. Start Secure Cloud Telemetry Ingestion Loop
+    // 3. Start Edge Runtime 2.0 Supervisor & Watchdog for Driver Isolation
+    edgeRuntimeSupervisor.start();
+    console.log("[DAEMON] Edge Runtime 2.0 Supervisor & Driver Watchdog active.");
+
+    // 4. Start Secure Cloud Telemetry Ingestion Loop
     this.startSyncLoop();
 
-    // 4. Start Local Health Watchdog Server
+    // 5. Start Local Health Watchdog Server
     this.startHealthServer();
 
-    // 5. Register OS Signal Listeners for Graceful Shutdown
+    // 6. Register OS Signal Listeners for Graceful Shutdown
     this.registerSignalHandlers();
   }
 
@@ -322,6 +328,7 @@ export class BioAzucarEdgeDaemon {
             lastSuccessfulSync: this.lastSuccessfulSync ? new Date(this.lastSuccessfulSync).toISOString() : null,
             lastErrorReason: this.lastErrorReason,
             bufferState: diskStoreAndForward.getState(),
+            supervisor: edgeRuntimeSupervisor.getSupervisionStatus(),
             securityStandard: "IEC-62443-4-2 SL3",
             mtlsConfigured: Boolean(this.config.tlsClientCertPath && this.config.tlsClientKeyPath),
           };
@@ -373,6 +380,7 @@ export class BioAzucarEdgeDaemon {
       } catch {}
     }
 
+    edgeRuntimeSupervisor.stop();
     await industrialEdge.stop();
   }
 

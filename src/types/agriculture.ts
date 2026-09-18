@@ -1394,6 +1394,9 @@ export interface AgriculturalDataTruthSummary {
   sovereignPercentage: number;
   lastAuditTimestamp: string;
   items: AgriculturalDataTruthAuditItem[];
+  hasDuplicates?: boolean;
+  duplicateKeys?: string[];
+  mockCollisionCount?: number;
 }
 
 export {

@@ -3,6 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Defensive handler: prevent external browser extensions (e.g. MetaMask, Web3 providers)
+      // from throwing unhandled rejections or polluting window error events in sandboxed iframes
+      (function() {
+        var isExtensionNoise = function(err) {
+          if (!err) return false;
+          var msg = typeof err === 'string' ? err : (err.message || err.reason || err.description || '');
+          if (typeof msg !== 'string') {
+            try { msg = String(msg); } catch (e) { return false; }
+          }
+          var lower = msg.toLowerCase();
+          return (
+            lower.includes('metamask') ||
+            lower.includes('failed to connect to metamask') ||
+            lower.includes('ethereum') ||
+            lower.includes('chrome-extension://') ||
+            lower.includes('moz-extension://') ||
+            lower.includes('safari-extension://') ||
+            lower.includes('extension context invalidated')
+          );
+        };
+
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isExtensionNoise(event.reason) || isExtensionNoise(event.reason && event.reason.message)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return false;
+          }
+        }, true);
+
+        window.addEventListener('error', function(event) {
+          if (isExtensionNoise(event.message) || isExtensionNoise(event.error)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return false;
+          }
+        }, true);
+      })();
+    </script>
     <title>BioAzúcar 4.0 - Smart Mill & Cogeneration MES/IIoT</title>
     <meta name="description" content="Plataforma de Industria 4.0, Gemelo Digital y Planificación Agrícola PDA para Central Azucarero y Cogeneración Eléctrica con balance de masa/energía, SCADA, curvas TCH, logística CCT, IA analítica y OEE." />
     <meta property="og:title" content="BioAzúcar 4.0 - Smart Mill & Cogeneration MES/IIoT" />

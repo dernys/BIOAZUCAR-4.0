@@ -176,6 +176,17 @@ export const BioAzucarCopilot: React.FC<BioAzucarCopilotProps> = ({
       onNavigate("equipment");
     } else if (action.type === "ACKNOWLEDGE_ALARM" && action.payload?.alarmId && onAcknowledgeAlarm) {
       onAcknowledgeAlarm(action.payload.alarmId);
+    } else if ((action.type as string) === "APPLY_SUGGESTION" && action.payload?.tag && action.payload?.value !== undefined && onUpdateSetpoint) {
+      onUpdateSetpoint(action.payload.tag, action.payload.value);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-sug-applied-${Date.now()}`,
+          sender: "copilot",
+          text: `✅ **Consigna optimizada aplicada con éxito**: Tag \`${action.payload.tag}\` establecido en **${action.payload.value} ${action.payload.unit || ""}**. Se ha registrado en la bitácora industrial de BioAzúcar 4.0.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
     }
   };
 

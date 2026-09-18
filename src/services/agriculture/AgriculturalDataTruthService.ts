@@ -23,18 +23,29 @@ import {
   DataOrigin,
   DataValidationState,
 } from "../../types/agriculture";
-import { AgriculturalParameterRegistry } from "./AgriculturalParameterRegistry";
+import {
+  AgriculturalParameterRegistry,
+  CANONICAL_AGRICULTURAL_PARAMETERS,
+} from "./AgriculturalParameterRegistry";
 import { PdaFormulaRegistry } from "./PdaFormulaRegistry";
 
 export class AgriculturalDataTruthService {
   /**
    * Performs an exhaustive audit of all active agricultural parameters and models.
    */
-  public static auditDataTruth(): AgriculturalDataTruthSummary {
-    const allParams = AgriculturalParameterRegistry.getAllParameters();
+  public static auditDataTruth(customParams?: AgriculturalParameter[]): AgriculturalDataTruthSummary {
+    const allParams = customParams || AgriculturalParameterRegistry.getAllParameters();
     const items: AgriculturalDataTruthAuditItem[] = [];
+    const seenKeys = new Set<string>();
+    const duplicateKeys: string[] = [];
 
     for (const p of allParams) {
+      if (seenKeys.has(p.key)) {
+        duplicateKeys.push(p.key);
+      } else {
+        seenKeys.add(p.key);
+      }
+
       const classification = this.resolveClassification(p);
       const origin = this.resolveOrigin(p);
       const validationState = this.resolveValidationState(p, classification);
@@ -88,6 +99,9 @@ export class AgriculturalDataTruthService {
       sovereignPercentage: Number(sovereignPercentage.toFixed(1)),
       lastAuditTimestamp: new Date().toISOString(),
       items,
+      hasDuplicates: duplicateKeys.length > 0,
+      duplicateKeys,
+      mockCollisionCount: duplicateKeys.length,
     };
   }
 
@@ -295,6 +309,157 @@ export class AgriculturalDataTruthService {
     }
     return {
       authorized: true,
+    };
+  }
+
+  /**
+   * Validates integrity of a collection of agricultural parameters,
+   * detecting duplicate keys and duplicate IDs.
+   */
+  public static validateParameterCollectionIntegrity(params: AgriculturalParameter[]): {
+    hasDuplicates: boolean;
+    duplicateKeys: string[];
+    duplicateIds: string[];
+    isValid: boolean;
+  } {
+    const seenKeys = new Set<string>();
+    const seenIds = new Set<string>();
+    const duplicateKeys: string[] = [];
+    const duplicateIds: string[] = [];
+
+    for (const p of params) {
+      if (p.key) {
+        if (seenKeys.has(p.key)) {
+          if (!duplicateKeys.includes(p.key)) duplicateKeys.push(p.key);
+        } else {
+          seenKeys.add(p.key);
+        }
+      }
+      if (p.id) {
+        if (seenIds.has(p.id)) {
+          if (!duplicateIds.includes(p.id)) duplicateIds.push(p.id);
+        } else {
+          seenIds.add(p.id);
+        }
+      }
+    }
+
+    const hasDuplicates = duplicateKeys.length > 0 || duplicateIds.length > 0;
+    return {
+      hasDuplicates,
+      duplicateKeys,
+      duplicateIds,
+      isValid: !hasDuplicates,
+    };
+  }
+
+  /**
+   * Detects duplications and classification collisions between candidate parameters
+   * (e.g. from mock/external datasets) and canonical parameters.
+   * Ensures that unverified mock/simulated data never silently overwrites canonical truth.
+   */
+  public static detectRegistryMockDuplications(
+    candidateParams: AgriculturalParameter[],
+    canonicalParams: AgriculturalParameter[] = CANONICAL_AGRICULTURAL_PARAMETERS
+  ): {
+    hasDuplicates: boolean;
+    duplicateKeys: string[];
+    mockCollisions: Array<{
+      key: string;
+      canonicalValue: any;
+      candidateValue: any;
+      candidateClassification?: string;
+      reason: string;
+    }>;
+    isValid: boolean;
+  } {
+    const canonicalMap = new Map<string, AgriculturalParameter>();
+    for (const cp of canonicalParams) {
+      canonicalMap.set(cp.key, cp);
+    }
+
+    const duplicateKeys: string[] = [];
+    const mockCollisions: Array<{
+      key: string;
+      canonicalValue: any;
+      candidateValue: any;
+      candidateClassification?: string;
+      reason: string;
+    }> = [];
+
+    for (const candidate of candidateParams) {
+      const canonical = canonicalMap.get(candidate.key);
+      if (canonical) {
+        duplicateKeys.push(candidate.key);
+        const candClass = candidate.dataClassification || candidate.status;
+        const canonClass = canonical.dataClassification || canonical.status;
+
+        // Collision if candidate is SIMULATED/MOCK or diverges from validated truth
+        if (candClass === "SIMULATED" || (candClass as string) === "MOCK" || candidate.dataOrigin === "SIMULATED" || (candidate as any).origin === "SIMULATED") {
+          mockCollisions.push({
+            key: candidate.key,
+            canonicalValue: canonical.value,
+            candidateValue: candidate.value,
+            candidateClassification: String(candClass),
+            reason: `Conflicto Data Truth: el parámetro ${candidate.key} de origen simulado/mock no puede sobreescribir la definición canónica ${canonClass}.`,
+          });
+        }
+      }
+    }
+
+    const hasDuplicates = duplicateKeys.length > 0;
+    return {
+      hasDuplicates,
+      duplicateKeys,
+      mockCollisions,
+      isValid: mockCollisions.length === 0,
+    };
+  }
+
+  /**
+   * Validates generic entity collection integrity (no duplicate IDs or codes).
+   */
+  public static validateEntityCollectionIntegrity(
+    entities: Array<{ id?: string; code?: string }>,
+    entityType: string = "Entidad"
+  ): {
+    hasDuplicates: boolean;
+    duplicateIds: string[];
+    duplicateCodes: string[];
+    isValid: boolean;
+    errorMessage?: string;
+  } {
+    const seenIds = new Set<string>();
+    const seenCodes = new Set<string>();
+    const duplicateIds: string[] = [];
+    const duplicateCodes: string[] = [];
+
+    for (const e of entities) {
+      if (e.id) {
+        if (seenIds.has(e.id)) {
+          if (!duplicateIds.includes(e.id)) duplicateIds.push(e.id);
+        } else {
+          seenIds.add(e.id);
+        }
+      }
+      if (e.code) {
+        if (seenCodes.has(e.code)) {
+          if (!duplicateCodes.includes(e.code)) duplicateCodes.push(e.code);
+        } else {
+          seenCodes.add(e.code);
+        }
+      }
+    }
+
+    const hasDuplicates = duplicateIds.length > 0 || duplicateCodes.length > 0;
+    return {
+      hasDuplicates,
+      duplicateIds,
+      duplicateCodes,
+      isValid: !hasDuplicates,
+      errorMessage: hasDuplicates
+        ? `Se detectaron duplicados en colección de ${entityType}: IDs [${duplicateIds.join(", ")}], Códigos [${duplicateCodes.join(", ")}]`
+        : undefined,
     };
   }
 }

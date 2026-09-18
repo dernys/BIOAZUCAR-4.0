@@ -22,8 +22,10 @@ import {
   ProductionPrediction24h,
   EnergyPrediction24h,
   EquipmentRiskAssessment,
+  SystemEventPrediction,
 } from "../../types/bioai";
 import { bioAiEngineService } from "../../services/bioai/BioAiEngineService";
+import { globalSystemAwarenessService } from "../../services/bioai/GlobalSystemAwarenessService";
 
 interface OperationalPredictionsViewProps {
   telemetry: TelemetryData;
@@ -42,6 +44,7 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
   const [prodPred, setProdPred] = useState<ProductionPrediction24h | null>(null);
   const [energyPred, setEnergyPred] = useState<EnergyPrediction24h | null>(null);
   const [equipmentRisks, setEquipmentRisks] = useState<EquipmentRiskAssessment[]>([]);
+  const [eventPredictions, setEventPredictions] = useState<SystemEventPrediction[]>([]);
   const [timeHorizon, setTimeHorizon] = useState<"12h" | "24h" | "48h">("24h");
 
   const loadPredictions = async () => {
@@ -55,6 +58,13 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
       setEnergyPred(e);
       const risks = bioAiEngineService.evaluateEquipmentRisks(equipmentList, telemetry, alarms);
       setEquipmentRisks(risks);
+      const events = globalSystemAwarenessService.getEventPredictions(
+        telemetry,
+        alarms,
+        equipmentList,
+        activeTenant
+      );
+      setEventPredictions(events);
     } catch (err) {
       console.error("Error loading operational predictions:", err);
     } finally {
@@ -396,6 +406,76 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Cross-System Event Predictions Panel (BioAI Global Awareness) */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-400" />
+            <div>
+              <h3 className="text-sm font-bold text-white font-tech uppercase tracking-wider flex items-center gap-2">
+                Eventos Predictivos Anticipados por BioAI
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  Global Sugar Mill Engine
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Modelos de alerta temprana y correlación cruzada entre molienda, calderas, cogeneración y evaporación
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-mono text-slate-400">
+            {eventPredictions.length} eventos monitoreados
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {eventPredictions.map((pred) => (
+            <div
+              key={pred.id}
+              className="p-4 rounded-lg bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between space-y-3"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold">
+                    {pred.area}
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                      pred.severity === "ALTA"
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                        : pred.severity === "MEDIA"
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                        : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                    }`}
+                  >
+                    {pred.severity} • {pred.probabilityPercent}% prob.
+                  </span>
+                </div>
+                <h4 className="text-xs font-bold text-white mb-1.5 leading-snug">
+                  {pred.title}
+                </h4>
+                <div className="text-[11px] text-amber-300/90 font-mono mb-2 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <span>Horizonte estimado: en {pred.timeHorizonMinutes} min</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed mb-2">
+                  <strong className="text-slate-300">Indicador:</strong> {pred.leadingIndicator}
+                </p>
+                <div className="p-2 rounded bg-slate-900/90 border border-slate-800/80 text-[11px] text-slate-300">
+                  <span className="text-emerald-400 font-bold block mb-0.5">Mitigación Sugerida:</span>
+                  <span>{pred.suggestedMitigation}</span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono text-slate-500">
+                <span>Confianza: <strong className="text-emerald-400">{pred.confidenceScore}%</strong></span>
+                <span className="text-slate-400">Módulo: {pred.navigationTarget}</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
