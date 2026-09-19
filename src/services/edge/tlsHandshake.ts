@@ -6,9 +6,29 @@
  * to IEC 62443-4-2 SL3, ISA-95, and Modbus TCP Security (Port 802).
  */
 
-import * as tls from "tls";
-import * as net from "net";
-import fs from "fs";
+// Safely resolve Node.js built-in modules dynamically only in Node/server runtime
+async function getNodeModules(): Promise<{ tls: any; net: any; fs: any } | null> {
+  if (typeof window !== "undefined" || typeof document !== "undefined") {
+    return null;
+  }
+
+  try {
+    const tlsName = "tls";
+    const netName = "net";
+    const fsName = "fs";
+    const [rawTls, rawNet, rawFs] = await Promise.all([
+      import(/* @vite-ignore */ tlsName),
+      import(/* @vite-ignore */ netName),
+      import(/* @vite-ignore */ fsName),
+    ]);
+    const tls = rawTls?.default || rawTls;
+    const net = rawNet?.default || rawNet;
+    const fs = rawFs?.default || rawFs;
+    return { tls, net, fs };
+  } catch {
+    return null;
+  }
+}
 
 export interface TlsHandshakeOptions {
   host: string;
@@ -48,22 +68,36 @@ export interface TlsHandshakeResult {
  * Verifies certificate validity, cipher suite, and protocol version.
  */
 export function performTlsHandshake(options: TlsHandshakeOptions): Promise<TlsHandshakeResult> {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const startTime = Date.now();
     const timeoutMs = options.timeoutMs || 3000;
 
+    const nodeMods = await getNodeModules();
+    const tls = nodeMods?.tls;
+    const fs = nodeMods?.fs;
+
+    if (!tls || typeof tls.connect !== "function") {
+      resolve({
+        success: false,
+        authorized: false,
+        latencyMs: 0,
+        errorMessage: "TLS Handshake is only available in Edge IPC / Node.js runtime.",
+      });
+      return;
+    }
+
     let ca = options.caCert;
-    if (typeof ca === "string" && fs.existsSync(ca)) {
+    if (typeof ca === "string" && fs?.existsSync?.(ca)) {
       ca = fs.readFileSync(ca);
     }
 
     let cert = options.clientCert;
-    if (typeof cert === "string" && fs.existsSync(cert)) {
+    if (typeof cert === "string" && fs?.existsSync?.(cert)) {
       cert = fs.readFileSync(cert);
     }
 
     let key = options.clientKey;
-    if (typeof key === "string" && fs.existsSync(key)) {
+    if (typeof key === "string" && fs?.existsSync?.(key)) {
       key = fs.readFileSync(key);
     }
 
@@ -143,22 +177,30 @@ export function performTlsHandshake(options: TlsHandshakeOptions): Promise<TlsHa
  * Creates a local TLS test server for verifying handshakes in automated tests and local lab rigs.
  */
 export function createTlsTestServer(certPem: string | Buffer, keyPem: string | Buffer): Promise<{
-  server: tls.Server;
+  server: any;
   port: number;
   close: () => Promise<void>;
 }> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    const nodeMods = await getNodeModules();
+    const tls = nodeMods?.tls;
+
+    if (!tls || typeof tls.createServer !== "function") {
+      reject(new Error("Node TLS runtime not available"));
+      return;
+    }
+
     const server = tls.createServer({
       cert: certPem,
       key: keyPem,
       minVersion: "TLSv1.2",
-    }, (socket) => {
+    }, (socket: any) => {
       // Echo or handle industrial protocol handshake
       socket.write("BIOAZUCAR_TLS_ACK\n");
     });
 
     server.listen(0, "127.0.0.1", () => {
-      const addr = server.address() as net.AddressInfo;
+      const addr = server.address();
       resolve({
         server,
         port: addr.port,
@@ -166,6 +208,6 @@ export function createTlsTestServer(certPem: string | Buffer, keyPem: string | B
       });
     });
 
-    server.on("error", (err) => reject(err));
+    server.on("error", (err: any) => reject(err));
   });
 }

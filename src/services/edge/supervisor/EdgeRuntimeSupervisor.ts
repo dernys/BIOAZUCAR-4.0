@@ -194,6 +194,44 @@ export class EdgeRuntimeSupervisor {
     };
   }
 
+  /**
+   * Performs an immediate synchronous or active fleet-wide healthcheck on all registered drivers.
+   */
+  public verifyFleetHealth(): {
+    healthy: boolean;
+    totalDrivers: number;
+    activeDrivers: number;
+    faultedDrivers: string[];
+    details: Record<string, DriverHealth>;
+  } {
+    const drivers = this.driverRegistry.getAllDrivers();
+    const faultedDrivers: string[] = [];
+    const details: Record<string, DriverHealth> = {};
+    let activeDrivers = 0;
+
+    for (const driver of drivers) {
+      const health = driver.getHealth();
+      details[driver.id] = health;
+
+      const totalOps = health.readSuccessCount + health.readErrorCount;
+      const hasExcessiveErrors = totalOps > 10 && (health.readErrorCount / totalOps > 0.5);
+
+      if (health.status === "FAULTED" || hasExcessiveErrors) {
+        faultedDrivers.push(driver.id);
+      } else if (health.status === "CONNECTED" || health.status === "AUTHENTICATED") {
+        activeDrivers++;
+      }
+    }
+
+    return {
+      healthy: faultedDrivers.length === 0,
+      totalDrivers: drivers.length,
+      activeDrivers,
+      faultedDrivers,
+      details,
+    };
+  }
+
   public resetSupervisor(): void {
     this.stop();
     this.supervisionMap.clear();

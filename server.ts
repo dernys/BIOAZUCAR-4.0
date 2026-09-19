@@ -22,6 +22,11 @@ import { getMetrics, getMetricsContentType, trackHttpRequest } from "./src/servi
 
 dotenv.config();
 
+// Prevent tsx runtime global pollution from corrupting ESM loaders and Vite plugins (e.g. vite-plugin-pwa)
+if (typeof (globalThis as any).__dirname !== "undefined") {
+  delete (globalThis as any).__dirname;
+}
+
 const app = express();
 const PORT = 3000;
 

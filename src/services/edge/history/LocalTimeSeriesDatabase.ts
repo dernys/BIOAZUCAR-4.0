@@ -119,6 +119,20 @@ export class LocalTimeSeriesDatabase {
     }
   }
 
+  public verifyIntegrity(): { ok: boolean; details: string } {
+    if (this.sqliteEngine) {
+      return this.sqliteEngine.verifyIntegrity();
+    }
+    return { ok: true, details: "IN_MEMORY_ONLY" };
+  }
+
+  public simulateSuddenPowerLoss(): void {
+    if (this.sqliteEngine) {
+      this.sqliteEngine.simulateSuddenPowerLoss();
+    }
+    this.tagSeries.clear();
+  }
+
   public static getInstance(): LocalTimeSeriesDatabase {
     if (!LocalTimeSeriesDatabase.instance) {
       LocalTimeSeriesDatabase.instance = new LocalTimeSeriesDatabase();
@@ -468,6 +482,7 @@ export class LocalTimeSeriesDatabase {
       this.sqliteEngine.close();
       this.sqliteEngine = null;
     }
+    this.tagSeries.clear();
   }
 }
 

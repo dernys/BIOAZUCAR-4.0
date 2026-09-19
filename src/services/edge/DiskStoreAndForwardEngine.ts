@@ -10,6 +10,7 @@ export interface DiskQueueConfig {
   diskJournalPath?: string;
   sqliteDbPath?: string;
   encryptionKey?: string;
+  verifyIntegrityOnBoot?: boolean;
 }
 
 function getNodeModules(): { fs: any; path: any; crypto: any } | null {
@@ -52,6 +53,13 @@ export class DiskStoreAndForwardEngine {
   private deleteStmt: any = null;
   private inFlightStmt: any = null;
   private rollbackStmt: any = null;
+  private lastRecoveryStats: {
+    restoredPoints: number;
+    inFlightRecovered: number;
+    quarantinedCorrupted: number;
+    integrityOk: boolean;
+    engine: string;
+  } | null = null;
 
   constructor(config: DiskQueueConfig = {}) {
     this.persistenceKey = config.persistenceKey || "bioazucar_edge_saf_queue";
@@ -70,16 +78,16 @@ export class DiskStoreAndForwardEngine {
         ? `sec-${process.env.BIOAZUCAR_EDGE_SECRET.substring(0, 24)}`
         : "bioazucar_saf_default_aes_key_32_bytes_long");
 
-    this.initSqlite(config.sqliteDbPath);
+    this.initSqlite(config.sqliteDbPath, config.verifyIntegrityOnBoot);
     this.restoreFromStorage();
   }
 
-  private initSqlite(customPath?: string): void {
+  private initSqlite(customPath?: string, verifyOnBoot: boolean = true): void {
     const envSqlitePath = typeof process !== "undefined" ? process.env?.BIOAZUCAR_SAF_SQLITE_PATH : undefined;
     const dbPath = customPath || envSqlitePath || "./data/edge-saf.sqlite";
 
     try {
-      this.sqliteEngine = new SqliteWalEngine({ dbPath });
+      this.sqliteEngine = new SqliteWalEngine({ dbPath, verifyOnStartup: verifyOnBoot });
       if (this.sqliteEngine.isAvailable()) {
         this.sqliteEngine.exec(`
           CREATE TABLE IF NOT EXISTS saf_queue (
@@ -290,13 +298,52 @@ export class DiskStoreAndForwardEngine {
    * Restore un-forwarded points from persistent storage on startup
    */
   private restoreFromStorage(): void {
-    const mods = getNodeModules();
+    this.executeColdPowerRecovery();
+  }
 
-    // 1. First attempt restoration from SQLite WAL
+  /**
+   * Cold recovery protocol after unexpected crash or power-loss (IEC 62443-4-2).
+   * 1. Runs structural SQLite integrity check.
+   * 2. Automatically recovers unconfirmed IN_FLIGHT points back to PENDING.
+   * 3. Discards or quarantines torn writes from sudden power cutoff.
+   * 4. Populates in-memory buffer in chronological sequence.
+   */
+  public executeColdPowerRecovery(): {
+    restoredPoints: number;
+    inFlightRecovered: number;
+    quarantinedCorrupted: number;
+    integrityOk: boolean;
+    engine: string;
+  } {
+    let inFlightRecovered = 0;
+    let quarantinedCorrupted = 0;
+    let integrityOk = true;
+
+    // 1. Primary recovery from SQLite WAL
     if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      const integrity = this.sqliteEngine.verifyIntegrity();
+      integrityOk = integrity.ok;
+      if (!integrityOk) {
+        console.warn(`[DiskStoreAndForwardEngine] Integrity check reported degraded state: ${integrity.details}. Triggering WAL recovery.`);
+        const rec = this.sqliteEngine.recoverFromCrash();
+        integrityOk = rec.integrityOk;
+      }
+
+      // Rollback unacknowledged IN_FLIGHT points back to PENDING
+      try {
+        const rollbackResult = this.sqliteEngine.prepare(`
+          UPDATE saf_queue SET status = 'PENDING' WHERE status = 'IN_FLIGHT';
+        `).run();
+        inFlightRecovered = rollbackResult.changes;
+      } catch {
+        // Suppress rollback errors
+      }
+
+      // Load all PENDING points into memory
+      const mods = getNodeModules();
       try {
         const rows = this.sqliteEngine.prepare(`
-          SELECT point_json FROM saf_queue WHERE status = 'PENDING' ORDER BY created_at ASC;
+          SELECT id, point_json FROM saf_queue WHERE status = 'PENDING' ORDER BY created_at ASC;
         `).all() as any[];
 
         if (rows && rows.length > 0) {
@@ -304,25 +351,63 @@ export class DiskStoreAndForwardEngine {
           for (const row of rows) {
             let json = String(row.point_json);
             if (this.encryptionKey && json.startsWith("ENC:") && mods?.crypto) {
-              json = this.decryptData(json.slice(4), this.encryptionKey, mods.crypto);
+              try {
+                json = this.decryptData(json.slice(4), this.encryptionKey, mods.crypto);
+              } catch {
+                quarantinedCorrupted++;
+                try {
+                  this.sqliteEngine.prepare(`UPDATE saf_queue SET status = 'CORRUPTED' WHERE id = ?;`).run(row.id);
+                } catch {}
+                continue;
+              }
             }
             try {
               const pt = JSON.parse(json) as IndustrialDataPoint;
-              if (pt && pt.tag) restored.push(pt);
-            } catch {}
+              if (pt && pt.tag) {
+                restored.push(pt);
+              } else {
+                quarantinedCorrupted++;
+                try {
+                  this.sqliteEngine.prepare(`UPDATE saf_queue SET status = 'CORRUPTED' WHERE id = ?;`).run(row.id);
+                } catch {}
+              }
+            } catch {
+              quarantinedCorrupted++;
+              try {
+                this.sqliteEngine.prepare(`UPDATE saf_queue SET status = 'CORRUPTED' WHERE id = ?;`).run(row.id);
+              } catch {}
+            }
           }
           if (restored.length > 0) {
+            this.memQueue.clear();
             this.memQueue.enqueueBatch(restored);
           }
         }
-        // When SQLite WAL is active, it is the authoritative store; do not resurrect old acknowledged points from file
-        return;
       } catch {
-        // Fallback to file restoration
+        // Fallback to file restoration if query fails
       }
+
+      // Check if any corrupted records are recorded in saf_queue
+      try {
+        const countRow = this.sqliteEngine.prepare("SELECT COUNT(*) as cnt FROM saf_queue WHERE status = 'CORRUPTED';").get() as any;
+        if (countRow && typeof countRow.cnt === "number") {
+          quarantinedCorrupted = Math.max(quarantinedCorrupted, countRow.cnt);
+        }
+      } catch {}
+
+      const stats = {
+        restoredPoints: this.memQueue.getState().bufferedCount,
+        inFlightRecovered,
+        quarantinedCorrupted,
+        integrityOk,
+        engine: "SQLITE_WAL",
+      };
+      this.lastRecoveryStats = stats;
+      return stats;
     }
 
     // 2. Fallback to flat file journal
+    const mods = getNodeModules();
     if (mods) {
       try {
         const { fs } = mods;
@@ -333,13 +418,22 @@ export class DiskStoreAndForwardEngine {
           }
           const parsed = JSON.parse(rawData) as IndustrialDataPoint[];
           if (Array.isArray(parsed) && parsed.length > 0) {
+            this.memQueue.clear();
             this.memQueue.enqueueBatch(parsed);
           }
         }
       } catch (_err) {
-        // Continue with clean memory queue if disk journal is corrupted
+        quarantinedCorrupted++;
       }
-      return;
+      const stats = {
+        restoredPoints: this.memQueue.getState().bufferedCount,
+        inFlightRecovered: 0,
+        quarantinedCorrupted,
+        integrityOk: true,
+        engine: "JSON_FILE",
+      };
+      this.lastRecoveryStats = stats;
+      return stats;
     }
 
     try {
@@ -356,12 +450,47 @@ export class DiskStoreAndForwardEngine {
           }
           const parsed = JSON.parse(jsonStr) as IndustrialDataPoint[];
           if (Array.isArray(parsed) && parsed.length > 0) {
+            this.memQueue.clear();
             this.memQueue.enqueueBatch(parsed);
           }
         }
       }
     } catch (_err) {
       // Storage unavailable or quota reached
+    }
+
+    const fallbackStats = {
+      restoredPoints: this.memQueue.getState().bufferedCount,
+      inFlightRecovered: 0,
+      quarantinedCorrupted: 0,
+      integrityOk: true,
+      engine: this.getStorageEngine(),
+    };
+    this.lastRecoveryStats = fallbackStats;
+    return fallbackStats;
+  }
+
+  public getLastRecoveryStats() {
+    return this.lastRecoveryStats;
+  }
+
+  public close(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    if (this.sqliteEngine) {
+      this.sqliteEngine.close();
+    }
+  }
+
+  public simulateSuddenPowerLoss(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    if (this.sqliteEngine) {
+      this.sqliteEngine.simulateSuddenPowerLoss();
     }
   }
 

@@ -35,6 +35,7 @@ import {
 import { UserRole, PlantStatus, AlarmEvent, SimulationScenario, UserAccount, TenantEnterprise, TelemetryData } from "../types";
 import { RuntimeMode } from "../services/runtime/types";
 import { getRoleBadgeInfo } from "../services/rbacService";
+import { PWAInstallButton } from "./pwa/PWAInstallButton";
 
 export interface HeaderProps {
   currentRole: UserRole;
@@ -418,6 +419,9 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </button>
           )}
+
+          {/* PWA In-App Install Prompt */}
+          <PWAInstallButton />
 
           {/* Play/Pause */}
           <button

@@ -7,6 +7,17 @@
       // Defensive handler: prevent external browser extensions (e.g. MetaMask, Web3 providers)
       // from throwing unhandled rejections or polluting window error events in sandboxed iframes
       (function() {
+        // Intercept expected benign platform [vite] websocket disconnection logs in AI Studio preview
+        var origConsoleError = console.error;
+        console.error = function() {
+          var firstArg = arguments[0];
+          if (typeof firstArg === 'string' && firstArg.indexOf('[vite] failed to connect to websocket') !== -1) {
+            console.debug.apply(console, arguments);
+            return;
+          }
+          return origConsoleError.apply(console, arguments);
+        };
+
         var isExtensionNoise = function(err) {
           if (!err) return false;
           var msg = typeof err === 'string' ? err : (err.message || err.reason || err.description || '');
@@ -48,6 +59,17 @@
     <meta property="og:description" content="Plataforma de Industria 4.0, Gemelo Digital y Planificación Agrícola PDA para Central Azucarero y Cogeneración Eléctrica con balance de masa/energía, SCADA, curvas TCH, logística CCT, IA analítica y OEE." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- PWA & Mobile Web App Compliance -->
+    <meta name="theme-color" content="#020617" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="BioAzúcar" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">

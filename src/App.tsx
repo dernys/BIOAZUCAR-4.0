@@ -27,6 +27,7 @@ import { IpcHardeningAndOfflineModal } from "./components/edge/IpcHardeningAndOf
 import { IndustrialFatSatDeliveryModal } from "./components/edge/IndustrialFatSatDeliveryModal";
 import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { OfflineIndicator } from "./components/pwa/OfflineIndicator";
 import {
   TelemetryData,
   UserRole,
@@ -973,6 +974,9 @@ export default function App() {
         onClose={() => setIsFatSatModalOpen(false)}
         currentRole={currentRole}
       />
+
+      {/* 11. PWA & Air-Gapped Plant Offline State Banner */}
+      <OfflineIndicator />
     </div>
   );
 }

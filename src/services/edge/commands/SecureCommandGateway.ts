@@ -167,6 +167,25 @@ export class SecureCommandGateway {
       maxVal: 40.0,
       requiresFourEyes: false,
     },
+    {
+      // Mill Top Roll Hydraulic Pressure (Central Azucarero)
+      tagPattern: /.*(PresionHidraulica|Hydraulic_Pressure|M1_HYDR|Molienda.*Presion).*/i,
+      criticality: "CRITICAL",
+      minVal: 50.0,
+      maxVal: 280.0, // Max safe working pressure 280 bar
+      maxStepDelta: 25.0,
+      requiresFourEyes: true,
+      interlockCheck: (val, readings) => {
+        const eStop = readings.get("Safety.E_Stop_Coil") ?? 1;
+        if (eStop === 0) {
+          return {
+            tripped: true,
+            reason: "Interlock Tripped: Emergency Stop safety coil is open. Hydraulic pressure adjustment prohibited.",
+          };
+        }
+        return { tripped: false };
+      },
+    },
   ];
 
   private constructor() {
@@ -201,6 +220,33 @@ export class SecureCommandGateway {
   ): string {
     const canonicalPayload = `${commandId}:${tag}:${String(value)}:${timestamp}:${nonce}`;
     return crypto.createHmac("sha256", this.hmacSecretKey).update(canonicalPayload).digest("hex");
+  }
+
+  /**
+   * Cryptographically signs a SecureWriteCommandRequest with HMAC-SHA256.
+   */
+  public signCommand(request: SecureWriteCommandRequest, secretKey?: string): SecureWriteCommandRequest {
+    if (secretKey) {
+      this.hmacSecretKey = secretKey;
+    }
+    const signature = this.generateHmacSignature(
+      request.commandId,
+      request.tag,
+      request.value,
+      request.timestamp,
+      request.nonce
+    );
+    return {
+      ...request,
+      signature,
+    };
+  }
+
+  /**
+   * Registers or overrides a physical interlock rule.
+   */
+  public registerInterlockRule(rule: InterlockRule): void {
+    this.interlockRules.unshift(rule);
   }
 
   /**
