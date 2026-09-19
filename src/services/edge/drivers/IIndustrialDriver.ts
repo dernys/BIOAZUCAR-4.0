@@ -8,6 +8,8 @@
 import {
   IndustrialProtocol,
   IndustrialDataPoint,
+  IndustrialRuntimeMode,
+  IndustrialSourceType,
 } from "../../../types";
 
 export type DriverStatus =
@@ -112,6 +114,11 @@ export interface DriverConfig {
     secretRef?: string;
   };
   isSimulatedFallback?: boolean;
+  isMock?: boolean;
+  driverProfile?: IndustrialRuntimeMode;
+  sourceType?: IndustrialSourceType;
+  assetId?: string;
+  sourceId?: string;
   customParameters?: Record<string, any>;
 }
 

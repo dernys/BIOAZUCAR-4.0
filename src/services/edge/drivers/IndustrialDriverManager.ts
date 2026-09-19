@@ -15,7 +15,16 @@ import {
   TagSubscriptionOptions,
   TagSubscriptionCallback,
 } from "./IIndustrialDriver";
-import { IndustrialProtocol, IndustrialDataPoint } from "../../../types";
+import {
+  IndustrialProtocol,
+  IndustrialDataPoint,
+  createCanonicalDataPoint,
+  normalizeProtocol,
+} from "../../../types";
+import {
+  getRuntimeProfile,
+  assertValidProductionEnvironment,
+} from "../config/runtimeProfile";
 import { dataQualityEngine } from "../dataQualityEngine";
 import { OpcUaDriverAdapter } from "./OpcUaDriverAdapter";
 import { ModbusDriverAdapter } from "./ModbusDriverAdapter";
@@ -40,8 +49,31 @@ export class IndustrialDriverManager {
 
   /**
    * Registers a driver instance into the runtime.
+   * In PRODUCTION profile: strictly fails closed if any mock or simulation driver is supplied.
    */
   public registerDriver(driver: IIndustrialDriver): void {
+    const profile = getRuntimeProfile();
+    if (profile === "PRODUCTION") {
+      const isMock =
+        driver.config.isMock === true ||
+        driver.config.customParameters?.isMock === true ||
+        driver.id.toLowerCase().includes("mock");
+      const isSimulated =
+        driver.config.isSimulatedFallback === true ||
+        driver.config.customParameters?.isSimulated === true ||
+        driver.id.toLowerCase().includes("simul");
+
+      assertValidProductionEnvironment({
+        driverId: driver.id,
+        driverType: isMock ? "MOCK" : isSimulated ? "SIMULATOR" : "PLC",
+        isMock,
+        isSimulated,
+        isSimulatedFallback: driver.config.isSimulatedFallback === true,
+        protocol: String(driver.protocol),
+        endpoint: driver.config.endpoint,
+      });
+    }
+
     if (this.drivers.has(driver.id)) {
       console.warn(`[DriverManager] Overwriting existing driver registration: ${driver.id}`);
     }

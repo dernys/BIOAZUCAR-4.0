@@ -1,3 +1,34 @@
+import type {
+  IndustrialDataPoint,
+  IndustrialRuntimeMode,
+  IndustrialSourceType,
+  IndustrialDataType,
+  IndustrialDataQuality,
+  IndustrialQualityReason,
+  IndustrialCalibrationState,
+  CanonicalIndustrialProtocol,
+  IndustrialProtocol,
+} from "./types/industrialDataPoint";
+
+export type {
+  IndustrialDataPoint,
+  IndustrialRuntimeMode,
+  IndustrialSourceType,
+  IndustrialDataType,
+  IndustrialDataQuality,
+  IndustrialQualityReason,
+  IndustrialCalibrationState,
+  CanonicalIndustrialProtocol,
+  IndustrialProtocol,
+};
+export {
+  assertCanonicalDataPoint,
+  validateIndustrialDataPoint,
+  createCanonicalDataPoint,
+  normalizeProtocol,
+  CANONICAL_SCHEMA_VERSION,
+} from "./types/industrialDataPoint";
+
 export type UserRole = "superadmin" | "administrador" | "supervisor" | "operador" | "mantenimiento" | string;
 
 export type PlantStatus = "OPERACION_NORMAL" | "ALERTA_PARCIAL" | "MANTENIMIENTO" | "PARADA_EMERGENCIA";
@@ -88,26 +119,6 @@ export interface TenantPhysicalEvidence {
 // ============================================================================
 // PHASE 2 & 3: CONNECTION REGISTRY & INDUSTRIAL TAG REGISTRY CANONICAL MODELS
 // ============================================================================
-
-export type IndustrialProtocol =
-  | "OPC_UA"
-  | "OPC_DA"
-  | "MODBUS"
-  | "MQTT"
-  | "SPARKPLUG"
-  | "EROS"
-  | "REST"
-  | "SIMULATED"
-  | "OPC-UA"
-  | "MODBUS-TCP"
-  | "MODBUS-RTU"
-  | "MQTT-SPARKPLUG"
-  | "REST-API"
-  | "SIMULATOR"
-  | "SIEMENS-S7"
-  | "SIEMENS_S7"
-  | "ETHERNET_IP"
-  | "ALLEN_BRADLEY";
 
 export type ConnectionStatus =
   | "NOT_CONFIGURED"
@@ -867,45 +878,6 @@ export type NetworkZoneType =
   | "ZONE_2_SUPERVISORY"
   | "ZONE_3_OPERATIONS_DMZ"
   | "ZONE_4_ENTERPRISE";
-
-export interface IndustrialDataPoint {
-  id?: string;
-  tag: string;
-  equipmentId?: string;
-  deviceId?: string;
-  assetId?: string;
-  siteId?: string;
-  areaId?: string;
-  tenantId?: string;
-  value: number | string | boolean;
-  rawValue?: number | string | boolean;
-  engValue?: number;
-  unit: string;
-  dataType?: "FLOAT" | "INTEGER" | "BOOLEAN" | "STRING";
-  scale?: number;
-  offset?: number;
-  deadband?: number;
-  samplingInterval?: number;
-  source?: DataSourceType;
-  protocol?: ProtocolType;
-  quality: DataQuality;
-  qualityReason?: string;
-  deviceTimestamp?: string;
-  timestamp?: string;
-  sourceTimestamp?: string;
-  ingestionTimestamp?: string;
-  sequence?: number;
-  sequenceNumber?: number;
-  isHistorical?: boolean;
-  isSimulated?: boolean;
-  provenance?: "SIMULATED_PROCESS_MODEL" | "OBSERVED_OT" | "PHYSICAL_OT" | "MANUAL_ENTRY" | string;
-  securityClearanceLevel?: number;
-  engMin?: number;
-  engMax?: number;
-  description?: string;
-  correlationId?: string;
-  schemaVersion?: string;
-}
 
 export interface OTConnectionConfig {
   id: string;

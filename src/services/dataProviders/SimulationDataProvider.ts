@@ -185,9 +185,9 @@ export class SimulationDataProvider implements IIndustrialDataProvider {
 
     // Update point
     if (existing) {
-      existing.value = request.value;
-      existing.deviceTimestamp = now;
-      existing.ingestionTimestamp = now;
+      (existing as any).value = request.value;
+      (existing as any).deviceTimestamp = now;
+      (existing as any).ingestionTimestamp = now;
     }
 
     return {
@@ -227,7 +227,7 @@ export class SimulationDataProvider implements IIndustrialDataProvider {
       equipmentName: p.equipmentId,
       variable: p.tag,
       unit: p.unit,
-      dataType: p.dataType,
+      dataType: (p.dataType === "FLOAT32" || p.dataType === "FLOAT64" ? "FLOAT" : p.dataType) as any,
       source: "SIMULATION",
       protocol: "SIMULATOR",
       address: p.tag,

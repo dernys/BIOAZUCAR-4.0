@@ -17,6 +17,10 @@ import {
   TagSubscriptionHandle,
 } from "./IIndustrialDriver";
 import { IndustrialProtocol, IndustrialDataPoint } from "../../../types";
+import {
+  getRuntimeProfile,
+  assertValidProductionEnvironment,
+} from "../config/runtimeProfile";
 
 export type ModbusByteOrder = "ABCD" | "CDAB" | "BADC" | "DCBA";
 
@@ -81,6 +85,19 @@ export class ModbusDriverAdapter implements IIndustrialDriver {
   constructor(config: DriverConfig) {
     this.id = config.id;
     this.config = config;
+
+    const profile = getRuntimeProfile();
+    if (profile === "PRODUCTION") {
+      assertValidProductionEnvironment({
+        driverId: this.id,
+        driverType: "PLC",
+        isSimulated: config.isSimulatedFallback === true || config.customParameters?.isSimulated === true,
+        isSimulatedFallback: config.isSimulatedFallback === true,
+        isMock: config.isMock === true || config.customParameters?.isMock === true,
+        protocol: "MODBUS_TCP",
+        endpoint: config.endpoint,
+      });
+    }
 
     // Detect and configure Modbus Security (spec 2018: Port 802 over TLS)
     const customSec = config.customParameters?.modbusSecurity as ModbusSecurityConfig | undefined;
@@ -263,8 +280,15 @@ export class ModbusDriverAdapter implements IIndustrialDriver {
     const t0 = Date.now();
     this.txPackets++;
 
+    const profile = getRuntimeProfile();
+    const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
+
     let regVal = this.registerMap.get(tag);
     if (regVal === undefined) {
+      if (profile === "PRODUCTION") {
+        this.readErrorCount++;
+        throw new Error(`Modbus tag '${tag}' not mapped on device '${this.id}'. Random fallback prohibited in PRODUCTION.`);
+      }
       regVal = 1000 + Math.floor(Math.random() * 50);
       this.registerMap.set(tag, regVal);
     }
@@ -273,32 +297,43 @@ export class ModbusDriverAdapter implements IIndustrialDriver {
     const scale = this.config.customParameters?.scale ?? 1;
     const engValue = Number((regVal * scale).toFixed(2));
 
-    const latency = Math.max(1, Date.now() - t0 + Math.floor(Math.random() * 4));
+    const latency = Math.max(1, Date.now() - t0 + (profile === "PRODUCTION" ? 2 : Math.floor(Math.random() * 4)));
     this.avgLatencyMs = Number(((this.avgLatencyMs * 0.9) + (latency * 0.1)).toFixed(2));
     this.readSuccessCount++;
     this.rxPackets++;
-    this.lastHeartbeat = new Date().toISOString();
-
-    const isSimulated = this.config.isSimulatedFallback ?? true;
+    const nowIso = new Date().toISOString();
+    this.lastHeartbeat = nowIso;
 
     return {
-      id: `dp-modbus-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      tag,
+      runtimeMode: profile,
+      sourceType: isSimulated ? "SIMULATOR" : "PLC",
+      sourceId: this.config.sourceId || this.id,
+      driverId: this.id,
+      protocol: "MODBUS_TCP",
       deviceId: this.id,
+      assetId: this.config.assetId || tag.split(".")[0] || "ASSET-DEFAULT",
+      tagId: tag,
       value: engValue,
+      engineeringUnit: this.config.customParameters?.unit || "",
+      dataType: "FLOAT32",
+      deviceTimestamp: nowIso,
+      ingestionTimestamp: nowIso,
+      sequence: this.readSuccessCount,
+      quality: "GOOD",
+      qualityReason: "NORMAL",
+      calibrationState: "CALIBRATED",
+      schemaVersion: "4.0.0",
+
+      // Legacy fields
+      id: `dp-modbus-${Date.now()}-${this.readSuccessCount}`,
+      tag,
       rawValue: regVal,
       engValue,
       unit: this.config.customParameters?.unit || "",
-      dataType: "FLOAT",
       scale,
-      quality: "GOOD",
       source: isSimulated ? "SIMULATION" : "MODBUS",
-      protocol: isSimulated ? "SIMULATOR" : "MODBUS-TCP",
-      deviceTimestamp: new Date().toISOString(),
-      ingestionTimestamp: new Date().toISOString(),
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
-      schemaVersion: "4.0.0",
     };
   }
 

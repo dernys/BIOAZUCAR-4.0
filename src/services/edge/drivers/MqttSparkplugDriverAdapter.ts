@@ -17,6 +17,10 @@ import {
   TagSubscriptionHandle,
 } from "./IIndustrialDriver";
 import { IndustrialProtocol, IndustrialDataPoint } from "../../../types";
+import {
+  getRuntimeProfile,
+  assertValidProductionEnvironment,
+} from "../config/runtimeProfile";
 import { SparkplugBProtocol, SparkplugPayload, SparkplugMetric } from "./SparkplugBProtocol";
 
 export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
@@ -62,6 +66,20 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
   constructor(config: DriverConfig) {
     this.id = config.id;
     this.config = config;
+
+    const profile = getRuntimeProfile();
+    if (profile === "PRODUCTION") {
+      assertValidProductionEnvironment({
+        driverId: this.id,
+        driverType: "PLC",
+        isSimulated: config.isSimulatedFallback === true || config.customParameters?.isSimulated === true,
+        isSimulatedFallback: config.isSimulatedFallback === true,
+        isMock: config.isMock === true || config.customParameters?.isMock === true,
+        protocol: "SPARKPLUG_B",
+        endpoint: config.endpoint,
+      });
+    }
+
     this.groupId = config.customParameters?.groupId || "BioAzucar";
     this.edgeNodeId = config.customParameters?.edgeNodeId || "Central-01";
     this.deviceId = config.customParameters?.deviceId;
@@ -179,35 +197,56 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
     }
 
     this.txPackets++;
+
+    const profile = getRuntimeProfile();
+    const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
+
     let val = this.sparkplugPayloadCache.get(tag);
     if (val === undefined) {
+      if (profile === "PRODUCTION") {
+        this.readErrorCount++;
+        throw new Error(`Sparkplug tag '${tag}' not received from broker. Synthetic fallback prohibited in PRODUCTION.`);
+      }
       val = 100.0;
       this.sparkplugPayloadCache.set(tag, val);
     }
 
     this.readSuccessCount++;
     this.rxPackets++;
-    this.lastHeartbeat = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    this.lastHeartbeat = nowIso;
 
-    const isSimulated = this.config.isSimulatedFallback ?? true;
+    const unit = tag.includes("Flow") ? "m3/h" : tag.includes("Frequency") ? "Hz" : "%";
 
     return {
-      id: `dp-spb-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      tag,
+      runtimeMode: profile,
+      sourceType: isSimulated ? "SIMULATOR" : "PLC",
+      sourceId: this.config.sourceId || this.id,
+      driverId: this.id,
+      protocol: "SPARKPLUG_B",
       deviceId: this.id,
+      assetId: this.config.assetId || tag.split("/")[0] || "ASSET-DEFAULT",
+      tagId: tag,
       value: val,
+      engineeringUnit: unit,
+      dataType: typeof val === "number" ? "FLOAT32" : "STRING",
+      deviceTimestamp: nowIso,
+      ingestionTimestamp: nowIso,
+      sequence: this.readSuccessCount,
+      quality: "GOOD",
+      qualityReason: "NORMAL",
+      calibrationState: "CALIBRATED",
+      schemaVersion: "4.0.0",
+
+      // Legacy fields
+      id: `dp-spb-${Date.now()}-${this.readSuccessCount}`,
+      tag,
       rawValue: val,
       engValue: typeof val === "number" ? val : undefined,
-      unit: tag.includes("Flow") ? "m3/h" : tag.includes("Frequency") ? "Hz" : "%",
-      dataType: "FLOAT",
-      quality: "GOOD",
+      unit,
       source: isSimulated ? "SIMULATION" : "SPARKPLUG",
-      protocol: isSimulated ? "SIMULATOR" : "MQTT-SPARKPLUG",
-      deviceTimestamp: new Date().toISOString(),
-      ingestionTimestamp: new Date().toISOString(),
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
-      schemaVersion: "4.0.0",
     };
   }
 

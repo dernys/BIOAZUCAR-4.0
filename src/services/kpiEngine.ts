@@ -152,15 +152,15 @@ export class KpiEngine {
             unit: pt.unit,
             equipmentId: pt.equipmentId,
             equipmentName: pt.equipmentId,
-            source: pt.source,
-            protocol: pt.protocol,
-            quality: pt.quality,
+            source: (pt.source as DataSourceType) || "SIMULATION",
+            protocol: (pt.protocol as unknown as ProtocolType) || "OPC-UA",
+            quality: pt.quality as DataQuality,
             timestamp: pt.deviceTimestamp || now,
           });
           if (pt.quality === "BAD" || pt.quality === "UNCERTAIN") {
             overallQuality = pt.quality;
           }
-          overallSource = pt.source;
+          overallSource = (pt.source as DataSourceType) || "SIMULATION";
         } else {
           // Fallback reconstruction
           inputTagsInfo.push({

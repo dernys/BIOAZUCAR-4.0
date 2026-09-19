@@ -1,19 +1,29 @@
 /**
- * BioAzúcar 4.0 — Canonical Data Quality Engine & Data Truth Validator (I14 / I15)
+ * BioAzúcar 4.0 — Canonical Data Quality Engine & Data Truth Validator (I14 / I15 / I22)
  * 
- * Enforces industrial data quality rules:
+ * Enforces industrial data quality rules and provenance invariants:
  *  1. Golden Rule: "SIMULATED jamás se vuelve REAL" (No simulation falsification).
- *  2. Range validation (engMin / engMax).
- *  3. Stale & Frozen signal detection (no flatlining on dynamic process tags).
- *  4. Rate-of-Change / Outlier jump detection.
- *  5. Clock Skew and Timeliness auditing.
- *  6. Canonical Data Lineage and Provenance assignment.
+ *  2. "STALE ≠ GOOD", "BAD ≠ TRUSTED", "UNCERTAIN ≠ GOOD", "COMM_FAILURE ≠ ZERO".
+ *  3. Range validation (engMin / engMax) -> OUT_OF_RANGE.
+ *  4. Stale & Frozen signal detection -> TIMEOUT / STALE.
+ *  5. Rate-of-Change / Outlier jump detection -> RATE_OF_CHANGE_EXCEEDED.
+ *  6. Clock Skew and Timeliness auditing.
+ *  7. Canonical Data Lineage and Provenance assignment (17 attributes immutable).
  */
 
 import {
   IndustrialDataPoint,
+  IndustrialRuntimeMode,
+  IndustrialSourceType,
+  CanonicalIndustrialProtocol,
+  IndustrialDataType,
+  IndustrialDataQuality,
+  IndustrialQualityReason,
+  IndustrialCalibrationState,
+  normalizeProtocol,
   DataQuality,
 } from "../../types";
+import { getRuntimeProfile } from "./config/runtimeProfile";
 
 export interface QualityValidationRule {
   tag: string;
@@ -27,7 +37,7 @@ export interface QualityValidationRule {
 
 export interface QualityAuditResult {
   isValid: boolean;
-  finalQuality: DataQuality;
+  finalQuality: IndustrialDataQuality | DataQuality;
   reasons: string[];
   normalizedPoint: IndustrialDataPoint;
 }
@@ -43,6 +53,8 @@ export class DataQualityEngine {
       lastTimestamp: number;
       frozenSinceTimestamp: number;
       sampleCount: number;
+      provenance?: string;
+      runtimeMode?: IndustrialRuntimeMode;
     }
   >();
 
@@ -100,6 +112,16 @@ export class DataQualityEngine {
       frozenTimeoutMs: 60000,
       minDeadband: 0.1,
     });
+
+    // Imbibition Water Flow (m3/h)
+    this.registerRule({
+      tag: "FIC-IMBIBITION-01",
+      engMin: 0,
+      engMax: 150,
+      maxRateOfChangePerSec: 25,
+      frozenTimeoutMs: 60000,
+      minDeadband: 0.2,
+    });
   }
 
   public registerRule(rule: QualityValidationRule): void {
@@ -113,27 +135,67 @@ export class DataQualityEngine {
   public evaluate(raw: Partial<IndustrialDataPoint>): QualityAuditResult {
     const now = Date.now();
     const nowIso = new Date(now).toISOString();
-
     const reasons: string[] = [];
-    let quality: DataQuality = raw.quality || "GOOD";
+
+    const activeProfile = getRuntimeProfile();
+    const tag = raw.tagId || raw.tag || "UNKNOWN_TAG";
+    const prev = this.tagHistory.get(tag);
 
     // 1. Immutable Data Truth Rule: "SIMULATED jamás se vuelve REAL"
-    const wasSimulated = raw.isSimulated === true || raw.provenance === "SIMULATED_PROCESS_MODEL";
-    let isSimulated = wasSimulated;
-    let provenance = raw.provenance || (wasSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT");
+    const wasSimulated = Boolean(
+      raw.runtimeMode === "SIMULATION" ||
+      raw.sourceType === "SIMULATOR" ||
+      raw.sourceType === "MOCK" ||
+      raw.isSimulated === true ||
+      raw.provenance === "SIMULATED_PROCESS_MODEL" ||
+      (prev && prev.runtimeMode === "SIMULATION")
+    );
 
-    // Defense against spoofing: If source claims physical but simulation flags are set
+    let isSimulated: boolean = wasSimulated ? true : (raw.isSimulated === false ? false : false);
+    let provenance = raw.provenance || (wasSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT");
+
+    // Defense against spoofing: If source claims physical/LIVE_OT but simulation flags are set
     if (wasSimulated) {
       isSimulated = true;
       provenance = "SIMULATED_PROCESS_MODEL";
-      if (raw.provenance === "OBSERVED_OT" || raw.provenance === "PHYSICAL_OT") {
-        reasons.push("PROVENANCE_MUTATION_BLOCKED: Simulated point cannot be rebranded as physical");
+      if (
+        raw.provenance === "OBSERVED_OT" ||
+        raw.provenance === "PHYSICAL_OT" ||
+        raw.source === "LIVE_OT"
+      ) {
+        reasons.push("PROVENANCE_MUTATION_BLOCKED: Simulated point cannot be rebranded as LIVE_OT or physical");
       }
     }
 
-    const tag = raw.tag || "UNKNOWN_TAG";
+    // In PRODUCTION profile: Rejection of any simulated / mock telemetry
+    if (activeProfile === "PRODUCTION" && (wasSimulated || raw.isSimulated === true)) {
+      reasons.push("CRITICAL_PROVENANCE_VIOLATION: Simulated point rejected in PRODUCTION profile");
+    }
+
+    // Prevent runtimeMode mutation downstream (e.g. SIMULATION -> PRODUCTION)
+    let runtimeMode: IndustrialRuntimeMode = raw.runtimeMode || (isSimulated ? "SIMULATION" : activeProfile);
+    if (prev && prev.runtimeMode === "SIMULATION" && raw.runtimeMode === "PRODUCTION") {
+      runtimeMode = "SIMULATION";
+      reasons.push("PROVENANCE_MUTATION_BLOCKED: runtimeMode cannot be mutated from SIMULATION to PRODUCTION");
+    }
+
+    let quality: IndustrialDataQuality = (raw.quality as IndustrialDataQuality) || "GOOD";
+    let qualityReason: IndustrialQualityReason = (raw.qualityReason as IndustrialQualityReason) || "NORMAL";
+
+    // If communication failure already occurred, propagate faithfully (COMM_FAILURE != ZERO)
+    if (raw.qualityReason === "COMM_FAILURE" || raw.quality === "BAD") {
+      quality = "BAD";
+      qualityReason = "COMM_FAILURE";
+      reasons.push("COMM_FAILURE: Source communication failure detected");
+    }
+
     const rule = this.rules.get(tag);
-    const numValue = typeof raw.value === "number" ? raw.value : typeof raw.engValue === "number" ? raw.engValue : NaN;
+    const numValue =
+      typeof raw.value === "number"
+        ? raw.value
+        : typeof raw.engValue === "number"
+        ? raw.engValue
+        : NaN;
 
     // 2. Engineering Range Validation
     if (!isNaN(numValue)) {
@@ -142,15 +204,16 @@ export class DataQualityEngine {
 
       if (min !== undefined && numValue < min) {
         quality = "BAD";
+        qualityReason = "OUT_OF_RANGE";
         reasons.push(`OUT_OF_RANGE_LOW: value ${numValue} < min ${min}`);
       } else if (max !== undefined && numValue > max) {
         quality = "BAD";
+        qualityReason = "OUT_OF_RANGE";
         reasons.push(`OUT_OF_RANGE_HIGH: value ${numValue} > max ${max}`);
       }
     }
 
     // 3. Rate of Change & Frozen Signal Detection
-    const prev = this.tagHistory.get(tag);
     const deviceTime = raw.deviceTimestamp ? new Date(raw.deviceTimestamp).getTime() : now;
 
     if (prev && !isNaN(numValue) && typeof prev.lastValue === "number") {
@@ -165,7 +228,10 @@ export class DataQualityEngine {
           const frozenDuration = now - prev.frozenSinceTimestamp;
           const maxFrozenMs = rule?.frozenTimeoutMs ?? 180000; // 3 min default
           if (frozenDuration > maxFrozenMs) {
-            if (quality === "GOOD") quality = "UNCERTAIN";
+            if (quality === "GOOD") {
+              quality = "UNCERTAIN";
+              qualityReason = "TIMEOUT";
+            }
             reasons.push(`STALE_FROZEN_SIGNAL: flatline for ${(frozenDuration / 1000).toFixed(0)}s`);
           }
         } else {
@@ -179,7 +245,10 @@ export class DataQualityEngine {
       if (maxRate && deltaSec > 0) {
         const ratePerSec = deltaVal / deltaSec;
         if (ratePerSec > maxRate) {
-          if (quality === "GOOD") quality = "UNCERTAIN";
+          if (quality === "GOOD" || quality === "SIMULATED") {
+            quality = "UNCERTAIN";
+            qualityReason = "RATE_OF_CHANGE_EXCEEDED";
+          }
           reasons.push(`EXCESSIVE_RATE_OF_CHANGE: rate ${ratePerSec.toFixed(2)}/s exceeded limit ${maxRate}/s`);
         }
       }
@@ -188,6 +257,7 @@ export class DataQualityEngine {
       prev.lastValue = raw.value ?? numValue;
       prev.lastTimestamp = deviceTime;
       prev.sampleCount++;
+      prev.runtimeMode = runtimeMode;
     } else {
       // First observation
       this.tagHistory.set(tag, {
@@ -195,6 +265,7 @@ export class DataQualityEngine {
         lastTimestamp: deviceTime,
         frozenSinceTimestamp: now,
         sampleCount: 1,
+        runtimeMode,
       });
     }
 
@@ -205,35 +276,73 @@ export class DataQualityEngine {
       reasons.push(`DEVICE_CLOCK_SKEW: ${Math.round(clockSkewMs / 1000)}s discrepancy`);
     }
 
-    // Assemble Canonical Industrial Data Point
+    // 5. Provenance integrity check (provenance cannot be silently removed)
+    const sourceId = raw.sourceId || raw.deviceId || (isSimulated ? "SIM-SOURCE-01" : "PLC-SOURCE-01");
+    const driverId = raw.driverId || raw.deviceId || "DRIVER-UNKNOWN";
+    const deviceId = raw.deviceId || raw.equipmentId || "DEV-DEFAULT";
+    const assetId = raw.assetId || raw.equipmentId || tag.split(".")[0] || "ASSET-DEFAULT";
+    const protocol: CanonicalIndustrialProtocol = raw.protocol
+      ? normalizeProtocol(raw.protocol)
+      : (isSimulated ? "CANONICAL_TEST" : "OPC_UA");
+
+    const sourceType: IndustrialSourceType = raw.sourceType || (isSimulated ? "SIMULATOR" : "PLC");
+    const dataType: IndustrialDataType =
+      raw.dataType && ["FLOAT", "FLOAT32", "FLOAT64", "INT16", "INT32", "INT64", "UINT16", "UINT32", "BOOLEAN", "STRING"].includes(raw.dataType)
+        ? (raw.dataType as IndustrialDataType)
+        : typeof raw.value === "boolean"
+        ? "BOOLEAN"
+        : typeof raw.value === "string"
+        ? "STRING"
+        : "FLOAT";
+
+    const calibrationState: IndustrialCalibrationState = raw.calibrationState || "CALIBRATED";
+    const sequence = raw.sequence ?? raw.sequenceNumber ?? 0;
+    const engineeringUnit = raw.engineeringUnit ?? raw.unit ?? "";
+
+    if (reasons.length > 0 && quality === "GOOD") {
+      // If reasons contain violations, adjust quality
+      if (reasons.some((r) => r.includes("VIOLATION") || r.includes("BLOCKED"))) {
+        quality = activeProfile === "PRODUCTION" || !isSimulated ? "BAD" : "SIMULATED";
+        qualityReason = "PROVENANCE_MISMATCH";
+      }
+    }
+
+    // Assemble Canonical Industrial Data Point (All 17 fields strictly populated)
     const normalizedPoint: IndustrialDataPoint = {
+      runtimeMode,
+      sourceType,
+      sourceId,
+      driverId,
+      protocol,
+      deviceId,
+      assetId,
+      tagId: tag,
+      value: raw.value !== undefined ? raw.value : (!isNaN(numValue) ? numValue : 0),
+      engineeringUnit,
+      dataType,
+      deviceTimestamp: raw.deviceTimestamp || nowIso,
+      ingestionTimestamp: raw.ingestionTimestamp || nowIso,
+      sequence,
+      quality,
+      qualityReason,
+      calibrationState,
+      schemaVersion: "4.0.0",
+
+      // Retrocompatibility aliases
       id: raw.id || `dp-${tag}-${now}`,
       tag,
-      equipmentId: raw.equipmentId,
-      deviceId: raw.deviceId,
-      assetId: raw.assetId,
+      equipmentId: assetId,
       siteId: raw.siteId,
       areaId: raw.areaId,
       tenantId: raw.tenantId,
-      value: raw.value !== undefined ? raw.value : numValue,
       rawValue: raw.rawValue !== undefined ? raw.rawValue : raw.value,
       engValue: !isNaN(numValue) ? numValue : undefined,
-      unit: raw.unit || "",
-      dataType: raw.dataType || (typeof raw.value === "boolean" ? "BOOLEAN" : typeof raw.value === "string" ? "STRING" : "FLOAT"),
+      unit: engineeringUnit,
       scale: raw.scale ?? 1,
       offset: raw.offset ?? 0,
       deadband: raw.deadband ?? rule?.minDeadband ?? 0,
       samplingInterval: raw.samplingInterval,
-      source: raw.source || (isSimulated ? "SIMULATION" : "OPC_UA"),
-      protocol: raw.protocol || (isSimulated ? "SIMULATOR" : "OPC-UA"),
-      quality,
-      qualityReason: reasons.length > 0 ? reasons.join(" | ") : raw.qualityReason,
-      deviceTimestamp: raw.deviceTimestamp || nowIso,
-      timestamp: raw.timestamp || raw.deviceTimestamp || nowIso,
-      sourceTimestamp: raw.sourceTimestamp || raw.deviceTimestamp || nowIso,
-      ingestionTimestamp: raw.ingestionTimestamp || nowIso,
-      sequence: raw.sequence,
-      sequenceNumber: raw.sequenceNumber,
+      source: isSimulated ? "SIMULATION" : "OPC_UA",
       isHistorical: raw.isHistorical ?? false,
       isSimulated,
       provenance,
@@ -242,14 +351,14 @@ export class DataQualityEngine {
       engMax: raw.engMax ?? rule?.engMax,
       description: raw.description,
       correlationId: raw.correlationId,
-      schemaVersion: "4.0.0",
+      sequenceNumber: sequence,
     };
 
     return {
       isValid: quality !== "BAD",
       finalQuality: quality,
       reasons,
-      normalizedPoint,
+      normalizedPoint: Object.freeze(normalizedPoint),
     };
   }
 

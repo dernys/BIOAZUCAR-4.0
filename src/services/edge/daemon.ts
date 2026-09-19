@@ -23,6 +23,10 @@ import { edgeLogger } from "../logger/IndustrialLogger";
 import { prometheusMetrics } from "../monitoring/PrometheusMetrics";
 import { edgeRuntimeSupervisor } from "./supervisor/EdgeRuntimeSupervisor";
 import { localTimeSeriesDatabase } from "./history/LocalTimeSeriesDatabase";
+import {
+  getRuntimeProfile,
+  assertValidProductionEnvironment,
+} from "./config/runtimeProfile";
 
 export interface EdgeDaemonConfig {
   tenantId: string;
@@ -80,6 +84,8 @@ export class BioAzucarEdgeDaemon {
     console.log("=================================================================");
     console.log("   BIOAZÚCAR 4.0 — INDUSTRIAL EDGE DAEMON (IEC 62443 L2/L3)      ");
     console.log("=================================================================");
+    const profile = getRuntimeProfile();
+    console.log(`[DAEMON] Runtime Profile:     ${profile}`);
     console.log(`[DAEMON] Tenant ID:           ${this.config.tenantId}`);
     console.log(`[DAEMON] Edge Node ID:        ${this.config.edgeId}`);
     console.log(`[DAEMON] Cloud Target:        ${this.config.cloudSyncUrl}`);
@@ -89,6 +95,17 @@ export class BioAzucarEdgeDaemon {
     console.log(`[DAEMON] Health Watchdog:     http://0.0.0.0:${this.config.healthPort}/health`);
     console.log(`[DAEMON] Transmission Auth:   HMAC-SHA256 (300s Anti-Replay Guard)`);
     console.log("-----------------------------------------------------------------");
+
+    if (profile === "PRODUCTION") {
+      assertValidProductionEnvironment({
+        runtimeProfile: "PRODUCTION",
+        isSimulated: false,
+        isSimulatedFallback: false,
+        isMock: false,
+        driverType: "PLC",
+        allowSimulation: false,
+      });
+    }
 
     this.isRunning = true;
 

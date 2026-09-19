@@ -18,6 +18,10 @@ import {
   TagSubscriptionHandle,
 } from "./IIndustrialDriver";
 import { IndustrialProtocol, IndustrialDataPoint } from "../../../types";
+import {
+  getRuntimeProfile,
+  assertValidProductionEnvironment,
+} from "../config/runtimeProfile";
 
 export type CipDataType =
   | "BOOL"
@@ -96,6 +100,19 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
   constructor(config: DriverConfig) {
     this.id = config.id;
     this.config = config;
+
+    const profile = getRuntimeProfile();
+    if (profile === "PRODUCTION") {
+      assertValidProductionEnvironment({
+        driverId: this.id,
+        driverType: "PLC",
+        isSimulated: config.isSimulatedFallback === true || config.customParameters?.isSimulated === true,
+        isSimulatedFallback: config.isSimulatedFallback === true,
+        isMock: config.isMock === true || config.customParameters?.isMock === true,
+        protocol: "ETHERNET_IP",
+        endpoint: config.endpoint,
+      });
+    }
   }
 
   get status(): DriverStatus {
@@ -163,8 +180,15 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
     const t0 = Date.now();
     this.txPackets++;
 
+    const profile = getRuntimeProfile();
+    const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
+
     let entry = this.tagDatabase.get(tag);
     if (!entry) {
+      if (profile === "PRODUCTION") {
+        this.readErrorCount++;
+        throw new Error(`CIP tag '${tag}' not mapped on device '${this.id}'. Auto-discovery prohibited in PRODUCTION.`);
+      }
       // Create auto-discovered CIP tag if it has valid identifier syntax
       if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tag)) {
         entry = {
@@ -180,32 +204,45 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
       }
     }
 
-    const latency = Math.max(1, Date.now() - t0 + Math.floor(Math.random() * 3));
+    const latency = Math.max(1, Date.now() - t0 + (profile === "PRODUCTION" ? 2 : Math.floor(Math.random() * 3)));
     this.avgLatencyMs = Number(((this.avgLatencyMs * 0.9) + (latency * 0.1)).toFixed(2));
     this.readSuccessCount++;
     this.rxPackets++;
-    this.lastHeartbeat = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    this.lastHeartbeat = nowIso;
 
-    const isSimulated = this.config.isSimulatedFallback ?? true;
     const numVal = typeof entry.value === "number" ? entry.value : entry.value ? 1 : 0;
+    const unit = entry.unit || this.resolveUnit(tag);
 
     return {
-      id: `dp-cip-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      tag: entry.tagName,
+      runtimeMode: profile,
+      sourceType: isSimulated ? "SIMULATOR" : "PLC",
+      sourceId: this.config.sourceId || this.id,
+      driverId: this.id,
+      protocol: "ETHERNET_IP",
       deviceId: this.id,
+      assetId: this.config.assetId || tag.split(".")[0] || "ASSET-DEFAULT",
+      tagId: entry.tagName,
       value: numVal,
+      engineeringUnit: unit,
+      dataType: entry.dataType === "BOOL" ? "BOOLEAN" : "FLOAT32",
+      deviceTimestamp: nowIso,
+      ingestionTimestamp: nowIso,
+      sequence: this.readSuccessCount,
+      quality: "GOOD",
+      qualityReason: "NORMAL",
+      calibrationState: "CALIBRATED",
+      schemaVersion: "4.0.0",
+
+      // Legacy fields
+      id: `dp-cip-${Date.now()}-${this.readSuccessCount}`,
+      tag: entry.tagName,
       rawValue: numVal,
       engValue: numVal,
-      unit: entry.unit || this.resolveUnit(tag),
-      dataType: entry.dataType === "BOOL" ? "BOOLEAN" : "FLOAT",
-      quality: "GOOD",
-      source: isSimulated ? "SIMULATION" : "OPC_UA",
-      protocol: (isSimulated ? "SIMULATOR" : "OPC_UA") as any,
-      deviceTimestamp: new Date().toISOString(),
-      ingestionTimestamp: new Date().toISOString(),
+      unit,
+      source: isSimulated ? "SIMULATION" : "ETHERNET_IP",
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
-      schemaVersion: "4.0.0",
     };
   }
 

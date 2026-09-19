@@ -17,6 +17,10 @@ import {
   TagSubscriptionHandle,
 } from "./IIndustrialDriver";
 import { IndustrialProtocol, IndustrialDataPoint } from "../../../types";
+import {
+  getRuntimeProfile,
+  assertValidProductionEnvironment,
+} from "../config/runtimeProfile";
 
 export class OpcUaDriverAdapter implements IIndustrialDriver {
   readonly id: string;
@@ -58,6 +62,19 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
   constructor(config: DriverConfig) {
     this.id = config.id;
     this.config = config;
+
+    const profile = getRuntimeProfile();
+    if (profile === "PRODUCTION") {
+      assertValidProductionEnvironment({
+        driverId: this.id,
+        driverType: "PLC",
+        isSimulated: config.isSimulatedFallback === true || config.customParameters?.isSimulated === true,
+        isSimulatedFallback: config.isSimulatedFallback === true,
+        isMock: config.isMock === true || config.customParameters?.isMock === true,
+        protocol: "OPC_UA",
+        endpoint: config.endpoint,
+      });
+    }
   }
 
   get status(): DriverStatus {
@@ -191,39 +208,59 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
     const t0 = Date.now();
     this.txPackets++;
 
+    const profile = getRuntimeProfile();
+    const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
+
     // Lookup value
     let val = this.tagValues.get(tag);
     if (val === undefined) {
-      // Generate realistic dynamic variation if configured or default to 0
+      if (profile === "PRODUCTION") {
+        this.readErrorCount++;
+        throw new Error(`OPC UA tag '${tag}' not mapped on server '${this.id}'. Synthetic fallback prohibited in PRODUCTION.`);
+      }
       val = 50.0 + (Math.sin(Date.now() / 10000) * 5);
       this.tagValues.set(tag, val);
     }
 
-    const latency = Math.max(1, Date.now() - t0 + Math.floor(Math.random() * 5));
+    const latency = Math.max(1, Date.now() - t0 + (profile === "PRODUCTION" ? 2 : Math.floor(Math.random() * 5)));
     this.avgLatencyMs = Number(((this.avgLatencyMs * 0.9) + (latency * 0.1)).toFixed(2));
     this.readSuccessCount++;
     this.rxPackets++;
-    this.lastHeartbeat = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    this.lastHeartbeat = nowIso;
 
-    const isSimulated = this.config.isSimulatedFallback ?? true;
+    const unit = tag.includes("Pressure") ? "bar" : tag.includes("TCH") ? "t/h" : tag.includes("Power") ? "MW" : "%";
+    const engValue = typeof val === "number" ? Number(val.toFixed(2)) : undefined;
 
     return {
-      id: `dp-opc-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      tag,
+      runtimeMode: profile,
+      sourceType: isSimulated ? "SIMULATOR" : "PLC",
+      sourceId: this.config.sourceId || this.id,
+      driverId: this.id,
+      protocol: "OPC_UA",
       deviceId: this.id,
+      assetId: this.config.assetId || tag.split(".")[0] || "ASSET-DEFAULT",
+      tagId: tag,
       value: typeof val === "number" ? Number(val.toFixed(2)) : val,
-      rawValue: val,
-      engValue: typeof val === "number" ? Number(val.toFixed(2)) : undefined,
-      unit: tag.includes("Pressure") ? "bar" : tag.includes("TCH") ? "t/h" : tag.includes("Power") ? "MW" : "%",
-      dataType: typeof val === "number" ? "FLOAT" : "STRING",
+      engineeringUnit: unit,
+      dataType: typeof val === "number" ? "FLOAT32" : "STRING",
+      deviceTimestamp: nowIso,
+      ingestionTimestamp: nowIso,
+      sequence: this.readSuccessCount,
       quality: "GOOD",
+      qualityReason: "NORMAL",
+      calibrationState: "CALIBRATED",
+      schemaVersion: "4.0.0",
+
+      // Legacy fields
+      id: `dp-opc-${Date.now()}-${this.readSuccessCount}`,
+      tag,
+      rawValue: val,
+      engValue,
+      unit,
       source: isSimulated ? "SIMULATION" : "OPC_UA",
-      protocol: isSimulated ? "SIMULATOR" : "OPC-UA",
-      deviceTimestamp: new Date().toISOString(),
-      ingestionTimestamp: new Date().toISOString(),
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
-      schemaVersion: "4.0.0",
     };
   }
 

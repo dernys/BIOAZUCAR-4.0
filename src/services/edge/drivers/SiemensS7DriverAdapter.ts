@@ -17,6 +17,10 @@ import {
   TagSubscriptionHandle,
 } from "./IIndustrialDriver";
 import { IndustrialProtocol, IndustrialDataPoint } from "../../../types";
+import {
+  getRuntimeProfile,
+  assertValidProductionEnvironment,
+} from "../config/runtimeProfile";
 
 export type S7AreaType = "DB" | "INPUTS" | "OUTPUTS" | "FLAGS" | "TIMERS" | "COUNTERS";
 
@@ -76,6 +80,19 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
   constructor(config: DriverConfig) {
     this.id = config.id;
     this.config = config;
+
+    const profile = getRuntimeProfile();
+    if (profile === "PRODUCTION") {
+      assertValidProductionEnvironment({
+        driverId: this.id,
+        driverType: "PLC",
+        isSimulated: config.isSimulatedFallback === true || config.customParameters?.isSimulated === true,
+        isSimulatedFallback: config.isSimulatedFallback === true,
+        isMock: config.isMock === true || config.customParameters?.isMock === true,
+        protocol: "SIEMENS_S7",
+        endpoint: config.endpoint,
+      });
+    }
 
     this.rack = config.customParameters?.rack ?? 0;
     this.slot = config.customParameters?.slot ?? (config.endpoint?.includes("s7-1200") ? 1 : 2);
@@ -252,9 +269,16 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
     const t0 = Date.now();
     this.txPackets++;
 
+    const profile = getRuntimeProfile();
+    const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
+
     const address = this.resolveAddress(tag);
     let val = this.memoryMap.get(address) ?? this.memoryMap.get(tag);
     if (val === undefined) {
+      if (profile === "PRODUCTION") {
+        this.readErrorCount++;
+        throw new Error(`S7 tag '${tag}' not mapped on PLC '${this.id}'. Synthetic fallback prohibited in PRODUCTION.`);
+      }
       try {
         SiemensS7DriverAdapter.parseS7Address(address);
         val = 50.0;
@@ -265,31 +289,44 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
       }
     }
 
-    const latency = Math.max(1, Date.now() - t0 + Math.floor(Math.random() * 4));
+    const latency = Math.max(1, Date.now() - t0 + (profile === "PRODUCTION" ? 2 : Math.floor(Math.random() * 4)));
     this.avgLatencyMs = Number(((this.avgLatencyMs * 0.9) + (latency * 0.1)).toFixed(2));
     this.readSuccessCount++;
     this.rxPackets++;
-    this.lastHeartbeat = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    this.lastHeartbeat = nowIso;
 
-    const isSimulated = this.config.isSimulatedFallback ?? true;
+    const unit = this.resolveUnit(tag);
 
     return {
-      id: `dp-s7-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      tag,
+      runtimeMode: profile,
+      sourceType: isSimulated ? "SIMULATOR" : "PLC",
+      sourceId: this.config.sourceId || this.id,
+      driverId: this.id,
+      protocol: "SIEMENS_S7",
       deviceId: this.id,
+      assetId: this.config.assetId || tag.split(".")[0] || "ASSET-DEFAULT",
+      tagId: tag,
       value: val,
-      rawValue: val,
-      engValue: val,
-      unit: this.resolveUnit(tag),
-      dataType: "FLOAT",
+      engineeringUnit: unit,
+      dataType: typeof val === "number" ? "FLOAT32" : "STRING",
+      deviceTimestamp: nowIso,
+      ingestionTimestamp: nowIso,
+      sequence: this.readSuccessCount,
       quality: "GOOD",
-      source: isSimulated ? "SIMULATION" : "OPC_UA",
-      protocol: (isSimulated ? "SIMULATOR" : "OPC_UA") as any,
-      deviceTimestamp: new Date().toISOString(),
-      ingestionTimestamp: new Date().toISOString(),
+      qualityReason: "NORMAL",
+      calibrationState: "CALIBRATED",
+      schemaVersion: "4.0.0",
+
+      // Legacy fields
+      id: `dp-s7-${Date.now()}-${this.readSuccessCount}`,
+      tag,
+      rawValue: val,
+      engValue: typeof val === "number" ? val : undefined,
+      unit,
+      source: isSimulated ? "SIMULATION" : "SIEMENS_S7",
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
-      schemaVersion: "4.0.0",
     };
   }
 
