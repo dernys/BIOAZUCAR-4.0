@@ -1,3 +1,15 @@
+# [HISTORICAL / NON-AUTHORITATIVE / REFERENCE ONLY]
+# BioAzúcar 4.0 — Production Roadmap (DOCUMENTO HISTÓRICO DE REFERENCIA)
+
+> ⚠️ **AVISO DE GOBERNANZA TÉCNICA (SINGLE SOURCE OF TRUTH):**  
+> Este documento ha sido clasificado formalmente como **HISTÓRICO Y NO AUTORITATIVO**.  
+> Los porcentajes (ej. 94%) y afirmaciones de completitud contenidos en este archivo corresponden a iteraciones pasadas y no representan el estado real auditado del proyecto.  
+> La **ÚNICA FUENTE OFICIAL DE VERDAD (SSOT)** para el estado de desarrollo, porcentajes auditados, brechas, P0s y hoja de ruta es:  
+> **`/BIOAZUCAR_MASTER_DEVELOPMENT.md`**.  
+> No utilice este archivo para tomar decisiones de despliegue, arquitectura o comisionamiento.
+
+---
+
 # BioAzúcar 4.0 — Production Roadmap & Auditoría Funcional Continua
 
 **Estrategia:** Vertical Slices hacia el Primer Despliegue en Planta Industrial  

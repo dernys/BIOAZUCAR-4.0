@@ -1,5 +1,6 @@
 import { IndustrialDataPoint } from "../../types";
 import { ForwardBatch, StoreAndForwardQueue } from "./StoreAndForwardQueue";
+import { SqliteWalEngine } from "./storage/SqliteWalEngine";
 
 export interface DiskQueueConfig {
   maxMemoryPoints?: number;
@@ -7,6 +8,7 @@ export interface DiskQueueConfig {
   syncIntervalMs?: number;
   persistenceKey?: string;
   diskJournalPath?: string;
+  sqliteDbPath?: string;
   encryptionKey?: string;
 }
 
@@ -33,7 +35,7 @@ function getNodeModules(): { fs: any; path: any; crypto: any } | null {
  * DiskStoreAndForwardEngine
  * 
  * Industrial-grade persistence engine for the Edge.
- * Combines in-memory ring-buffer speed with crash-resilient disk / local storage.
+ * Combines in-memory ring-buffer speed with crash-resilient SQLite WAL & local storage.
  * If the Edge machine loses power or internet connectivity, the un-forwarded
  * telemetry is safely encrypted and restored upon reboot (IEC 62443-4-2 compliant).
  */
@@ -45,6 +47,11 @@ export class DiskStoreAndForwardEngine {
   private isNodeEnv: boolean;
   private isSyncLoopRunning: boolean = false;
   private syncTimer: any = null;
+  private sqliteEngine: SqliteWalEngine | null = null;
+  private insertStmt: any = null;
+  private deleteStmt: any = null;
+  private inFlightStmt: any = null;
+  private rollbackStmt: any = null;
 
   constructor(config: DiskQueueConfig = {}) {
     this.persistenceKey = config.persistenceKey || "bioazucar_edge_saf_queue";
@@ -63,7 +70,59 @@ export class DiskStoreAndForwardEngine {
         ? `sec-${process.env.BIOAZUCAR_EDGE_SECRET.substring(0, 24)}`
         : "bioazucar_saf_default_aes_key_32_bytes_long");
 
+    this.initSqlite(config.sqliteDbPath);
     this.restoreFromStorage();
+  }
+
+  private initSqlite(customPath?: string): void {
+    const envSqlitePath = typeof process !== "undefined" ? process.env?.BIOAZUCAR_SAF_SQLITE_PATH : undefined;
+    const dbPath = customPath || envSqlitePath || "./data/edge-saf.sqlite";
+
+    try {
+      this.sqliteEngine = new SqliteWalEngine({ dbPath });
+      if (this.sqliteEngine.isAvailable()) {
+        this.sqliteEngine.exec(`
+          CREATE TABLE IF NOT EXISTS saf_queue (
+            id TEXT PRIMARY KEY,
+            point_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            retry_count INTEGER DEFAULT 0
+          );
+          CREATE INDEX IF NOT EXISTS idx_saf_status ON saf_queue(status, created_at);
+        `);
+
+        this.insertStmt = this.sqliteEngine.prepare(`
+          INSERT OR REPLACE INTO saf_queue (id, point_json, status, created_at, retry_count)
+          VALUES (?, ?, 'PENDING', ?, 0);
+        `);
+
+        this.deleteStmt = this.sqliteEngine.prepare(`
+          DELETE FROM saf_queue WHERE id = ?;
+        `);
+
+        this.inFlightStmt = this.sqliteEngine.prepare(`
+          UPDATE saf_queue SET status = 'IN_FLIGHT' WHERE id = ?;
+        `);
+
+        this.rollbackStmt = this.sqliteEngine.prepare(`
+          UPDATE saf_queue SET status = 'PENDING' WHERE id = ?;
+        `);
+      }
+    } catch {
+      this.sqliteEngine = null;
+    }
+  }
+
+  public isWalDurable(): boolean {
+    return this.sqliteEngine !== null && this.sqliteEngine.isAvailable() && this.sqliteEngine.isWal();
+  }
+
+  public getStorageEngine(): "SQLITE_WAL" | "JSON_FILE" | "LOCAL_STORAGE" | "MEMORY" {
+    if (this.isWalDurable()) return "SQLITE_WAL";
+    if (this.isNodeEnv) return "JSON_FILE";
+    if (typeof window !== "undefined" && window.localStorage) return "LOCAL_STORAGE";
+    return "MEMORY";
   }
 
   /**
@@ -72,6 +131,19 @@ export class DiskStoreAndForwardEngine {
   public enqueue(point: IndustrialDataPoint): boolean {
     const accepted = this.memQueue.enqueue(point);
     if (accepted) {
+      if (this.sqliteEngine && this.sqliteEngine.isAvailable() && this.insertStmt) {
+        try {
+          const mods = getNodeModules();
+          let payload = JSON.stringify(point);
+          if (this.encryptionKey && mods?.crypto) {
+            payload = "ENC:" + this.encryptData(payload, this.encryptionKey, mods.crypto);
+          }
+          const ptId = point.id || `pt-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+          this.insertStmt.run(ptId, payload, Date.now());
+        } catch {
+          // Continue with file debounce
+        }
+      }
       this.persistStateDebounced();
     }
     return accepted;
@@ -83,6 +155,24 @@ export class DiskStoreAndForwardEngine {
   public enqueueBatch(points: IndustrialDataPoint[]): number {
     const count = this.memQueue.enqueueBatch(points);
     if (count > 0) {
+      if (this.sqliteEngine && this.sqliteEngine.isAvailable() && this.insertStmt) {
+        try {
+          const mods = getNodeModules();
+          this.sqliteEngine.transaction(() => {
+            const now = Date.now();
+            for (const p of points) {
+              let payload = JSON.stringify(p);
+              if (this.encryptionKey && mods?.crypto) {
+                payload = "ENC:" + this.encryptData(payload, this.encryptionKey, mods.crypto);
+              }
+              const ptId = p.id || `pt-${now}-${Math.random().toString(36).substring(2, 9)}`;
+              this.insertStmt.run(ptId, payload, now);
+            }
+          });
+        } catch {
+          // Fallback to debounced file write
+        }
+      }
       this.persistStateDebounced();
     }
     return count;
@@ -93,12 +183,34 @@ export class DiskStoreAndForwardEngine {
   }
 
   public prepareBatch(batchSize: number = 100): ForwardBatch | null {
-    return this.memQueue.prepareForwardBatch(batchSize);
+    const batch = this.memQueue.prepareForwardBatch(batchSize);
+    if (batch && this.sqliteEngine && this.sqliteEngine.isAvailable() && this.inFlightStmt) {
+      try {
+        this.sqliteEngine.transaction(() => {
+          for (const p of batch.points) {
+            if (p.id) {
+              this.inFlightStmt.run(p.id);
+            }
+          }
+        });
+      } catch {
+        // Continue
+      }
+    }
+    return batch;
   }
 
   public acknowledgeBatch(batchId: string): boolean {
     const acked = this.memQueue.acknowledgeBatch(batchId);
     if (acked) {
+      if (this.sqliteEngine && this.sqliteEngine.isAvailable() && this.deleteStmt) {
+        try {
+          // Also purge any finalized points from SQLite
+          this.sqliteEngine.exec(`DELETE FROM saf_queue WHERE status = 'IN_FLIGHT';`);
+        } catch {
+          // Continue
+        }
+      }
       this.persistStateDebounced();
     }
     return acked;
@@ -106,6 +218,13 @@ export class DiskStoreAndForwardEngine {
 
   public rollbackBatch(batchId: string): void {
     this.memQueue.rollbackBatch(batchId);
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      try {
+        this.sqliteEngine.exec(`UPDATE saf_queue SET status = 'PENDING' WHERE status = 'IN_FLIGHT';`);
+      } catch {
+        // Continue
+      }
+    }
   }
 
   public getState() {
@@ -128,6 +247,11 @@ export class DiskStoreAndForwardEngine {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
+
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      this.sqliteEngine.checkpoint();
+    }
+
     const pending = this.memQueue.peek(50000);
     const mods = getNodeModules();
 
@@ -167,6 +291,38 @@ export class DiskStoreAndForwardEngine {
    */
   private restoreFromStorage(): void {
     const mods = getNodeModules();
+
+    // 1. First attempt restoration from SQLite WAL
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      try {
+        const rows = this.sqliteEngine.prepare(`
+          SELECT point_json FROM saf_queue WHERE status = 'PENDING' ORDER BY created_at ASC;
+        `).all() as any[];
+
+        if (rows && rows.length > 0) {
+          const restored: IndustrialDataPoint[] = [];
+          for (const row of rows) {
+            let json = String(row.point_json);
+            if (this.encryptionKey && json.startsWith("ENC:") && mods?.crypto) {
+              json = this.decryptData(json.slice(4), this.encryptionKey, mods.crypto);
+            }
+            try {
+              const pt = JSON.parse(json) as IndustrialDataPoint;
+              if (pt && pt.tag) restored.push(pt);
+            } catch {}
+          }
+          if (restored.length > 0) {
+            this.memQueue.enqueueBatch(restored);
+          }
+        }
+        // When SQLite WAL is active, it is the authoritative store; do not resurrect old acknowledged points from file
+        return;
+      } catch {
+        // Fallback to file restoration
+      }
+    }
+
+    // 2. Fallback to flat file journal
     if (mods) {
       try {
         const { fs } = mods;
@@ -283,3 +439,4 @@ export class DiskStoreAndForwardEngine {
 }
 
 export const diskStoreAndForward = new DiskStoreAndForwardEngine();
+

@@ -1,3 +1,15 @@
+# [HISTORICAL / NON-AUTHORITATIVE / REFERENCE ONLY]
+# BioAzúcar 4.0 — Implementation State (DOCUMENTO HISTÓRICO DE REFERENCIA)
+
+> ⚠️ **AVISO DE GOBERNANZA TÉCNICA (SINGLE SOURCE OF TRUTH):**  
+> Este documento ha sido clasificado formalmente como **HISTÓRICO Y NO AUTORITATIVO**.  
+> Los porcentajes (ej. 58%) y tablas de estado contenidos en este archivo corresponden a iteraciones pasadas y no representan el estado real auditado del proyecto.  
+> La **ÚNICA FUENTE OFICIAL DE VERDAD (SSOT)** para el estado de desarrollo, métricas auditadas, brechas, P0s y hoja de ruta es:  
+> **`/BIOAZUCAR_MASTER_DEVELOPMENT.md`**.  
+> No utilice este archivo para tomar decisiones de despliegue, arquitectura o comisionamiento.
+
+---
+
 # BioAzúcar 4.0 — Persistent Implementation State
 
 **Última actualización:** 2026-09-15T13:40:00Z  
