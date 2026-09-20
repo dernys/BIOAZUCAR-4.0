@@ -69,10 +69,7 @@ export function resetRateLimits(): void {
  */
 export function securityHeadersMiddleware(_req: Request, res: Response, next: NextFunction) {
   res.setHeader("X-Content-Type-Options", "nosniff");
-  // Allow embedding within AI Studio preview iframe in development/preview environments
-  if (process.env.NODE_ENV === "production" && !process.env.AIS_PREVIEW) {
-    res.setHeader("X-Frame-Options", "SAMEORIGIN");
-  }
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");

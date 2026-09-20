@@ -4,18 +4,35 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Defensive handler: prevent external browser extensions (e.g. MetaMask, Web3 providers)
+      // Defensive handler: prevent external browser extensions and benign platform [vite] HMR logs
       // from throwing unhandled rejections or polluting window error events in sandboxed iframes
       (function() {
-        // Intercept expected benign platform [vite] websocket disconnection logs in AI Studio preview
+        var isViteOrExtensionLog = function(args) {
+          for (var i = 0; i < args.length; i++) {
+            var arg = args[i];
+            if (typeof arg === 'string' && (arg.indexOf('[vite]') !== -1 || arg.indexOf('failed to connect to websocket') !== -1)) {
+              return true;
+            }
+          }
+          return false;
+        };
+
         var origConsoleError = console.error;
         console.error = function() {
-          var firstArg = arguments[0];
-          if (typeof firstArg === 'string' && firstArg.indexOf('[vite] failed to connect to websocket') !== -1) {
+          if (isViteOrExtensionLog(arguments)) {
             console.debug.apply(console, arguments);
             return;
           }
           return origConsoleError.apply(console, arguments);
+        };
+
+        var origConsoleWarn = console.warn;
+        console.warn = function() {
+          if (isViteOrExtensionLog(arguments)) {
+            console.debug.apply(console, arguments);
+            return;
+          }
+          return origConsoleWarn.apply(console, arguments);
         };
 
         var isExtensionNoise = function(err) {
@@ -26,6 +43,9 @@
           }
           var lower = msg.toLowerCase();
           return (
+            lower.includes('[vite]') ||
+            lower.includes('failed to connect to websocket') ||
+            lower.includes('websocket closed') ||
             lower.includes('metamask') ||
             lower.includes('failed to connect to metamask') ||
             lower.includes('ethereum') ||

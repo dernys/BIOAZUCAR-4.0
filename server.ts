@@ -19,6 +19,7 @@ import {
 import { bootstrapDatabaseWithAdminSdk } from "./src/server/bootstrapService";
 import { getAdminFirestore } from "./src/server/firebaseAdmin";
 import { getMetrics, getMetricsContentType, trackHttpRequest } from "./src/services/metrics";
+import { AiModelGatewayService } from "./src/services/ai/gateway/AiModelGatewayService";
 
 dotenv.config();
 
@@ -73,10 +74,12 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-// Prometheus / OpenMetrics scrape endpoint (Operations / SIEM / Grafana)
+// Prometheus / OpenMetrics scrape endpoint (Operations / SIEM / Grafana / AI Gateway)
 app.get("/metrics", async (_req, res) => {
   res.setHeader("Content-Type", getMetricsContentType());
-  res.send(await getMetrics());
+  const scadaMetrics = await getMetrics();
+  const aiMetrics = AiModelGatewayService.getInstance().exportPrometheusMetrics();
+  res.send(`${scadaMetrics}\n\n${aiMetrics}`);
 });
 
 // Privileged Backend Database Bootstrap (SEC-6: Server Admin SDK only)
@@ -1762,19 +1765,54 @@ Devuelve SIEMPRE un JSON válido con esta estructura:
 
     const prompt = `Mensaje del usuario: "${message}"\nMódulo actual: ${context?.currentModule || 'dashboard'}\nRol: ${(context?.roles || []).join(', ')}`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        systemInstruction: systemPrompt,
+    const gateway = AiModelGatewayService.getInstance();
+    const gatewayRes = await gateway.generateCompletion({
+      prompt,
+      systemInstruction: systemPrompt,
+      responseFormat: "json",
+      context: {
+        currentModule: context?.currentModule,
+        roles: context?.roles,
+        tenantId: req.user?.tenantId,
+        userId: req.user?.uid,
+      },
+      tenantId: req.user?.tenantId,
+      userId: req.user?.uid,
+      preferredProvider: req.body?.preferredProvider,
+    });
+
+    const parsed = gatewayRes.parsedJson || JSON.parse(gatewayRes.text || "{}");
+
+    // Server-side audit event for AI completion (IEC 62443 SL3 audit requirement)
+    logServerAuditEvent({
+      actorUid: req.user?.uid || "anonymous",
+      actorRole: req.user?.role || "operador",
+      tenantId: req.user?.tenantId || "tenant-bioazucar-01",
+      action: "AI_COPILOT_INVOCATION",
+      eventType: "CONFIGURATION_CHANGE",
+      resource: "/api/copilot",
+      result: "SUCCESS",
+      severity: "INFO",
+      correlationId: gatewayRes.traceId,
+      metadata: {
+        provider: gatewayRes.provider,
+        model: gatewayRes.model,
+        tokens: gatewayRes.usage.totalTokens,
+        costUsd: gatewayRes.usage.estimatedCostUsd,
+        latencyMs: gatewayRes.latencyMs,
+        isFallback: gatewayRes.isFallback,
       },
     });
 
-    const parsed = JSON.parse(response.text || "{}");
     return res.json({
       ...parsed,
       isAiGenerated: true,
+      provider: gatewayRes.provider,
+      model: gatewayRes.model,
+      usage: gatewayRes.usage,
+      latencyMs: gatewayRes.latencyMs,
+      traceId: gatewayRes.traceId,
+      isFallback: gatewayRes.isFallback,
     });
   } catch (error: any) {
     console.error("Copilot Server Error:", error);
@@ -1784,6 +1822,77 @@ Devuelve SIEMPRE un JSON válido con esta estructura:
       error: error.message,
     });
   }
+});
+
+// AI Model Gateway Observability & Multi-Provider Status (P0-08)
+app.get("/api/ai/gateway/status", requireAuth, (_req, res) => {
+  const gateway = AiModelGatewayService.getInstance();
+  res.json({
+    activeProvider: gateway.getActiveProvider(),
+    fallbackChain: gateway.getFallbackChain(),
+    providers: gateway.getConfiguredProviders(),
+    stats: gateway.getStats(),
+  });
+});
+
+// AI Model Gateway Dynamic Provider Configuration (Admin / Cybersecurity only)
+app.post(
+  "/api/ai/gateway/config",
+  requireAuth,
+  requireRole(["superadmin", "admin", "ciberseguridad"]),
+  (req, res) => {
+    const { primaryProvider, fallbackChain, providerConfigs } = req.body;
+    const gateway = AiModelGatewayService.getInstance();
+
+    if (primaryProvider) {
+      gateway.setActiveProvider(primaryProvider);
+    }
+    if (Array.isArray(fallbackChain)) {
+      gateway.setFallbackChain(fallbackChain);
+    }
+    if (providerConfigs && typeof providerConfigs === "object") {
+      for (const [p, cfg] of Object.entries(providerConfigs)) {
+        gateway.configureProvider(p as any, cfg as any);
+      }
+    }
+
+    logServerAuditEvent({
+      actorUid: req.user?.uid || "system",
+      actorRole: req.user?.role || "admin",
+      tenantId: req.user?.tenantId || "tenant-bioazucar-01",
+      action: "AI_GATEWAY_CONFIG_UPDATE",
+      eventType: "CONFIGURATION_CHANGE",
+      resource: "/api/ai/gateway/config",
+      result: "SUCCESS",
+      severity: "INFO",
+      metadata: {
+        primaryProvider: gateway.getActiveProvider(),
+        fallbackChain: gateway.getFallbackChain(),
+      },
+    });
+
+    res.json({
+      success: true,
+      activeProvider: gateway.getActiveProvider(),
+      fallbackChain: gateway.getFallbackChain(),
+      providers: gateway.getConfiguredProviders(),
+    });
+  }
+);
+
+// AI Model Gateway Telemetry Records (Observability buffer)
+app.get("/api/ai/gateway/records", requireAuth, (req, res) => {
+  const limit = Math.min(parseInt((req.query.limit as string) || "50", 10), 200);
+  const gateway = AiModelGatewayService.getInstance();
+  res.json({
+    records: gateway.getRecentRecords(limit),
+  });
+});
+
+// Dedicated AI Model Gateway OpenMetrics endpoint
+app.get("/api/ai/gateway/metrics", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain; version=0.0.4");
+  res.send(AiModelGatewayService.getInstance().exportPrometheusMetrics());
 });
 
 // Setup Vite development middleware or static file serving

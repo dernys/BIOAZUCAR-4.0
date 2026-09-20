@@ -16,12 +16,14 @@ import {
   Layers,
   ArrowRight,
   Info,
+  Cpu,
 } from "lucide-react";
 import { TelemetryData, UserRole, TenantEnterprise, EquipmentItem, AlarmEvent } from "../types";
 import { OperationalPredictionsView } from "./bioai/OperationalPredictionsView";
 import { RootCauseAnalysisView } from "./bioai/RootCauseAnalysisView";
 import { IndustrialRecommendationsView } from "./bioai/IndustrialRecommendationsView";
 import { IndustrialGatewayStatusView } from "./bioai/IndustrialGatewayStatusView";
+import { AiModelGatewayManagerView } from "./bioai/AiModelGatewayManagerView";
 import {
   diagnoseAnomalyWithAI,
   optimizeCombustionWithAI,
@@ -44,6 +46,7 @@ export type BioAiTab =
   | "root_cause_analysis"
   | "recommendations"
   | "gateway_status"
+  | "model_gateway"
   | "copilot_assistant";
 
 export const AICenter: React.FC<AICenterProps> = ({
@@ -210,6 +213,18 @@ export const AICenter: React.FC<AICenterProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveBioAiTab("model_gateway")}
+          className={`px-4 py-2 rounded-lg text-xs font-mono transition flex items-center gap-2 ${
+            activeBioAiTab === "model_gateway"
+              ? "bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-600/30"
+              : "bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800"
+          }`}
+        >
+          <Cpu className="w-4 h-4" />
+          <span>Gateway Modelos IA & Costos</span>
+        </button>
+
+        <button
           onClick={() => setActiveBioAiTab("copilot_assistant")}
           className={`px-4 py-2 rounded-lg text-xs font-mono transition flex items-center gap-2 ${
             activeBioAiTab === "copilot_assistant"
@@ -255,6 +270,13 @@ export const AICenter: React.FC<AICenterProps> = ({
           telemetry={telemetry}
           activeTenant={activeTenant}
           onNavigateToTab={onNavigateToTab}
+        />
+      )}
+
+      {activeBioAiTab === "model_gateway" && (
+        <AiModelGatewayManagerView
+          currentRole={currentRole}
+          activeTenant={activeTenant}
         />
       )}
 

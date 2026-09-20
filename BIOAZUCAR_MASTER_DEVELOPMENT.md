@@ -100,14 +100,15 @@ Ejecución directa y no simulada de los tres comandos de verificación canónica
 ✓ src/__tests__/kpiEngine.test.ts (3 tests) 9ms
 ✓ src/__tests__/cmmsMetrics.test.ts (2 tests) 6ms
 ✓ src/__tests__/multiTenantAndAlarms.test.ts (2 tests) 6ms
-... [40 test files ejecutados en total]
+✓ src/__tests__/p0AiModelGateway.test.ts (10 tests) 18ms
+... [41 test files ejecutados en total]
 
-Test Files:  40 passed (40)
-Tests:       404 passed (404)
+Test Files:  41 passed (41)
+Tests:       414 passed (414)
 Failed:      0
 Skipped:     0
-Start at:    16:29:52 UTC
-Duration:    28.85s (transform 2.61s, setup 0ms, import 13.80s, tests 3.75s, environment 7ms)
+Start at:    14:01:14 UTC
+Duration:    28.92s (transform 2.64s, setup 0ms, import 13.57s, tests 3.86s, environment 7ms)
 Resultado:   EXIT CODE 0 (GREEN)
 ```
 
@@ -804,8 +805,10 @@ Estos diez bloqueadores impiden la entrada de BioAzúcar 4.0 a una fábrica en o
 * **Evidencia Técnica:** Verificado en `src/__tests__/p0HilValidationEngine.test.ts` con 16/16 tests unitarios pasando al 100%. Módulos implementados en `src/services/edge/hil/` (`types.ts`, `SignalConverters.ts`, `HilProcessSimulator.ts`, `FaultInjectionBus.ts`, `HilValidationEngine.ts`). Integración verificada con `ModbusDriverAdapter`. Cómputo global: 40 suites, 404 tests verdes.
 
 ### [P0-08] AI MODEL GATEWAY MULTI-PROVEEDOR & OBSERVABILIDAD
-* **Descripción:** Desacoplar las llamadas a Google Gemini mediante un Gateway unificado con soporte para OpenAI, Anthropic, Azure y modelos locales on-premise con Ollama, incluyendo observabilidad de tokens y costos.
-* **Criterio de Aceptación:** Conmutación transparente entre proveedores de IA mediante configuración y registro exacto de `inputTokens`, `outputTokens` y latencia en auditoría.
+* **Estado:** **`COMPLETED & VERIFIED [TESTED MULTI_PROVIDER_GATEWAY]`**
+* **Descripción:** Desacoplar las llamadas a Google Gemini mediante un Gateway unificado con soporte para OpenAI, Anthropic, Azure, Ollama (on-premise air-gapped con costo $0.00) y Mock determinista industrial, incluyendo observabilidad granular de tokens, estimación de costos en USD, conmutación en caliente (failover automático) y exposición OpenMetrics para Prometheus.
+* **Criterio de Aceptación:** Conmutación transparente entre proveedores de IA mediante configuración y registro exacto de `promptTokens`, `completionTokens`, `totalTokens`, latencia y eventos en bitácora de auditoría IEC 62443.
+* **Evidencia Técnica:** Verificado en `src/__tests__/p0AiModelGateway.test.ts` con 10/10 tests unitarios e integrados pasando al 100%. Implementado en `src/services/ai/gateway/` (`types.ts`, `GeminiAdapter.ts`, `OpenAiAdapter.ts`, `AnthropicAdapter.ts`, `AzureOpenAiAdapter.ts`, `OllamaAdapter.ts`, `MockAiAdapter.ts`, `AiModelGatewayService.ts`). Rutas `/api/copilot`, `/api/ai/gateway/status`, `/api/ai/gateway/config`, `/api/ai/gateway/records` y `/api/ai/gateway/metrics` conectadas en `server.ts` con registro de auditoría server-side. Panel UI integrado en `AICenter.tsx` con `AiModelGatewayManagerView.tsx`. Cómputo global: 41 suites, 414 tests verdes.
 
 ### [P0-09] BIOAI REAL DATASETS & PROVENANCE
 * **Descripción:** Sustituir fallbacks y calibraciones sintéticas por datasets históricos anonimizados de zafra real, incorporando control de versiones de datos y análisis de deriva de proceso.
