@@ -500,6 +500,9 @@ export class DiskStoreAndForwardEngine {
    * Debounced journal write to prevent I/O disk thrashing
    */
   private persistStateDebounced(): void {
+    // If SQLite WAL is primary and durable, skip flat file debounced write to eliminate redundant disk thrashing
+    if (this.isWalDurable()) return;
+
     if (this.debounceTimer) return;
 
     this.debounceTimer = setTimeout(() => {

@@ -149,6 +149,50 @@ export class LocalTimeSeriesDatabase {
   }
 
   /**
+   * Enforces retention policy by purging samples older than retentionMs from both RAM and SQLite WAL.
+   */
+  public enforceRetention(): number {
+    const cutoff = Date.now() - this.retentionMs;
+    // Purge memory cache
+    for (const [tag, series] of this.tagSeries.entries()) {
+      const filtered = series.filter((s) => s.timestamp >= cutoff);
+      if (filtered.length !== series.length) {
+        this.tagSeries.set(tag, filtered);
+      }
+    }
+    // Purge SQLite WAL
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      try {
+        const stmt = this.sqliteEngine.prepare("DELETE FROM tsdb_samples WHERE timestamp < ?;");
+        const res = stmt.run(cutoff);
+        return res.changes;
+      } catch {
+        return 0;
+      }
+    }
+    return 0;
+  }
+
+  /**
+   * Returns the exact total row count stored in SQLite WAL, or sum of RAM series.
+   */
+  public getTotalRowCount(): number {
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      try {
+        const row = this.sqliteEngine.prepare("SELECT COUNT(*) as count FROM tsdb_samples;").get() as any;
+        return row?.count || 0;
+      } catch {
+        return 0;
+      }
+    }
+    let total = 0;
+    for (const series of this.tagSeries.values()) {
+      total += series.length;
+    }
+    return total;
+  }
+
+  /**
    * Records an industrial data point into the local time-series store (SQLite WAL + RAM cache).
    */
   public record(point: IndustrialDataPoint): void {
