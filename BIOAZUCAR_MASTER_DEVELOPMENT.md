@@ -23,8 +23,8 @@ Esta sección consolida el estado **real, reproducible y no ambiguo** del reposi
 | **Node.js & NPM** | Node `v22.23.2` / NPM `10.9.8` | Verificado en contenedor |
 | **Frontend Framework** | React `19.0.1` + Tailwind CSS `v4.1.14` | Compilación Vite 6.4.3 exitosa |
 | **Backend Runtime** | Express `4.21.2` + `tsx` / `esbuild` en puerto 3000 | `/server.ts` con middleware de seguridad IEC 62443 |
-| **Suites de Pruebas** | **50 suites ejecutadas (50 pasadas)** | `npx vitest run` (100% PASS) |
-| **Casos de Prueba** | **488 pruebas aprobadas (0 fallos, 0 omitidas)** | Ejecución en ~35 segundos |
+| **Suites de Pruebas** | **51 suites ejecutadas (51 pasadas)** | `npx vitest run` (100% PASS) |
+| **Casos de Prueba** | **502 pruebas aprobadas (0 fallos, 0 omitidas)** | Ejecución en ~37 segundos |
 | **Linter / Type-Check** | **0 errores, 0 advertencias** | `npm run lint` (`tsc --noEmit` EXIT CODE 0) |
 | **Compilación de Producción** | **Exitosa (Vite SPA + esbuild CJS server)** | `npm run build` (`dist/` y `dist/server.cjs`) |
 | **Backend Health Check** | **HTTP 200 OK** | `GET /api/health` y `GET /api/system/health-deep` (Deep Subsystems Audit) |
@@ -506,7 +506,7 @@ Esta matriz desglosa de manera transparente el estado de cada unidad de ingenier
 | **EDG-03** | 04 | Doble NIC Lógico (OT/IT) | 2.0 | `TESTED` `[NOT_KERNEL]`| 85% | 55% | 0% | E3 | `DualNicManager.ts` | Enrutamiento en kernel | Pruebas en host Linux multi-NIC |
 | **EDG-04** | 04 | Daemon Embebido para IPC | 2.0 | `IMPLEMENTED` | 80% | 60% | 0% | E2 | `src/services/edge/daemon.ts` | Despliegue manual | Paquetes deb/rpm firmados |
 | **OTC-01** | 05 | Driver OPC UA (IEC 62541) | 3.0 | `TESTED` `[CAPA 3/4 INTEGRATED]` | 95% | 85% | 0% | E3 | `OpcUaDriverAdapter.ts`, `TcpSocketTransport.ts`, `OpcUaBinaryCodec.ts` | Validado en banco virtual y TCP; requiere peer PLC físico externo en lab | Validar contra servidor OPC UA físico en banco de pruebas |
-| **OTC-02** | 05 | Driver Modbus TCP/RTU | 3.0 | `PARTIAL` `[SIMULATED]` | 65% | 35% | 0% | E3 | `ModbusDriverAdapter.ts` | Sin socket TCP/Serie | Integrar conexión física net.Socket |
+| **OTC-02** | 05 | Driver Modbus TCP/RTU | 3.0 | `TESTED` `[CAPA 1/2/3 INTEGRATED]` | 95% | 85% | 0% | E3 | `ModbusDriverAdapter.ts`, `ModbusBinaryCodec.ts`, `ModbusClientSession.ts` | Validado en banco virtual y TCP; requiere peer PLC físico externo en lab | Validar contra PLC Modbus físico en banco de pruebas |
 | **OTC-03** | 05 | Driver Siemens S7 (RFC 1006) | 2.5 | `PARTIAL` `[SIMULATED]` | 55% | 25% | 0% | E3 | `SiemensS7DriverAdapter.ts` | Sin socket TCP | Probar contra PLC S7-1200 en lab |
 | **OTC-04** | 05 | Driver Rockwell CIP / CIP | 2.5 | `PARTIAL` `[SIMULATED]` | 55% | 25% | 0% | E3 | `EtherNetIpDriverAdapter.ts` | Sin socket TCP | Probar contra ControlLogix emulado |
 | **OTC-05** | 05 | Conector DCS EROS | 2.0 | `PARTIAL` `[SPEC_REQ]` | 40% | 15% | 0% | E1 | `ErosDriverAdapter.ts` | Protocolo no documentado| Obtener especificación binaria |
@@ -1079,6 +1079,33 @@ Para que cualquier módulo o funcionalidad sea promovido a un estado superior en
 ---
 
 ## 34. REGISTRO DE AUDITORÍA Y CONTROL DE CAMBIOS (CHANGELOG)
+
+### Versión 4.0.0-I25-MODBUS-STACK (2026-09-23 21:30:00 UTC)
+* **Implementación I25 / [OTC-02] Real Modbus TCP/RTU Protocol Stack & Decoupled Transport Interoperability:**
+  * **Capa 1: Framing Binario, Codec y Endianness (`src/services/edge/modbus/ModbusBinaryCodec.ts`):**
+    * Serializador/deserializador de tramas de red a nivel de bytes: cabecera MBAP (TransactionId, ProtocolId=0, Length, UnitId) para Modbus TCP y cálculo de CRC-16 (polinomio 0xA001) para Modbus RTU sobre RS-485.
+    * Soporte para Function Codes estándar: FC 01 (Read Coils), FC 02 (Read Discrete Inputs), FC 03 (Read Holding Registers), FC 04 (Read Input Registers), FC 05 (Write Single Coil), FC 06 (Write Single Register), FC 15 (Write Multiple Coils), FC 16 (Write Multiple Registers).
+    * Manejo riguroso de excepciones Modbus (0x01 a 0x0B) con decodificación de código de excepción (`FC | 0x80`).
+    * Motor de endianness multiformato para palabras de 16/32 bits: Big Endian (ABCD), Little Endian (DCBA), Mid-Big / Word Swap (CDAB), Mid-Little / Byte Swap (BADC) con IEEE 754 Float32 y enteros con/sin signo.
+  * **Capa 2: Sesión de Protocolo Modbus (`src/services/edge/modbus/ModbusClientSession.ts`):**
+    * Gestor de transacciones con Transaction ID rotativo, cola de peticiones con control de timeout por trama, y desacoplamiento completo del transporte físico (`ITransportLayer`).
+    * Métodos tipados para lectura y escritura de bobinas y registros individuales o múltiples.
+  * **Capa 3: Integración de Transporte Universal (`ITransportLayer`):**
+    * Integración transparente con `TcpSocketTransport` (sockets reales `node:net` en puerto 502/802) y `LoopbackVirtualTransport` para pruebas deterministas y CI/CD.
+    * Resiliencia ante cortes de cable o enlaces caídos con reconexión automática y backoff exponencial.
+  * **Capa 4: Driver Adapter Industrial (`src/services/edge/drivers/ModbusDriverAdapter.ts`):**
+    * Implementación del contrato `IIndustrialDriver` emitiendo telemetría inmutable con el contrato canónico de 17 campos `IndustrialDataPoint`.
+    * Parser de direcciones canónicas: sintaxis 5 dígitos (00001, 10001, 30001, 40001), 6 dígitos (400001), prefijos (`HR:100:CDAB:FLOAT32`, `unit:2/IR:50`) y resolución transparente de tags simbólicos e ISA-95 (`IngenioCentral.Molienda.Molino1.PresionHidraulica`).
+    * Seguridad Modbus (Port 802): soporte de mTLS y control de acceso basado en roles (RBAC: Administrator, SecurityAdmin, Engineer, Operator).
+    * Política Fail-Closed obligatoria: En perfil `PRODUCTION` (`RuntimeProfileManager`), se prohíbe terminantemente el uso de simuladores, fallbacks sintéticos o hosts no de producción (`localhost`/`127.0.0.1`), lanzando excepciones fatales controladas.
+  * **Suite de Pruebas `src/__tests__/i25ModbusRealClientInteroperability.test.ts`:**
+    * 14 pruebas automatizadas completadas al 100%: framing binario MBAP/PDU, cálculo CRC-16 RTU, excepciones Modbus, conversión de endianness Float32/Int32, parser de direcciones 5/6 dígitos y prefijos, ciclo de vida de sesión, lectura/escritura binaria sobre transporte virtual, RBAC de seguridad Modbus, generación de `IndustrialDataPoint` congelado, Fail-Closed en Production y recuperación ante corte de enlace.
+  * **Métricas Globales Verificadas:**
+    * **51 suites ejecutadas y aprobadas (51/51, 100% PASS)**.
+    * **502 casos de prueba aprobados (0 fallos, 0 omitidos)**.
+    * `npm run lint` (`tsc --noEmit`): 0 errores.
+    * `compile_applet` (`npm run build`): Compilación exitosa.
+  * **Promoción de Estado:** Promovido módulo `OTC-02` de `PARTIAL [SIMULATED]` a **`TESTED [CAPA 1/2/3 INTEGRATED]`** (Dev: 95%, Ind: 85%, Evid: E3).
 
 ### Versión 4.0.0-I24-DURABLE-STORAGE-10K (2026-09-23 19:35:00 UTC)
 * **Implementación I24 / [P0-02] Durable Edge Storage: 10k pts/sec & Zero Data Loss Under Crash:**
