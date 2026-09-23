@@ -65,6 +65,18 @@ export class LoopbackVirtualTransport implements ITransportLayer {
     this.peerResponder = responder;
   }
 
+  public setLoopbackResponder(responder: PeerResponder): void {
+    this.setPeerResponder(responder);
+  }
+
+  public hasPeerResponder(): boolean {
+    return this.peerResponder !== null;
+  }
+
+  public hasCustomResponder(): boolean {
+    return this.hasPeerResponder();
+  }
+
   public get state(): TransportState {
     return this._state;
   }
@@ -170,6 +182,16 @@ export class LoopbackVirtualTransport implements ITransportLayer {
       handler(err);
     }
     this.triggerReconnection();
+  }
+
+  public simulateDisconnect(reason: string = "VIRTUAL_DISCONNECT"): void {
+    if (this._state !== "CONNECTED") return;
+    this.metrics.lastDisconnectedAt = new Date().toISOString();
+    const err = new Error(reason);
+    for (const handler of this.errorHandlers) {
+      handler(err);
+    }
+    this.setState("FAULTED");
   }
 
   private triggerReconnection(): void {

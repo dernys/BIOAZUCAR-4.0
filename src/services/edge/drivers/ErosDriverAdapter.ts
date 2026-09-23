@@ -3,6 +3,12 @@
  * 
  * Canonical implementation of IIndustrialDriver for the EROS Distributed Control System
  * utilized in sugar mill cane reception, milling tandems, and evaporation stations.
+ * 
+ * Integrated Architecture:
+ * - Capa 1: ErosBinaryCodec (9-byte header framing, CRC-16 Modbus, Big-Endian IEEE 754)
+ * - Capa 2: ErosClientSession (Stateful session management, 16-bit sequence tracking)
+ * - Capa 3: ITransportLayer (TcpSocketTransport over port 5020 or LoopbackVirtualTransport)
+ * - Capa 4: ErosDriverAdapter (Contract IIndustrialDriver, 17-field IndustrialDataPoint, Fail-Closed)
  */
 
 import {
@@ -21,13 +27,22 @@ import {
   getRuntimeProfile,
   assertValidProductionEnvironment,
 } from "../config/runtimeProfile";
+import { ITransportLayer } from "../transport/ITransportLayer";
+import { TcpSocketTransport } from "../transport/TcpSocketTransport";
+import { LoopbackVirtualTransport } from "../transport/LoopbackVirtualTransport";
+import {
+  ErosCommandCode,
+  ErosStatusCode,
+  ErosAreaType,
+  ErosDataType,
+  ErosParsedAddress,
+  getErosAreaCode,
+  getErosAreaChar,
+} from "../eros/ErosTypes";
+import { ErosBinaryCodec } from "../eros/ErosBinaryCodec";
+import { ErosClientSession } from "../eros/ErosClientSession";
 
-export interface ErosParsedAddress {
-  dbNumber: number;
-  areaType: "X" | "B" | "W" | "D"; // Bit, Byte, Word, DWord
-  offset: number;
-  bitIndex?: number;
-}
+export type { ErosParsedAddress };
 
 export class ErosDriverAdapter implements IIndustrialDriver {
   readonly id: string;
@@ -46,6 +61,9 @@ export class ErosDriverAdapter implements IIndustrialDriver {
   private txPackets = 0;
   private rxPackets = 0;
   private avgLatencyMs = 12;
+
+  private transport: ITransportLayer;
+  private session: ErosClientSession;
 
   private subscriptions = new Map<
     string,
@@ -67,8 +85,38 @@ export class ErosDriverAdapter implements IIndustrialDriver {
     ["DB14.DBD18", 142.0],  // Mixed juice flow (m3/h)
     ["DB16.DBD24", 68.5],   // Clarified juice Brix (°Bx)
     ["DB20.DBD08", 1.85],   // Evaporator Calandria steam pressure (bar)
+    ["DB20.DBD8", 1.85],    // Normalized offset
     ["DB22.DBD12", 26.2],   // Pan vacuum (inHg)
   ]);
+
+  public getMemoryValue(address: string): number | undefined {
+    if (this.memoryMap.has(address)) return this.memoryMap.get(address);
+    const parsed = address.match(/^DB(\d+)\.DB([XBWDbxd])(\d+)(?:\.(\d+))?$/i);
+    if (parsed) {
+      const db = parseInt(parsed[1], 10);
+      const area = parsed[2].toUpperCase();
+      const offset = parseInt(parsed[3], 10);
+      const bit = parsed[4];
+      const cand1 = `DB${db}.DB${area}${offset}${bit ? `.${bit}` : ""}`;
+      const cand2 = `DB${db}.DB${area}${offset.toString().padStart(2, "0")}${bit ? `.${bit}` : ""}`;
+      if (this.memoryMap.has(cand1)) return this.memoryMap.get(cand1);
+      if (this.memoryMap.has(cand2)) return this.memoryMap.get(cand2);
+    }
+    return undefined;
+  }
+
+  public setMemoryValue(address: string, val: number): void {
+    this.memoryMap.set(address, val);
+    const parsed = address.match(/^DB(\d+)\.DB([XBWDbxd])(\d+)(?:\.(\d+))?$/i);
+    if (parsed) {
+      const db = parseInt(parsed[1], 10);
+      const area = parsed[2].toUpperCase();
+      const offset = parseInt(parsed[3], 10);
+      const bit = parsed[4];
+      this.memoryMap.set(`DB${db}.DB${area}${offset}${bit ? `.${bit}` : ""}`, val);
+      this.memoryMap.set(`DB${db}.DB${area}${offset.toString().padStart(2, "0")}${bit ? `.${bit}` : ""}`, val);
+    }
+  }
 
   // Tag alias lookup for DCS EROS
   private tagAliasMap = new Map<string, string>([
@@ -82,7 +130,7 @@ export class ErosDriverAdapter implements IIndustrialDriver {
     ["Boiling.EROS.Pan_Vacuum_InHg", "DB22.DBD12"],
   ]);
 
-  constructor(config: DriverConfig) {
+  constructor(config: DriverConfig, transport?: ITransportLayer) {
     this.id = config.id;
     this.config = config;
 
@@ -98,31 +146,130 @@ export class ErosDriverAdapter implements IIndustrialDriver {
         endpoint: config.endpoint,
       });
     }
+
+    if (transport) {
+      this.transport = transport;
+    } else {
+      const endpoint = config.endpoint || "127.0.0.1:5020";
+      const parts = endpoint.split(":");
+      const host = parts[0] || "127.0.0.1";
+      const port = parts[1] ? parseInt(parts[1], 10) : 5020;
+
+      if (profile === "PRODUCTION") {
+        this.transport = new TcpSocketTransport(`tcp-${this.id}`, { host, port });
+      } else {
+        const loopback = new LoopbackVirtualTransport(`loopback-${this.id}`, { host, port });
+        loopback.setLoopbackResponder(this.createVirtualErosResponder());
+        this.transport = loopback;
+      }
+    }
+
+    if (this.transport instanceof LoopbackVirtualTransport && !this.transport.hasCustomResponder()) {
+      this.transport.setLoopbackResponder(this.createVirtualErosResponder());
+    }
+
+    const stationId = config.customParameters?.stationId || 1;
+    this.session = new ErosClientSession(this.transport, stationId, config.timeoutMs || 3000);
+
+    this.transport.onStateChange((_oldState, newState) => {
+      if (newState === "FAULTED") {
+        this._status = "FAULTED";
+      } else if (newState === "RECONNECTING") {
+        this._status = "CONNECTING";
+      } else if (newState === "DISCONNECTED") {
+        this._status = "DISCONNECTED";
+      }
+    });
   }
 
   get status(): DriverStatus {
     return this._status;
   }
 
+  public getSession(): ErosClientSession {
+    return this.session;
+  }
+
   /**
    * Parse EROS address notation: e.g. "DB10.DBD14" or "DB10.DBX0.1"
    */
   public static parseErosAddress(rawAddress: string): ErosParsedAddress {
-    const match = rawAddress.trim().match(/^DB(\d+)\.DB([XBWDbxd])(\d+)(?:\.(\d+))?$/i);
-    if (!match) {
-      throw new Error(`Invalid EROS memory address syntax: '${rawAddress}'. Expected format: DB<n>.DB<X|B|W|D><offset>[.<bit>]`);
-    }
+    return ErosBinaryCodec.parseAddress(rawAddress);
+  }
 
-    const dbNumber = parseInt(match[1], 10);
-    const areaType = match[2].toUpperCase() as "X" | "B" | "W" | "D";
-    const offset = parseInt(match[3], 10);
-    const bitIndex = match[4] !== undefined ? parseInt(match[4], 10) : undefined;
+  /**
+   * Virtual EROS DCS responder for automated loopback verification.
+   */
+  private createVirtualErosResponder(): (req: Uint8Array) => Uint8Array | null {
+    return (req: Uint8Array): Uint8Array | null => {
+      try {
+        const decoded = ErosBinaryCodec.decodePacket(req);
+        if (!decoded.valid || !decoded.packet) return null;
 
-    if (areaType === "X" && (bitIndex === undefined || bitIndex < 0 || bitIndex > 7)) {
-      throw new Error(`Invalid bit index in EROS bit address: '${rawAddress}'. Bit must be 0-7.`);
-    }
+        const { header, payload } = decoded.packet;
 
-    return { dbNumber, areaType, offset, bitIndex };
+        // 1. Heartbeat (0x05)
+        if (header.command === ErosCommandCode.HEARTBEAT) {
+          return ErosBinaryCodec.buildHeartbeatResponse(header.sequence, ErosStatusCode.SUCCESS, header.stationId);
+        }
+
+        // 2. Read Variable (0x03)
+        if (header.command === ErosCommandCode.READ_VARIABLE) {
+          if (payload.length < 6) return null;
+          const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+          const dbNumber = view.getUint16(0, false);
+          const areaCode = payload[2] as ErosAreaType;
+          const offset = view.getUint16(3, false);
+          const bitIndex = payload[5];
+
+          const areaChar = getErosAreaChar(areaCode);
+          const address = `DB${dbNumber}.DB${areaChar}${offset}${areaChar === "X" ? `.${bitIndex}` : ""}`;
+
+          let val = this.getMemoryValue(address);
+          if (val === undefined) {
+            val = 15.0; // default initial
+            this.setMemoryValue(address, val);
+          }
+
+          const valBytes = ErosBinaryCodec.encodeValue(val, ErosDataType.FLOAT32);
+          return ErosBinaryCodec.buildReadVariableResponse(
+            header.sequence,
+            ErosStatusCode.SUCCESS,
+            ErosDataType.FLOAT32,
+            valBytes,
+            header.stationId
+          );
+        }
+
+        // 3. Write Variable (0x04)
+        if (header.command === ErosCommandCode.WRITE_VARIABLE) {
+          if (payload.length < 7) return null;
+          const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+          const dbNumber = view.getUint16(0, false);
+          const areaCode = payload[2] as ErosAreaType;
+          const offset = view.getUint16(3, false);
+          const bitIndex = payload[5];
+          const dataType = payload[6] as ErosDataType;
+          const valBytes = payload.subarray(7);
+
+          const decodedVal = ErosBinaryCodec.decodeValue(valBytes, dataType);
+          const areaChar = getErosAreaChar(areaCode);
+          const address = `DB${dbNumber}.DB${areaChar}${offset}${areaChar === "X" ? `.${bitIndex}` : ""}`;
+
+          this.setMemoryValue(address, typeof decodedVal === "number" ? decodedVal : Number(decodedVal));
+
+          return ErosBinaryCodec.buildWriteVariableResponse(
+            header.sequence,
+            ErosStatusCode.SUCCESS,
+            header.stationId
+          );
+        }
+
+        return null;
+      } catch {
+        return null;
+      }
+    };
   }
 
   public async connect(): Promise<boolean> {
@@ -134,10 +281,7 @@ export class ErosDriverAdapter implements IIndustrialDriver {
         throw new Error("Missing EROS host/endpoint configuration");
       }
 
-      // Check protocol compatibility
-      if (this.config.protocol !== "EROS") {
-        throw new Error(`Protocol mismatch: expected 'EROS', got '${this.config.protocol}'`);
-      }
+      await this.session.connect();
 
       this._status = "AUTHENTICATED";
       this.connectedSince = new Date().toISOString();
@@ -162,6 +306,9 @@ export class ErosDriverAdapter implements IIndustrialDriver {
       if (sub.intervalTimer) clearInterval(sub.intervalTimer);
     }
     this.subscriptions.clear();
+
+    await this.session.disconnect("ErosDriverAdapter disconnect");
+
     this._status = "DISCONNECTED";
     this.connectedSince = null;
   }
@@ -193,24 +340,49 @@ export class ErosDriverAdapter implements IIndustrialDriver {
     const profile = getRuntimeProfile();
     const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
 
-    // Resolve address from tag alias or use raw tag
     const memAddress = this.resolveAddress(tag);
+    let parsed: ErosParsedAddress;
+    try {
+      parsed = ErosBinaryCodec.parseAddress(memAddress);
+    } catch (err: any) {
+      this.readErrorCount++;
+      throw new Error(`EROS Read Error: Unknown tag or invalid address '${tag}' (${err.message})`);
+    }
 
-    let val = this.memoryMap.get(memAddress);
-    if (val === undefined) {
+    let val: number = 0;
+    if (this.session && this.session.isConnected) {
+      try {
+        const areaCode = getErosAreaCode(parsed.areaType);
+        const res = await this.session.readVariable(
+          parsed.dbNumber,
+          areaCode,
+          parsed.offset,
+          parsed.bitIndex
+        );
+        val = typeof res.value === "number" ? res.value : Number(res.value);
+      } catch (err: any) {
+        if (profile === "PRODUCTION") {
+          this.readErrorCount++;
+          throw err;
+        }
+        const cached = this.memoryMap.get(memAddress);
+        if (cached === undefined) {
+          this.readErrorCount++;
+          throw err;
+        }
+        val = cached;
+      }
+    } else {
       if (profile === "PRODUCTION") {
         this.readErrorCount++;
-        throw new Error(`EROS tag '${tag}' not mapped on device '${this.id}'. Synthetic fallback prohibited in PRODUCTION.`);
+        throw new Error(`EROS DCS session not connected on '${this.id}' in PRODUCTION profile.`);
       }
-      // Validate address syntax
-      try {
-        ErosDriverAdapter.parseErosAddress(memAddress);
-        val = 10.0;
-        this.memoryMap.set(memAddress, val);
-      } catch (err: any) {
+      const cached = this.memoryMap.get(memAddress);
+      if (cached === undefined) {
         this.readErrorCount++;
-        throw new Error(`EROS Read Error: Unknown tag or invalid address '${tag}' (${err.message})`);
+        throw new Error(`EROS tag '${tag}' not mapped on device '${this.id}'`);
       }
+      val = cached;
     }
 
     const latency = Math.max(1, Date.now() - t0 + (profile === "PRODUCTION" ? 2 : Math.floor(Math.random() * 5)));
@@ -222,7 +394,7 @@ export class ErosDriverAdapter implements IIndustrialDriver {
 
     const unit = this.resolveUnit(tag);
 
-    return {
+    const dataPoint: IndustrialDataPoint = {
       runtimeMode: profile,
       sourceType: isSimulated ? "SIMULATOR" : "PLC",
       sourceId: this.config.sourceId || this.id,
@@ -233,7 +405,7 @@ export class ErosDriverAdapter implements IIndustrialDriver {
       tagId: tag,
       value: val,
       engineeringUnit: unit,
-      dataType: typeof val === "number" ? "FLOAT32" : "STRING",
+      dataType: "FLOAT32",
       deviceTimestamp: nowIso,
       ingestionTimestamp: nowIso,
       sequence: this.readSuccessCount,
@@ -252,6 +424,8 @@ export class ErosDriverAdapter implements IIndustrialDriver {
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
     };
+
+    return Object.freeze(dataPoint);
   }
 
   public async writeTag(
@@ -276,8 +450,9 @@ export class ErosDriverAdapter implements IIndustrialDriver {
     }
 
     const memAddress = this.resolveAddress(tag);
+    let parsed: ErosParsedAddress;
     try {
-      ErosDriverAdapter.parseErosAddress(memAddress);
+      parsed = ErosBinaryCodec.parseAddress(memAddress);
     } catch (err: any) {
       this.writeErrorCount++;
       throw new Error(`EROS Write Error: Invalid target address '${memAddress}' (${err.message})`);
@@ -290,6 +465,19 @@ export class ErosDriverAdapter implements IIndustrialDriver {
     }
 
     this.txPackets++;
+
+    if (this.session && this.session.isConnected) {
+      const areaCode = getErosAreaCode(parsed.areaType);
+      await this.session.writeVariable(
+        parsed.dbNumber,
+        areaCode,
+        parsed.offset,
+        numVal,
+        ErosDataType.FLOAT32,
+        parsed.bitIndex
+      );
+    }
+
     this.memoryMap.set(memAddress, numVal);
     this.writeSuccessCount++;
     this.rxPackets++;
@@ -380,7 +568,14 @@ export class ErosDriverAdapter implements IIndustrialDriver {
   }
 
   private resolveUnit(tag: string): string {
-    const lower = tag.toLowerCase();
+    let resolvedTag = tag;
+    for (const [alias, addr] of this.tagAliasMap.entries()) {
+      if (addr.toLowerCase() === tag.toLowerCase() || this.resolveAddress(alias).toLowerCase() === this.resolveAddress(tag).toLowerCase()) {
+        resolvedTag = alias;
+        break;
+      }
+    }
+    const lower = (resolvedTag + " " + tag).toLowerCase();
     if (lower.includes("rpm") || lower.includes("speed")) return "RPM";
     if (lower.includes("bar") || lower.includes("pressure")) return "bar";
     if (lower.includes("m3h") || lower.includes("flow")) return "m³/h";

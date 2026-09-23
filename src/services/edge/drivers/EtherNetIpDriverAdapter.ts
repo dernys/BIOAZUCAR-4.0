@@ -1,9 +1,15 @@
 /**
- * BioAzúcar 4.0 — Allen-Bradley EtherNet/IP (CIP) Driver Adapter
+ * BioAzúcar 4.0 — Rockwell Allen-Bradley EtherNet/IP (CIP) Driver Adapter
  * 
  * Canonical implementation of IIndustrialDriver for Rockwell Allen-Bradley ControlLogix,
  * CompactLogix, and Micro800 PLCs communicating over EtherNet/IP (CIP - Common Industrial Protocol)
  * on TCP/UDP port 44818.
+ * 
+ * Integrated Architecture:
+ * - Capa 1: CipBinaryCodec (24-byte Encapsulation Header, CPF, EPATH 0x91, Little-Endian IEEE 754)
+ * - Capa 2: CipClientSession (Stateful transaction management, 8-byte context matching, explicit messaging)
+ * - Capa 3: ITransportLayer (TcpSocketTransport over port 44818 or LoopbackVirtualTransport)
+ * - Capa 4: EtherNetIpDriverAdapter (Contract IIndustrialDriver, 17-field IndustrialDataPoint, Fail-Closed)
  */
 
 import {
@@ -22,14 +28,23 @@ import {
   getRuntimeProfile,
   assertValidProductionEnvironment,
 } from "../config/runtimeProfile";
+import { ITransportLayer } from "../transport/ITransportLayer";
+import { TcpSocketTransport } from "../transport/TcpSocketTransport";
+import { LoopbackVirtualTransport } from "../transport/LoopbackVirtualTransport";
+import {
+  CipStandardDataType,
+  EipCommand,
+  CpfTypeId,
+  CipServiceCode,
+  CipGeneralStatus,
+  CipDataTypeCode,
+  getCipDataTypeCode,
+  getCipDataTypeName,
+} from "../cip/CipTypes";
+import { CipBinaryCodec } from "../cip/CipBinaryCodec";
+import { CipClientSession } from "../cip/CipClientSession";
 
-export type CipDataType =
-  | "BOOL"
-  | "SINT"
-  | "INT"
-  | "DINT"
-  | "REAL"
-  | "STRING";
+export type CipDataType = CipStandardDataType;
 
 export interface CipTagDefinition {
   tagName: string;
@@ -49,7 +64,6 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
   private lastHeartbeat: string | null = null;
   private lastError: DriverError | null = null;
 
-  private sessionHandle: number = 0;
   private readSuccessCount = 0;
   private readErrorCount = 0;
   private writeSuccessCount = 0;
@@ -57,6 +71,9 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
   private txPackets = 0;
   private rxPackets = 0;
   private avgLatencyMs = 7;
+
+  private transport: ITransportLayer;
+  private session: CipClientSession;
 
   private subscriptions = new Map<
     string,
@@ -69,7 +86,7 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
     }
   >();
 
-  // Symbolic tag database (ControlLogix native tags)
+  // Symbolic tag database (ControlLogix native tags for sugar milling and cogeneration)
   private tagDatabase = new Map<string, CipTagDefinition>([
     [
       "Boiler_1_Main_Steam_Pressure",
@@ -97,7 +114,7 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
     ],
   ]);
 
-  constructor(config: DriverConfig) {
+  constructor(config: DriverConfig, transport?: ITransportLayer) {
     this.id = config.id;
     this.config = config;
 
@@ -113,6 +130,39 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
         endpoint: config.endpoint,
       });
     }
+
+    if (transport) {
+      this.transport = transport;
+    } else {
+      const endpoint = config.endpoint || "127.0.0.1:44818";
+      const parts = endpoint.split(":");
+      const host = parts[0] || "127.0.0.1";
+      const port = parts[1] ? parseInt(parts[1], 10) : 44818;
+
+      if (profile === "PRODUCTION") {
+        this.transport = new TcpSocketTransport(`tcp-${this.id}`, { host, port });
+      } else {
+        const loopback = new LoopbackVirtualTransport(`loopback-${this.id}`, { host, port });
+        loopback.setLoopbackResponder(this.createVirtualCipResponder());
+        this.transport = loopback;
+      }
+    }
+
+    if (this.transport instanceof LoopbackVirtualTransport && !this.transport.hasCustomResponder()) {
+      this.transport.setLoopbackResponder(this.createVirtualCipResponder());
+    }
+
+    this.session = new CipClientSession(this.transport, config.timeoutMs || 3000);
+
+    this.transport.onStateChange((_oldState, newState) => {
+      if (newState === "FAULTED") {
+        this._status = "FAULTED";
+      } else if (newState === "RECONNECTING") {
+        this._status = "CONNECTING";
+      } else if (newState === "DISCONNECTED") {
+        this._status = "DISCONNECTED";
+      }
+    });
   }
 
   get status(): DriverStatus {
@@ -120,7 +170,136 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
   }
 
   public getSessionHandle(): number {
-    return this.sessionHandle;
+    return this.session.activeSessionHandle;
+  }
+
+  public getSession(): CipClientSession {
+    return this.session;
+  }
+
+  /**
+   * Virtual ControlLogix CIP responder for automated loopback verification.
+   */
+  private createVirtualCipResponder(): (req: Uint8Array) => Uint8Array | null {
+    return (req: Uint8Array): Uint8Array | null => {
+      try {
+        const decoded = CipBinaryCodec.decodeEncapsulationPacket(req);
+        if (!decoded.valid) return null;
+
+        const header = decoded.header;
+
+        // 1. RegisterSession (0x0065)
+        if (header.command === EipCommand.REGISTER_SESSION) {
+          const sessionHandle = 0x5a1e0001;
+          return CipBinaryCodec.buildRegisterSessionResponse(sessionHandle, header.senderContext);
+        }
+
+        // 2. UnRegisterSession (0x0066)
+        if (header.command === EipCommand.UNREGISTER_SESSION) {
+          return null;
+        }
+
+        // 3. SendRRData (0x006F)
+        if (header.command === EipCommand.SEND_RR_DATA) {
+          const cpf = CipBinaryCodec.decodeCpfPacket(decoded.payload);
+          const dataItem = cpf.items.find((it) => it.typeId === CpfTypeId.UNCONNECTED_DATA);
+          if (!dataItem) return null;
+
+          const cipReq = dataItem.data;
+          const service = cipReq[0];
+
+          // Read Tag Service (0x4C)
+          if (service === CipServiceCode.READ_TAG) {
+            const tagName = this.extractTagFromCipPath(cipReq);
+            let entry = this.tagDatabase.get(tagName);
+
+            if (!entry) {
+              // Respond with 0x05 (Path Destination Unknown)
+              const errResp = new Uint8Array([CipServiceCode.READ_TAG | 0x80, 0x00, CipGeneralStatus.PATH_DESTINATION_UNKNOWN, 0x00]);
+              return CipBinaryCodec.buildSendRRDataResponse(header.sessionHandle, errResp, header.senderContext);
+            }
+
+            const dataTypeCode = getCipDataTypeCode(entry.dataType);
+            const valBytes = CipBinaryCodec.encodeValueToBytes(entry.value, entry.dataType);
+
+            // Read Tag Response: Service (0xCC), Reserved (0x00), Status (0x00), ExtStatus (0x00), TypeCode (2 bytes), Value
+            const resp = new Uint8Array(4 + 2 + valBytes.length);
+            resp[0] = CipServiceCode.READ_TAG | 0x80;
+            resp[1] = 0x00;
+            resp[2] = CipGeneralStatus.SUCCESS;
+            resp[3] = 0x00;
+            const view = new DataView(resp.buffer);
+            view.setUint16(4, dataTypeCode, true);
+            resp.set(valBytes, 6);
+
+            return CipBinaryCodec.buildSendRRDataResponse(header.sessionHandle, resp, header.senderContext);
+          }
+
+          // Write Tag Service (0x4D)
+          if (service === CipServiceCode.WRITE_TAG) {
+            const tagName = this.extractTagFromCipPath(cipReq);
+            const pathWords = cipReq[1];
+            const offset = 2 + pathWords * 2;
+            const view = new DataView(cipReq.buffer, cipReq.byteOffset, cipReq.byteLength);
+            const dataTypeCode = view.getUint16(offset, true);
+            const valBytes = cipReq.subarray(offset + 4);
+
+            const decodedVal = CipBinaryCodec.decodeByType(dataTypeCode, valBytes);
+            const typeName = getCipDataTypeName(dataTypeCode);
+
+            let entry = this.tagDatabase.get(tagName);
+            if (!entry) {
+              entry = {
+                tagName,
+                dataType: typeName,
+                value: decodedVal,
+                unit: this.resolveUnit(tagName),
+              };
+              this.tagDatabase.set(tagName, entry);
+            } else {
+              entry.value = decodedVal;
+            }
+
+            // Write Tag Response: Service (0xCD), Reserved (0x00), Status (0x00), ExtStatus (0x00)
+            const resp = new Uint8Array([CipServiceCode.WRITE_TAG | 0x80, 0x00, CipGeneralStatus.SUCCESS, 0x00]);
+            return CipBinaryCodec.buildSendRRDataResponse(header.sessionHandle, resp, header.senderContext);
+          }
+        }
+
+        return null;
+      } catch {
+        return null;
+      }
+    };
+  }
+
+  private extractTagFromCipPath(cipReq: Uint8Array): string {
+    const pathWords = cipReq[1];
+    const pathBytes = cipReq.subarray(2, 2 + pathWords * 2);
+    if (pathBytes.length < 2) return "";
+
+    let tag = "";
+    let offset = 0;
+    while (offset < pathBytes.length) {
+      const segType = pathBytes[offset];
+      if (segType === 0x91) {
+        // ANSI Extended Symbol Segment
+        const len = pathBytes[offset + 1];
+        const strBytes = pathBytes.subarray(offset + 2, offset + 2 + len);
+        const segName = new TextDecoder().decode(strBytes);
+        tag = tag ? `${tag}.${segName}` : segName;
+        offset += 2 + len + (len % 2 !== 0 ? 1 : 0);
+      } else if (segType === 0x28) {
+        // 8-bit array index
+        const idx = pathBytes[offset + 1];
+        tag += `[${idx}]`;
+        offset += 2;
+      } else {
+        break;
+      }
+    }
+
+    return tag;
   }
 
   public async connect(): Promise<boolean> {
@@ -132,7 +311,6 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
         throw new Error("Missing EtherNet/IP endpoint configuration");
       }
 
-      // Check port (standard 44818 for CIP encapsulation)
       const port = this.config.endpoint.includes(":")
         ? parseInt(this.config.endpoint.split(":")[1], 10)
         : 44818;
@@ -141,8 +319,8 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
         throw new Error(`Invalid EtherNet/IP port: ${port}`);
       }
 
-      // Emulate CIP RegisterSession (0x0065)
-      this.sessionHandle = Math.floor(100000 + Math.random() * 900000);
+      await this.session.connect();
+
       this._status = "AUTHENTICATED";
       this.connectedSince = new Date().toISOString();
       this.lastHeartbeat = this.connectedSince;
@@ -166,7 +344,9 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
       if (sub.intervalTimer) clearInterval(sub.intervalTimer);
     }
     this.subscriptions.clear();
-    this.sessionHandle = 0;
+
+    await this.session.disconnect("EtherNetIpDriverAdapter disconnect");
+
     this._status = "DISCONNECTED";
     this.connectedSince = null;
   }
@@ -183,26 +363,43 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
     const profile = getRuntimeProfile();
     const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
 
-    let entry = this.tagDatabase.get(tag);
-    if (!entry) {
+    let val: number | boolean | string | null = null;
+    let detectedType: CipStandardDataType = "REAL";
+
+    if (this.session && this.session.isConnected) {
+      try {
+        const res = await this.session.readTag(tag);
+        val = res.value;
+        detectedType = res.dataType;
+      } catch (err: any) {
+        if (profile === "PRODUCTION") {
+          this.readErrorCount++;
+          throw err;
+        }
+        const entry = this.tagDatabase.get(tag);
+        if (!entry) {
+          this.readErrorCount++;
+          throw new Error(`CIP tag '${tag}' not mapped on device '${this.id}'`);
+        }
+        val = entry.value;
+        detectedType = entry.dataType;
+      }
+    } else {
       if (profile === "PRODUCTION") {
         this.readErrorCount++;
-        throw new Error(`CIP tag '${tag}' not mapped on device '${this.id}'. Auto-discovery prohibited in PRODUCTION.`);
+        throw new Error(`CIP session not connected to PLC '${this.id}' in PRODUCTION profile.`);
       }
-      // Create auto-discovered CIP tag if it has valid identifier syntax
-      if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tag)) {
-        entry = {
-          tagName: tag,
-          dataType: "REAL",
-          value: 25.0,
-          unit: this.resolveUnit(tag),
-        };
-        this.tagDatabase.set(tag, entry);
-      } else {
+      const entry = this.tagDatabase.get(tag);
+      if (!entry) {
         this.readErrorCount++;
-        throw new Error(`CIP Read Error: Invalid symbolic tag syntax '${tag}' (CIP status 0x04 Path Destination Unknown)`);
+        throw new Error(`CIP tag '${tag}' not mapped on device '${this.id}'`);
       }
+      val = entry.value;
+      detectedType = entry.dataType;
     }
+
+    const numericValue = typeof val === "boolean" ? (val ? 1 : 0) : (typeof val === "number" ? val : Number(val));
+    const unit = this.resolveUnit(tag);
 
     const latency = Math.max(1, Date.now() - t0 + (profile === "PRODUCTION" ? 2 : Math.floor(Math.random() * 3)));
     this.avgLatencyMs = Number(((this.avgLatencyMs * 0.9) + (latency * 0.1)).toFixed(2));
@@ -211,10 +408,7 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
     const nowIso = new Date().toISOString();
     this.lastHeartbeat = nowIso;
 
-    const numVal = typeof entry.value === "number" ? entry.value : entry.value ? 1 : 0;
-    const unit = entry.unit || this.resolveUnit(tag);
-
-    return {
+    const dataPoint: IndustrialDataPoint = {
       runtimeMode: profile,
       sourceType: isSimulated ? "SIMULATOR" : "PLC",
       sourceId: this.config.sourceId || this.id,
@@ -222,10 +416,10 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
       protocol: "ETHERNET_IP",
       deviceId: this.id,
       assetId: this.config.assetId || tag.split(".")[0] || "ASSET-DEFAULT",
-      tagId: entry.tagName,
-      value: numVal,
+      tagId: tag,
+      value: numericValue,
       engineeringUnit: unit,
-      dataType: entry.dataType === "BOOL" ? "BOOLEAN" : "FLOAT32",
+      dataType: detectedType === "BOOL" ? "BOOLEAN" : "FLOAT32",
       deviceTimestamp: nowIso,
       ingestionTimestamp: nowIso,
       sequence: this.readSuccessCount,
@@ -236,14 +430,16 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
 
       // Legacy fields
       id: `dp-cip-${Date.now()}-${this.readSuccessCount}`,
-      tag: entry.tagName,
-      rawValue: numVal,
-      engValue: numVal,
+      tag,
+      rawValue: numericValue,
+      engValue: numericValue,
       unit,
       source: isSimulated ? "SIMULATION" : "ETHERNET_IP",
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
     };
+
+    return Object.freeze(dataPoint);
   }
 
   public async writeTag(
@@ -267,24 +463,25 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
       throw new Error(`Write denied: Operational justification mandatory for CIP tag write.`);
     }
 
-    let entry = this.tagDatabase.get(tag);
-    if (!entry) {
-      if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tag)) {
-        entry = {
-          tagName: tag,
-          dataType: typeof value === "boolean" ? "BOOL" : "REAL",
-          value,
-          unit: this.resolveUnit(tag),
-        };
-        this.tagDatabase.set(tag, entry);
-      } else {
-        this.writeErrorCount++;
-        throw new Error(`CIP Write Error: Tag '${tag}' not found (CIP status 0x04 Path destination unknown)`);
-      }
+    this.txPackets++;
+
+    if (this.session && this.session.isConnected) {
+      await this.session.writeTag(tag, value);
     }
 
-    this.txPackets++;
-    entry.value = value;
+    let entry = this.tagDatabase.get(tag);
+    if (!entry) {
+      entry = {
+        tagName: tag,
+        dataType: typeof value === "boolean" ? "BOOL" : "REAL",
+        value,
+        unit: this.resolveUnit(tag),
+      };
+      this.tagDatabase.set(tag, entry);
+    } else {
+      entry.value = value;
+    }
+
     this.writeSuccessCount++;
     this.rxPackets++;
     this.lastHeartbeat = new Date().toISOString();
@@ -363,7 +560,7 @@ export class EtherNetIpDriverAdapter implements IIndustrialDriver {
       bufferOccupancyPercent: Math.min(100, this.subscriptions.size * 5),
       lastError: this.lastError,
       details: {
-        sessionHandle: this.sessionHandle,
+        sessionHandle: this.session.activeSessionHandle,
         tagDatabaseSize: this.tagDatabase.size,
         readOnly: this.config.readOnly ?? false,
       },

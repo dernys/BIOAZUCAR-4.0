@@ -1,8 +1,10 @@
 /**
- * BioAzúcar 4.0 — MQTT / Sparkplug B Driver Adapter
+ * BioAzúcar 4.0 — MQTT / Sparkplug B Driver Adapter (UNS-02 / I29)
  * 
- * Concrete implementation of IIndustrialDriver for MQTT 5.0 and Sparkplug B telemetry.
- * Complies with the canonical driver contract and manages Edge Node and Device birth/death certificates.
+ * Concrete implementation of IIndustrialDriver for MQTT 3.1.1 / 5.0 and Sparkplug B.
+ * Implements full 4-layer decoupled industrial architecture over ITransportLayer.
+ * Manages Edge Node and Device birth/death certificates, Sparkplug B sequence state,
+ * and publishes/subscribes in the Unified Namespace (spBv1.0).
  */
 
 import {
@@ -22,6 +24,17 @@ import {
   assertValidProductionEnvironment,
 } from "../config/runtimeProfile";
 import { SparkplugBProtocol, SparkplugPayload, SparkplugMetric } from "./SparkplugBProtocol";
+import { ITransportLayer } from "../transport/ITransportLayer";
+import { TcpSocketTransport } from "../transport/TcpSocketTransport";
+import { LoopbackVirtualTransport, PeerResponder } from "../transport/LoopbackVirtualTransport";
+import {
+  MqttPacketType,
+  MqttConnectReturnCode,
+  MqttConnectOptions,
+  MqttPacket,
+} from "../mqtt/MqttTypes";
+import { MqttBinaryCodec } from "../mqtt/MqttBinaryCodec";
+import { MqttClientSession } from "../mqtt/MqttClientSession";
 
 export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
   readonly id: string;
@@ -31,6 +44,9 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
   readonly groupId: string;
   readonly edgeNodeId: string;
   readonly deviceId?: string;
+
+  private transport: ITransportLayer;
+  private session: MqttClientSession;
 
   private _status: DriverStatus = "DISCONNECTED";
   private connectedSince: string | null = null;
@@ -61,9 +77,12 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
     ["Boiler/FeedwaterFlow", 185.4],
     ["Cogen/GridFrequency", 60.02],
     ["Milling/ChokeLevel", 38.5],
+    ["Milling.Tandem1.TCH", 350.0],
+    ["Milling.Tandem1.Imbibition_Flow", 45.2],
+    ["Steam.Boiler1.Pressure", 64.5],
   ]);
 
-  constructor(config: DriverConfig) {
+  constructor(config: DriverConfig, transport?: ITransportLayer) {
     this.id = config.id;
     this.config = config;
 
@@ -83,10 +102,89 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
     this.groupId = config.customParameters?.groupId || "BioAzucar";
     this.edgeNodeId = config.customParameters?.edgeNodeId || "Central-01";
     this.deviceId = config.customParameters?.deviceId;
+
+    // Resolve Transport Layer
+    if (transport) {
+      this.transport = transport;
+    } else {
+      let host = "127.0.0.1";
+      let port = 1883;
+
+      if (config.endpoint) {
+        let ep = config.endpoint;
+        if (ep.startsWith("mqtt://") || ep.startsWith("mqtts://")) {
+          const isMqtts = ep.startsWith("mqtts://");
+          const cleaned = ep.replace(/^mqtts?:\/\//, "");
+          const [h, p] = cleaned.split(":");
+          host = h || "127.0.0.1";
+          port = p ? parseInt(p, 10) : isMqtts ? 8883 : 1883;
+        } else {
+          const [h, p] = ep.split(":");
+          host = h || "127.0.0.1";
+          port = p ? parseInt(p, 10) : 1883;
+        }
+      }
+
+      if (profile === "PRODUCTION") {
+        this.transport = new TcpSocketTransport(`tcp-${this.id}`, { host, port });
+      } else {
+        const loopback = new LoopbackVirtualTransport(`loopback-${this.id}`, { host, port });
+        loopback.setLoopbackResponder(this.createVirtualMqttBrokerResponder());
+        this.transport = loopback;
+      }
+    }
+
+    if (this.transport instanceof LoopbackVirtualTransport && !this.transport.hasCustomResponder()) {
+      this.transport.setLoopbackResponder(this.createVirtualMqttBrokerResponder());
+    }
+
+    // Configure MQTT session options
+    const lwt = this.getLWTDeathMessage();
+    const connectOptions: MqttConnectOptions = {
+      clientId: `bioazucar-edge-${this.id}-${Date.now().toString(36)}`,
+      cleanSession: true,
+      keepAliveSeconds: config.customParameters?.keepAliveSeconds || 30,
+      willTopic: lwt.topic,
+      willMessage: JSON.stringify(lwt.payload),
+      willQoS: 1,
+      willRetain: false,
+      username: config.customParameters?.username,
+      password: config.customParameters?.password,
+    };
+
+    this.session = new MqttClientSession(this.transport, connectOptions);
+
+    this.transport.onStateChange((_oldState, newState) => {
+      if (newState === "FAULTED") {
+        this._status = "FAULTED";
+      } else if (newState === "RECONNECTING") {
+        this._status = "CONNECTING";
+      } else if (newState === "DISCONNECTED") {
+        this._status = "DISCONNECTED";
+      }
+    });
+
+    this.session.onStatusChange((s) => {
+      if (s === "READY") {
+        this._status = "AUTHENTICATED";
+      } else if (s === "FAULTED") {
+        this._status = "FAULTED";
+      } else if (s === "DISCONNECTED") {
+        this._status = "DISCONNECTED";
+      }
+    });
   }
 
   get status(): DriverStatus {
     return this._status;
+  }
+
+  public getSession(): MqttClientSession {
+    return this.session;
+  }
+
+  public getTransport(): ITransportLayer {
+    return this.transport;
   }
 
   public getSequence(): number {
@@ -136,6 +234,13 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
     const payload = SparkplugBProtocol.encodePayload(metrics, this.seq);
     this.txPackets++;
     this.seq = SparkplugBProtocol.nextSequence(this.seq);
+
+    if (this.session.status === "READY") {
+      this.session
+        .publish(topic, JSON.stringify(payload), 0)
+        .catch(() => {});
+    }
+
     return { topic, payload };
   }
 
@@ -147,6 +252,13 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
     const payload = SparkplugBProtocol.encodePayload(metrics, this.seq);
     this.txPackets++;
     this.seq = SparkplugBProtocol.nextSequence(this.seq);
+
+    if (this.session.status === "READY") {
+      this.session
+        .publish(topic, JSON.stringify(payload), 0)
+        .catch(() => {});
+    }
+
     return { topic, payload };
   }
 
@@ -155,12 +267,24 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
     this.txPackets++;
 
     try {
-      if (!this.config.endpoint.startsWith("mqtt://") && !this.config.endpoint.startsWith("mqtts://")) {
-        throw new Error(`Invalid MQTT endpoint: ${this.config.endpoint}. Must start with mqtt:// or mqtts://`);
+      if (
+        this.config.endpoint &&
+        !this.config.endpoint.startsWith("mqtt://") &&
+        !this.config.endpoint.startsWith("mqtts://") &&
+        !this.config.endpoint.includes(":")
+      ) {
+        throw new Error(
+          `Invalid MQTT endpoint: ${this.config.endpoint}. Must start with mqtt:// or mqtts:// or include port.`
+        );
       }
 
       this._status = "AUTHENTICATING";
-      // Emit NBIRTH simulation
+      const connected = await this.session.connect(this.config.timeoutMs || 5000);
+      if (!connected) {
+        throw new Error("MQTT Broker session handshake failed");
+      }
+
+      // Publish NBIRTH to register node in Unified Namespace
       this.publishNBirth();
 
       this._status = "AUTHENTICATED";
@@ -186,6 +310,17 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
       if (sub.intervalTimer) clearInterval(sub.intervalTimer);
     }
     this.subscriptions.clear();
+
+    if (this._status === "AUTHENTICATED" || this._status === "CONNECTED") {
+      try {
+        const death = this.getLWTDeathMessage();
+        await this.session.publish(death.topic, JSON.stringify(death.payload), 0);
+      } catch {
+        // Ignore during shutdown
+      }
+    }
+
+    await this.session.disconnect();
     this._status = "DISCONNECTED";
     this.connectedSince = null;
   }
@@ -216,9 +351,9 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
     const nowIso = new Date().toISOString();
     this.lastHeartbeat = nowIso;
 
-    const unit = tag.includes("Flow") ? "m3/h" : tag.includes("Frequency") ? "Hz" : "%";
+    const unit = this.resolveUnit(tag);
 
-    return {
+    const point: IndustrialDataPoint = Object.freeze({
       runtimeMode: profile,
       sourceType: isSimulated ? "SIMULATOR" : "PLC",
       sourceId: this.config.sourceId || this.id,
@@ -229,7 +364,7 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
       tagId: tag,
       value: val,
       engineeringUnit: unit,
-      dataType: typeof val === "number" ? "FLOAT32" : "STRING",
+      dataType: typeof val === "number" ? "FLOAT32" : typeof val === "boolean" ? "BOOLEAN" : "STRING",
       deviceTimestamp: nowIso,
       ingestionTimestamp: nowIso,
       sequence: this.readSuccessCount,
@@ -247,7 +382,9 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
       source: isSimulated ? "SIMULATION" : "SPARKPLUG",
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
-    };
+    });
+
+    return point;
   }
 
   public async writeTag(
@@ -273,6 +410,20 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
 
     this.txPackets++;
     this.sparkplugPayloadCache.set(tag, value);
+
+    // Publish NDATA or NCMD for the updated value
+    try {
+      const metric: SparkplugMetric = {
+        name: tag,
+        timestamp: Date.now(),
+        dataType: SparkplugBProtocol.inferDataType(value),
+        value,
+      };
+      this.publishNData([metric]);
+    } catch {
+      // Ignore publish failure
+    }
+
     this.writeSuccessCount++;
     this.rxPackets++;
     this.lastHeartbeat = new Date().toISOString();
@@ -292,7 +443,7 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
         try {
           const point = await this.readTag(tag);
           callback(point);
-        } catch (e) {
+        } catch {
           // Silent
         }
       }
@@ -349,11 +500,68 @@ export class MqttSparkplugDriverAdapter implements IIndustrialDriver {
       securityMode: this.config.securityProfile?.tlsVersion || "TLS_1_3",
       txPackets: this.txPackets,
       rxPackets: this.rxPackets,
-      bufferOccupancyPercent: Math.min(100, (this.subscriptions.size * 5)),
+      bufferOccupancyPercent: Math.min(100, this.subscriptions.size * 5),
       details: {
         topicsSubscribed: this.subscriptions.size,
         readOnly: this.config.readOnly ?? false,
       },
+    };
+  }
+
+  private resolveUnit(tag: string): string {
+    const lower = tag.toLowerCase();
+    if (lower.includes("flow") || lower.includes("imbibition")) return "m3/h";
+    if (lower.includes("frequency")) return "Hz";
+    if (lower.includes("pressure")) return "bar";
+    if (lower.includes("tch") || lower.includes("rate")) return "TCH";
+    if (lower.includes("temp")) return "°C";
+    if (lower.includes("level") || lower.includes("choke")) return "%";
+    return "%";
+  }
+
+  /**
+   * Creates a virtual MQTT broker responder for testing and HIL simulation.
+   */
+  private createVirtualMqttBrokerResponder(): PeerResponder {
+    return (data: Uint8Array): Uint8Array | null => {
+      const decoded = MqttBinaryCodec.decodePacket(data);
+      if (!decoded.valid || !decoded.packet) {
+        return null;
+      }
+
+      const packet = decoded.packet;
+
+      switch (packet.type) {
+        case MqttPacketType.CONNECT: {
+          return MqttBinaryCodec.buildConnackPacket(false, MqttConnectReturnCode.ACCEPTED);
+        }
+
+        case MqttPacketType.PUBLISH: {
+          const qos = ((packet.flags >> 1) & 0x03);
+          if (qos === 1 && packet.packetId !== undefined) {
+            return MqttBinaryCodec.buildPubackPacket(packet.packetId);
+          }
+          return null;
+        }
+
+        case MqttPacketType.SUBSCRIBE: {
+          if (packet.packetId !== undefined) {
+            return MqttBinaryCodec.buildSubackPacket(packet.packetId, [0]);
+          }
+          return null;
+        }
+
+        case MqttPacketType.PINGREQ: {
+          return MqttBinaryCodec.buildPingrespPacket();
+        }
+
+        case MqttPacketType.DISCONNECT: {
+          return null;
+        }
+
+        default:
+          return null;
+      }
     };
   }
 }

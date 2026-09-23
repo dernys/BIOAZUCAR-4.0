@@ -3,6 +3,12 @@
  * 
  * Canonical implementation of IIndustrialDriver for Siemens S7-300, S7-400, S7-1200,
  * and S7-1500 PLCs communicating over ISO-on-TCP (RFC 1006 / COTP TP0) on TCP port 102.
+ * 
+ * Integrated Architecture:
+ * - Capa 1: S7BinaryCodec (TPKT, COTP CR/CC/DT, S7 Comm PDU, IEEE 754 Big-Endian)
+ * - Capa 2: S7ClientSession (Stateful transaction management, PDU reference, Setup Comm)
+ * - Capa 3: ITransportLayer (TcpSocketTransport over port 102 or LoopbackVirtualTransport)
+ * - Capa 4: SiemensS7DriverAdapter (Contract IIndustrialDriver, 17-field IndustrialDataPoint, Fail-Closed)
  */
 
 import {
@@ -21,16 +27,24 @@ import {
   getRuntimeProfile,
   assertValidProductionEnvironment,
 } from "../config/runtimeProfile";
+import { ITransportLayer } from "../transport/ITransportLayer";
+import { TcpSocketTransport } from "../transport/TcpSocketTransport";
+import { LoopbackVirtualTransport } from "../transport/LoopbackVirtualTransport";
+import {
+  S7ParsedAddress,
+  S7AreaType,
+  parseS7Address,
+  S7FunctionCode,
+  S7Rosctr,
+  S7ReturnCode,
+  CotpPduType,
+  S7TransportSize,
+  S7DataTransportSize,
+} from "../s7/S7Types";
+import { S7ClientSession } from "../s7/S7ClientSession";
+import { S7BinaryCodec } from "../s7/S7BinaryCodec";
 
-export type S7AreaType = "DB" | "INPUTS" | "OUTPUTS" | "FLAGS" | "TIMERS" | "COUNTERS";
-
-export interface S7ParsedAddress {
-  area: S7AreaType;
-  dbNumber?: number;
-  dataType: "BOOL" | "BYTE" | "WORD" | "DWORD" | "REAL" | "INT" | "DINT";
-  byteOffset: number;
-  bitOffset?: number;
-}
+export type { S7AreaType, S7ParsedAddress };
 
 export class SiemensS7DriverAdapter implements IIndustrialDriver {
   readonly id: string;
@@ -52,6 +66,9 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
   private txPackets = 0;
   private rxPackets = 0;
   private avgLatencyMs = 9;
+
+  private transport: ITransportLayer | null = null;
+  private session: S7ClientSession | null = null;
 
   private subscriptions = new Map<
     string,
@@ -77,7 +94,7 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
     ["MW10", 100],        // Flag word
   ]);
 
-  constructor(config: DriverConfig) {
+  constructor(config: DriverConfig, transport?: ITransportLayer) {
     this.id = config.id;
     this.config = config;
 
@@ -96,6 +113,48 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
 
     this.rack = config.customParameters?.rack ?? 0;
     this.slot = config.customParameters?.slot ?? (config.endpoint?.includes("s7-1200") ? 1 : 2);
+
+    if (transport) {
+      this.transport = transport;
+    } else {
+      const endpoint = config.endpoint || "127.0.0.1:102";
+      const parts = endpoint.split(":");
+      const host = parts[0] || "127.0.0.1";
+      const port = parts[1] ? parseInt(parts[1], 10) : 102;
+
+      if (profile === "PRODUCTION") {
+        this.transport = new TcpSocketTransport(`tcp-${this.id}`, { host, port });
+      } else {
+        // In SIMULATION / DEVELOPMENT, default to LoopbackVirtualTransport with automated S7 PLC responder
+        const loopback = new LoopbackVirtualTransport(`loopback-${this.id}`, { host, port });
+        loopback.setLoopbackResponder(this.createVirtualS7Responder());
+        this.transport = loopback;
+      }
+    }
+
+    if (this.transport instanceof LoopbackVirtualTransport && !this.transport.hasCustomResponder()) {
+      this.transport.setLoopbackResponder(this.createVirtualS7Responder());
+    }
+
+    this.session = new S7ClientSession(
+      this.transport,
+      {
+        rack: this.rack,
+        slot: this.slot,
+        connectionType: config.customParameters?.connectionType ?? 0x03,
+      },
+      config.timeoutMs || 3000
+    );
+
+    this.transport.onStateChange((_oldState, newState) => {
+      if (newState === "FAULTED") {
+        this._status = "FAULTED";
+      } else if (newState === "RECONNECTING") {
+        this._status = "CONNECTING";
+      } else if (newState === "DISCONNECTED") {
+        this._status = "DISCONNECTED";
+      }
+    });
   }
 
   get status(): DriverStatus {
@@ -110,97 +169,199 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
     return this.slot;
   }
 
+  public getSession(): S7ClientSession | null {
+    return this.session;
+  }
+
   /**
-   * Parses S7 syntax into canonical area, DB, and offsets.
-   * Examples:
-   *   DB1.DBD0 -> Area DB, DB 1, DWORD/REAL, Offset 0
-   *   DB10.DBW4 -> Area DB, DB 10, WORD, Offset 4
-   *   DB2.DBX0.1 -> Area DB, DB 2, BOOL, Offset 0, Bit 1
-   *   IW2 -> Area INPUTS, WORD, Offset 2
-   *   Q0.0 -> Area OUTPUTS, BOOL, Offset 0, Bit 0
-   *   MD20 -> Area FLAGS, DWORD, Offset 20
+   * Static address parser for backwards-compatibility.
    */
   public static parseS7Address(rawAddress: string): S7ParsedAddress {
-    const trimmed = rawAddress.trim().toUpperCase();
+    return parseS7Address(rawAddress);
+  }
 
-    // 1. DB syntax: DB<n>.DB<X|B|W|D><offset>[.<bit>]
-    const dbMatch = trimmed.match(/^DB(\d+)\.DB([XBWDbxwd])(\d+)(?:\.(\d+))?$/);
-    if (dbMatch) {
-      const dbNumber = parseInt(dbMatch[1], 10);
-      const code = dbMatch[2];
-      const byteOffset = parseInt(dbMatch[3], 10);
-      const bitOffset = dbMatch[4] !== undefined ? parseInt(dbMatch[4], 10) : undefined;
+  /**
+   * Builds an automated virtual S7 PLC responder for loopback testing.
+   */
+  private createVirtualS7Responder(): (req: Uint8Array) => Uint8Array | null {
+    return (req: Uint8Array): Uint8Array | null => {
+      try {
+        const decodedTpkt = S7BinaryCodec.decodeTpktFrame(req);
+        if (!decodedTpkt.valid) return null;
 
-      let dataType: S7ParsedAddress["dataType"] = "WORD";
-      if (code === "X") dataType = "BOOL";
-      else if (code === "B") dataType = "BYTE";
-      else if (code === "W") dataType = "WORD";
-      else if (code === "D") dataType = "REAL"; // Default to REAL for floating process variables
+        const cotp = S7BinaryCodec.decodeCotp(decodedTpkt.payload);
 
-      return {
-        area: "DB",
-        dbNumber,
-        dataType,
-        byteOffset,
-        bitOffset,
-      };
-    }
+        // 1. COTP Connection Request -> Connection Confirm
+        if (cotp.pduType === CotpPduType.CR) {
+          return S7BinaryCodec.buildCotpConnectionConfirm(0x0001, 0x0001);
+        }
 
-    // 2. Inputs: I<B|W|D><offset> or I<offset>.<bit>
-    const inputMatch = trimmed.match(/^I(?:([BWDbwd])(\d+)|(\d+)\.(\d+))$/);
-    if (inputMatch) {
-      if (inputMatch[1]) {
-        const code = inputMatch[1];
-        const byteOffset = parseInt(inputMatch[2], 10);
-        const dataType = code === "B" ? "BYTE" : code === "W" ? "WORD" : "DWORD";
-        return { area: "INPUTS", dataType, byteOffset };
-      } else {
-        return {
-          area: "INPUTS",
-          dataType: "BOOL",
-          byteOffset: parseInt(inputMatch[3], 10),
-          bitOffset: parseInt(inputMatch[4], 10),
-        };
+        // 2. COTP Data Transfer -> S7 Comm
+        if (cotp.pduType === CotpPduType.DT) {
+          const s7Pdu = cotp.userData;
+          if (s7Pdu.length < 10) return null;
+
+          const decodedHeader = S7BinaryCodec.decodeS7Pdu(s7Pdu);
+          const pduRef = decodedHeader.pduReference;
+          const param = decodedHeader.paramData;
+          if (param.length === 0) return null;
+
+          const fc = param[0];
+
+          // Setup Communication
+          if (fc === S7FunctionCode.SETUP_COMM) {
+            const ackPdu = S7BinaryCodec.buildSetupCommunicationAck(pduRef, 8, 8, 480);
+            return S7BinaryCodec.buildCotpDataFrame(ackPdu);
+          }
+
+          // Read Variable
+          if (fc === S7FunctionCode.READ_VAR) {
+            const itemCount = param[1];
+            let paramOffset = 2;
+            let dataTotalLength = 0;
+            const itemsData: Array<{ returnCode: number; transportSize: number; lengthBits: number; data: Uint8Array }> = [];
+
+            for (let i = 0; i < itemCount; i++) {
+              if (paramOffset + 12 > param.length) break;
+              const transportSize = param[paramOffset + 3];
+              const dbNumber = (param[paramOffset + 6] << 8) | param[paramOffset + 7];
+              const area = param[paramOffset + 8];
+              const bitAddr = (param[paramOffset + 9] << 16) | (param[paramOffset + 10] << 8) | param[paramOffset + 11];
+              const byteOffset = Math.floor(bitAddr / 8);
+              const bitOffset = bitAddr % 8;
+
+              // Synthesize key
+              let key = `DB${dbNumber}.DBD${byteOffset}`;
+              if (transportSize === S7TransportSize.BIT) key = `DB${dbNumber}.DBX${byteOffset}.${bitOffset}`;
+              else if (transportSize === S7TransportSize.WORD) key = `DB${dbNumber}.DBW${byteOffset}`;
+              else if (transportSize === S7TransportSize.BYTE) key = `DB${dbNumber}.DBB${byteOffset}`;
+
+              let val = this.memoryMap.get(key);
+              if (val === undefined) {
+                // Check generalized key or default
+                val = this.memoryMap.get(`DB1.DBD${byteOffset}`) ?? 50.0;
+              }
+
+              const encoded = S7BinaryCodec.encodeValueToBytes(
+                val,
+                transportSize === S7TransportSize.BIT ? "BOOL" : (transportSize === S7TransportSize.REAL ? "REAL" : "WORD"),
+                bitOffset
+              );
+
+              const isBit = transportSize === S7TransportSize.BIT;
+              const s7DataTs = isBit ? S7DataTransportSize.BIT : S7DataTransportSize.BYTE_WORD_DWORD;
+              const lenBits = isBit ? 1 : encoded.length * 8;
+
+              itemsData.push({
+                returnCode: S7ReturnCode.SUCCESS,
+                transportSize: s7DataTs,
+                lengthBits: lenBits,
+                data: encoded,
+              });
+
+              dataTotalLength += 4 + encoded.length + (encoded.length % 2 !== 0 ? 1 : 0);
+              paramOffset += 12;
+            }
+
+            // Build Ack_Data PDU
+            // Header: 12 bytes + Param: 2 bytes + Data
+            const respPdu = new Uint8Array(12 + 2 + dataTotalLength);
+            const view = new DataView(respPdu.buffer);
+
+            // S7 Ack_Data Header
+            respPdu[0] = 0x32;
+            respPdu[1] = S7Rosctr.ACK_DATA;
+            view.setUint16(2, 0x0000, false);
+            view.setUint16(4, pduRef, false);
+            view.setUint16(6, 0x0002, false); // Param length (2 bytes: FC + ItemCount)
+            view.setUint16(8, dataTotalLength, false);
+            respPdu[10] = 0x00; // Error Class
+            respPdu[11] = 0x00; // Error Code
+
+            // Param
+            respPdu[12] = S7FunctionCode.READ_VAR;
+            respPdu[13] = itemsData.length;
+
+            // Data
+            let dOffset = 14;
+            for (const item of itemsData) {
+              respPdu[dOffset] = item.returnCode;
+              respPdu[dOffset + 1] = item.transportSize;
+              view.setUint16(dOffset + 2, item.lengthBits, false);
+              respPdu.set(item.data, dOffset + 4);
+              dOffset += 4 + item.data.length;
+              if (item.data.length % 2 !== 0) {
+                respPdu[dOffset] = 0x00;
+                dOffset += 1;
+              }
+            }
+
+            return S7BinaryCodec.buildCotpDataFrame(respPdu);
+          }
+
+          // Write Variable
+          if (fc === S7FunctionCode.WRITE_VAR) {
+            const itemCount = param[1];
+            const dataSec = decodedHeader.data;
+            let dOffset = 0;
+            let pOffset = 2;
+
+            for (let i = 0; i < itemCount; i++) {
+              if (pOffset + 12 > param.length || dOffset + 4 > dataSec.length) break;
+              const transportSize = param[pOffset + 3];
+              const dbNumber = (param[pOffset + 6] << 8) | param[pOffset + 7];
+              const bitAddr = (param[pOffset + 9] << 16) | (param[pOffset + 10] << 8) | param[pOffset + 11];
+              const byteOffset = Math.floor(bitAddr / 8);
+              const bitOffset = bitAddr % 8;
+
+              const lenBits = (dataSec[dOffset + 2] << 8) | dataSec[dOffset + 3];
+              const byteCount = transportSize === S7TransportSize.BIT ? 1 : Math.floor(lenBits / 8);
+              const rawData = dataSec.subarray(dOffset + 4, dOffset + 4 + byteCount);
+
+              const decodedVal = S7BinaryCodec.decodeBytesToValue(
+                rawData,
+                transportSize === S7TransportSize.BIT ? "BOOL" : (transportSize === S7TransportSize.REAL ? "REAL" : "WORD"),
+                bitOffset
+              );
+
+              let key = `DB${dbNumber}.DBD${byteOffset}`;
+              if (transportSize === S7TransportSize.BIT) key = `DB${dbNumber}.DBX${byteOffset}.${bitOffset}`;
+              else if (transportSize === S7TransportSize.WORD) key = `DB${dbNumber}.DBW${byteOffset}`;
+
+              const numVal = typeof decodedVal === "boolean" ? (decodedVal ? 1 : 0) : decodedVal;
+              this.memoryMap.set(key, numVal);
+
+              dOffset += 4 + byteCount + (byteCount % 2 !== 0 ? 1 : 0);
+              pOffset += 12;
+            }
+
+            // Build Write Var Ack_Data
+            const respPdu = new Uint8Array(12 + 2 + itemCount);
+            const view = new DataView(respPdu.buffer);
+            respPdu[0] = 0x32;
+            respPdu[1] = S7Rosctr.ACK_DATA;
+            view.setUint16(2, 0x0000, false);
+            view.setUint16(4, pduRef, false);
+            view.setUint16(6, 0x0002, false);
+            view.setUint16(8, itemCount, false);
+            respPdu[10] = 0x00;
+            respPdu[11] = 0x00;
+
+            respPdu[12] = S7FunctionCode.WRITE_VAR;
+            respPdu[13] = itemCount;
+            for (let i = 0; i < itemCount; i++) {
+              respPdu[14 + i] = S7ReturnCode.SUCCESS;
+            }
+
+            return S7BinaryCodec.buildCotpDataFrame(respPdu);
+          }
+        }
+
+        return null;
+      } catch {
+        return null;
       }
-    }
-
-    // 3. Outputs: Q<B|W|D><offset> or Q<offset>.<bit>
-    const outputMatch = trimmed.match(/^Q(?:([BWDbwd])(\d+)|(\d+)\.(\d+))$/);
-    if (outputMatch) {
-      if (outputMatch[1]) {
-        const code = outputMatch[1];
-        const byteOffset = parseInt(outputMatch[2], 10);
-        const dataType = code === "B" ? "BYTE" : code === "W" ? "WORD" : "DWORD";
-        return { area: "OUTPUTS", dataType, byteOffset };
-      } else {
-        return {
-          area: "OUTPUTS",
-          dataType: "BOOL",
-          byteOffset: parseInt(outputMatch[3], 10),
-          bitOffset: parseInt(outputMatch[4], 10),
-        };
-      }
-    }
-
-    // 4. Flags / Merkers: M<B|W|D><offset> or M<offset>.<bit>
-    const flagMatch = trimmed.match(/^M(?:([BWDbwd])(\d+)|(\d+)\.(\d+))$/);
-    if (flagMatch) {
-      if (flagMatch[1]) {
-        const code = flagMatch[1];
-        const byteOffset = parseInt(flagMatch[2], 10);
-        const dataType = code === "B" ? "BYTE" : code === "W" ? "WORD" : "DWORD";
-        return { area: "FLAGS", dataType, byteOffset };
-      } else {
-        return {
-          area: "FLAGS",
-          dataType: "BOOL",
-          byteOffset: parseInt(flagMatch[3], 10),
-          bitOffset: parseInt(flagMatch[4], 10),
-        };
-      }
-    }
-
-    throw new Error(`Invalid S7 memory address: '${rawAddress}'. Expected DB<n>.DB<X|B|W|D><offset>, I<offset>, Q<offset>, or M<offset>.`);
+    };
   }
 
   public async connect(): Promise<boolean> {
@@ -212,7 +373,6 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
         throw new Error("Missing Siemens S7 endpoint configuration (expected IP:port or IP)");
       }
 
-      // Check ISO-on-TCP RFC 1006 port default (102)
       const port = this.config.endpoint.includes(":")
         ? parseInt(this.config.endpoint.split(":")[1], 10)
         : 102;
@@ -220,6 +380,12 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
       if (port <= 0 || port > 65535) {
         throw new Error(`Invalid ISO-on-TCP port: ${port}`);
       }
+
+      if (!this.session) {
+        throw new Error("S7 Client Session is uninitialized");
+      }
+
+      await this.session.connect();
 
       this._status = "AUTHENTICATED";
       this.connectedSince = new Date().toISOString();
@@ -244,6 +410,11 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
       if (sub.intervalTimer) clearInterval(sub.intervalTimer);
     }
     this.subscriptions.clear();
+
+    if (this.session) {
+      await this.session.disconnect("SiemensS7DriverAdapter disconnect");
+    }
+
     this._status = "DISCONNECTED";
     this.connectedSince = null;
   }
@@ -271,23 +442,32 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
 
     const profile = getRuntimeProfile();
     const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
+    const resolvedAddress = this.resolveAddress(tag);
 
-    const address = this.resolveAddress(tag);
-    let val = this.memoryMap.get(address) ?? this.memoryMap.get(tag);
-    if (val === undefined) {
+    let val: number | boolean | null = null;
+
+    if (this.session && this.session.isConnected) {
+      try {
+        val = await this.session.readTag(resolvedAddress);
+      } catch (err: any) {
+        if (profile === "PRODUCTION") {
+          this.readErrorCount++;
+          throw err;
+        }
+        // Fallback to memory map in non-production
+        val = this.memoryMap.get(resolvedAddress) ?? this.memoryMap.get(tag) ?? 50.0;
+      }
+    } else {
       if (profile === "PRODUCTION") {
         this.readErrorCount++;
-        throw new Error(`S7 tag '${tag}' not mapped on PLC '${this.id}'. Synthetic fallback prohibited in PRODUCTION.`);
+        throw new Error(`S7 session not connected to PLC '${this.id}' in PRODUCTION profile.`);
       }
-      try {
-        SiemensS7DriverAdapter.parseS7Address(address);
-        val = 50.0;
-        this.memoryMap.set(address, val);
-      } catch (err: any) {
-        this.readErrorCount++;
-        throw new Error(`S7 Read Error: Invalid tag syntax '${tag}' (${err.message})`);
-      }
+      val = this.memoryMap.get(resolvedAddress) ?? this.memoryMap.get(tag) ?? 50.0;
     }
+
+    const numericValue = typeof val === "boolean" ? (val ? 1 : 0) : val;
+    this.memoryMap.set(resolvedAddress, numericValue);
+    this.memoryMap.set(tag, numericValue);
 
     const latency = Math.max(1, Date.now() - t0 + (profile === "PRODUCTION" ? 2 : Math.floor(Math.random() * 4)));
     this.avgLatencyMs = Number(((this.avgLatencyMs * 0.9) + (latency * 0.1)).toFixed(2));
@@ -298,7 +478,7 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
 
     const unit = this.resolveUnit(tag);
 
-    return {
+    const dataPoint: IndustrialDataPoint = {
       runtimeMode: profile,
       sourceType: isSimulated ? "SIMULATOR" : "PLC",
       sourceId: this.config.sourceId || this.id,
@@ -307,9 +487,9 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
       deviceId: this.id,
       assetId: this.config.assetId || tag.split(".")[0] || "ASSET-DEFAULT",
       tagId: tag,
-      value: val,
+      value: numericValue,
       engineeringUnit: unit,
-      dataType: typeof val === "number" ? "FLOAT32" : "STRING",
+      dataType: typeof val === "boolean" ? "BOOLEAN" : "FLOAT32",
       deviceTimestamp: nowIso,
       ingestionTimestamp: nowIso,
       sequence: this.readSuccessCount,
@@ -318,16 +498,18 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
       calibrationState: "CALIBRATED",
       schemaVersion: "4.0.0",
 
-      // Legacy fields
+      // Compatibility fields
       id: `dp-s7-${Date.now()}-${this.readSuccessCount}`,
       tag,
-      rawValue: val,
-      engValue: typeof val === "number" ? val : undefined,
+      rawValue: numericValue,
+      engValue: numericValue,
       unit,
       source: isSimulated ? "SIMULATION" : "SIEMENS_S7",
       isSimulated,
       provenance: isSimulated ? "SIMULATED_PROCESS_MODEL" : "PHYSICAL_OT",
     };
+
+    return Object.freeze(dataPoint);
   }
 
   public async writeTag(
@@ -351,23 +533,30 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
       throw new Error(`Write denied: Operational justification mandatory for S7 PLC write.`);
     }
 
-    const address = this.resolveAddress(tag);
+    const resolvedAddress = this.resolveAddress(tag);
     try {
-      SiemensS7DriverAdapter.parseS7Address(address);
+      parseS7Address(resolvedAddress);
     } catch (err: any) {
       this.writeErrorCount++;
       throw new Error(`S7 Write Error: Invalid tag address '${tag}' (${err.message})`);
     }
 
-    const numVal = typeof value === "number" ? value : Number(value);
-    if (isNaN(numVal)) {
+    const numVal = typeof value === "boolean" ? value : (typeof value === "number" ? value : Number(value));
+    if (typeof value !== "boolean" && isNaN(numVal as number)) {
       this.writeErrorCount++;
       throw new Error(`S7 write failed: Non-numeric value '${value}'`);
     }
 
     this.txPackets++;
-    this.memoryMap.set(address, numVal);
-    this.memoryMap.set(tag, numVal);
+
+    if (this.session && this.session.isConnected) {
+      await this.session.writeTag(resolvedAddress, numVal);
+    }
+
+    const numericStore = typeof numVal === "boolean" ? (numVal ? 1 : 0) : numVal;
+    this.memoryMap.set(resolvedAddress, numericStore);
+    this.memoryMap.set(tag, numericStore);
+
     this.writeSuccessCount++;
     this.rxPackets++;
     this.lastHeartbeat = new Date().toISOString();
@@ -450,6 +639,7 @@ export class SiemensS7DriverAdapter implements IIndustrialDriver {
         slot: this.slot,
         memoryMapSize: this.memoryMap.size,
         readOnly: this.config.readOnly ?? false,
+        negotiatedPduLength: this.session?.pduLength ?? 480,
       },
     };
   }
