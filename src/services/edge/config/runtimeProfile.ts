@@ -247,22 +247,27 @@ export class RuntimeProfileManager {
    */
   private failClosed(message: string, code: string, details?: Record<string, any>): never {
     const error = new FatalRuntimeConfigError(message, code, details);
-    console.error(`\n=================================================================`);
-    console.error(`[BIOAZÚCAR 4.0 FATAL] FAIL-CLOSED ACTIVATED`);
-    console.error(`Reason: ${message}`);
-    console.error(`Code:   ${code}`);
-    if (details) {
-      console.error(`Details:`, JSON.stringify(details, null, 2));
+    const isTestEnvironment =
+      this.isExitSuppressedForTesting ||
+      (typeof process !== "undefined" &&
+        (process.env?.NODE_ENV === "test" || process.env?.VITEST === "true"));
+
+    if (!isTestEnvironment) {
+      console.error(`\n=================================================================`);
+      console.error(`[BIOAZÚCAR 4.0 FATAL] FAIL-CLOSED ACTIVATED`);
+      console.error(`Reason: ${message}`);
+      console.error(`Code:   ${code}`);
+      if (details) {
+        console.error(`Details:`, JSON.stringify(details, null, 2));
+      }
+      console.error(`=================================================================\n`);
     }
-    console.error(`=================================================================\n`);
 
     // In a live production node process (when not suppressed by test harness), abort process immediately
     if (
-      !this.isExitSuppressedForTesting &&
+      !isTestEnvironment &&
       typeof process !== "undefined" &&
-      typeof process.exit === "function" &&
-      process.env?.NODE_ENV !== "test" &&
-      process.env?.VITEST !== "true"
+      typeof process.exit === "function"
     ) {
       process.exit(1);
     }

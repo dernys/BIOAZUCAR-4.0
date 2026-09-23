@@ -47,6 +47,7 @@ export interface HeaderProps {
   onOpenRbacModal: () => void;
   onOpenAuthModal: () => void;
   onOpenConfigVerification?: () => void;
+  onOpenProductionDeployment?: () => void;
   onOpenTenantsModal?: () => void;
   onOpenCreateTenantWizard?: () => void;
   onOpenCopilot?: () => void;
@@ -80,6 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenRbacModal,
   onOpenAuthModal,
   onOpenConfigVerification,
+  onOpenProductionDeployment,
   onOpenTenantsModal,
   onOpenCreateTenantWizard,
   onOpenCopilot,
@@ -598,6 +600,22 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Settings className={`w-3.5 h-3.5 ${isLight ? "text-emerald-800" : "text-emerald-400"}`} />
               <span className="hidden md:inline font-bold">Config</span>
+            </button>
+          )}
+
+          {/* Master Production Deployment & Recovery (P0-26) */}
+          {onOpenProductionDeployment && (
+            <button
+              onClick={onOpenProductionDeployment}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono transition border ${
+                isLight
+                  ? "bg-emerald-100 hover:bg-emerald-200 border-emerald-400 text-emerald-950 font-bold shadow-xs"
+                  : "bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 font-bold"
+              }`}
+              title="Panel Maestro de Despliegue, Health Gates y Disaster Recovery (P0-26)"
+            >
+              <Server className={`w-3.5 h-3.5 ${isLight ? "text-emerald-800" : "text-emerald-400"}`} />
+              <span className="hidden xl:inline font-bold">P0-26 SRE</span>
             </button>
           )}
 

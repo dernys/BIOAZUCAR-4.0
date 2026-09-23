@@ -25,6 +25,8 @@ import { ExecutivePresentation } from "./components/ExecutivePresentation";
 import { IndustrialConnectionModal } from "./components/IndustrialConnectionModal";
 import { IpcHardeningAndOfflineModal } from "./components/edge/IpcHardeningAndOfflineModal";
 import { IndustrialFatSatDeliveryModal } from "./components/edge/IndustrialFatSatDeliveryModal";
+import { UnifiedAcceptancePanel } from "./components/verification/UnifiedAcceptancePanel";
+import { ProductionDeploymentModal } from "./components/deployment/ProductionDeploymentModal";
 import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { OfflineIndicator } from "./components/pwa/OfflineIndicator";
@@ -54,6 +56,7 @@ import {
 import { updateTelemetry } from "./services/simulationEngine";
 import { dataProviderRegistry } from "./services/dataProviders/DataProviderRegistry";
 import { tenantRuntimeManager } from "./services/runtime/TenantRuntimeManager";
+import { ShelvingReasonCode } from "./services/alarms/AlarmShelvingService";
 import {
   INITIAL_TENANTS,
   initializeDatabaseIfEmpty,
@@ -104,6 +107,7 @@ export default function App() {
   const [isIndustrialModalOpen, setIsIndustrialModalOpen] = useState<boolean>(false);
   const [isIpcHardeningModalOpen, setIsIpcHardeningModalOpen] = useState<boolean>(false);
   const [isFatSatModalOpen, setIsFatSatModalOpen] = useState<boolean>(false);
+  const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState<boolean>(false);
   const [selectedLineage, setSelectedLineage] = useState<DataLineageInfo | null>(null);
   const [dbLatencyMs, setDbLatencyMs] = useState<number>(24);
 
@@ -531,6 +535,85 @@ export default function App() {
     }
   };
 
+  // ISA-18.2 Alarm Shelving Handlers
+  const handleShelveAlarm = async (
+    alarmId: string,
+    durationMinutes: number,
+    reasonCode: ShelvingReasonCode,
+    customReason?: string
+  ) => {
+    const perm = checkRbacPermission(currentRole, "SHELVE_ALARM");
+    if (!perm.allowed) {
+      alert(`Acceso denegado: ${perm.reason}`);
+      return;
+    }
+
+    try {
+      const runtime = tenantRuntimeManager.getRuntime(activeTenant.id);
+      const updated = runtime.shelveAlarm(
+        alarmId,
+        durationMinutes,
+        reasonCode,
+        customReason,
+        currentUser.name,
+        currentUser.role
+      );
+
+      if (updated) {
+        setAlarms((prev) => prev.map((a) => (a.id === alarmId ? updated : a)));
+      }
+
+      await logAuditEventToDb(
+        {
+          userRole: currentRole,
+          userName: `${currentUser.name} (${currentUser.role})`,
+          action: "SILENCIAMIENTO_ALARMA_ISA18_2",
+          module: "Centro de Alarmas SOE",
+          targetId: alarmId,
+          newValue: `SHELVED_${durationMinutes}M_${reasonCode}`,
+          status: "EXECUTED",
+          ipAddress: "192.168.10.45",
+        },
+        activeTenant.id
+      );
+    } catch (e) {
+      console.error("Error shelving alarm:", e);
+    }
+  };
+
+  const handleUnshelveAlarm = async (alarmId: string) => {
+    const perm = checkRbacPermission(currentRole, "SHELVE_ALARM");
+    if (!perm.allowed) {
+      alert(`Acceso denegado: ${perm.reason}`);
+      return;
+    }
+
+    try {
+      const runtime = tenantRuntimeManager.getRuntime(activeTenant.id);
+      const updated = runtime.unshelveAlarm(alarmId, currentUser.name);
+
+      if (updated) {
+        setAlarms((prev) => prev.map((a) => (a.id === alarmId ? updated : a)));
+      }
+
+      await logAuditEventToDb(
+        {
+          userRole: currentRole,
+          userName: `${currentUser.name} (${currentUser.role})`,
+          action: "DESARCHIVADO_ALARMA_ISA18_2",
+          module: "Centro de Alarmas SOE",
+          targetId: alarmId,
+          newValue: "UNSHELVED",
+          status: "EXECUTED",
+          ipAddress: "192.168.10.45",
+        },
+        activeTenant.id
+      );
+    } catch (e) {
+      console.error("Error unshelving alarm:", e);
+    }
+  };
+
   // Handler to update dispatch MW
   const handleDispatchUpdate = async (exportMW: number) => {
     const perm = checkRbacPermission(currentRole, "CHANGE_DISPATCH_MW");
@@ -611,6 +694,7 @@ export default function App() {
         onOpenIndustrialConnectionModal={() => setIsIndustrialModalOpen(true)}
         onOpenIpcHardening={() => setIsIpcHardeningModalOpen(true)}
         onOpenIndustrialFatSat={() => setIsFatSatModalOpen(true)}
+        onOpenProductionDeployment={() => setIsDeploymentModalOpen(true)}
         runtimeMode={runtimeMode}
         telemetry={telemetry}
         scenario={scenario}
@@ -640,6 +724,11 @@ export default function App() {
       <main className={`flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 space-y-6 transition-all duration-200 ${
         isFooterPinned ? "pb-12 sm:pb-14" : ""
       }`}>
+        <ErrorBoundary
+          fallbackTitle={`Excepción Controlada en Módulo [${activeTab.toUpperCase()}]`}
+          theme={theme}
+          onReset={() => setActiveTab("dashboard")}
+        >
         {activeTab === "dashboard" && (
           <DashboardOverview
             telemetry={telemetry}
@@ -722,7 +811,15 @@ export default function App() {
             alarms={alarms}
             onAcknowledgeAlarm={handleAcknowledgeAlarm}
             onClearAlarm={handleClearAlarm}
+            onShelveAlarm={handleShelveAlarm}
+            onUnshelveAlarm={handleUnshelveAlarm}
             currentRole={currentRole}
+          />
+        )}
+
+        {activeTab === "sat_fat_acceptance" && (
+          <UnifiedAcceptancePanel
+            onOpenFullModal={() => setIsFatSatModalOpen(true)}
           />
         )}
 
@@ -779,6 +876,7 @@ export default function App() {
             onOpenCopilot={() => setIsCopilotOpen(true)}
           />
         )}
+        </ErrorBoundary>
       </main>
 
       {/* 4. Industrial Footer & SCADA Status Bar — Executive Single-Line Responsive Dock */}
@@ -975,7 +1073,13 @@ export default function App() {
         currentRole={currentRole}
       />
 
-      {/* 11. PWA & Air-Gapped Plant Offline State Banner */}
+      {/* 11. P0-26: Production Deployment, Health Gates, Migrations & Disaster Recovery Modal */}
+      <ProductionDeploymentModal
+        isOpen={isDeploymentModalOpen}
+        onClose={() => setIsDeploymentModalOpen(false)}
+      />
+
+      {/* 12. PWA & Air-Gapped Plant Offline State Banner */}
       <OfflineIndicator />
     </div>
   );

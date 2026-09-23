@@ -45,7 +45,8 @@ export type IndustrialProtocol =
   | 'SPARKPLUG'
   | 'MODBUS'
   | 'EROS_DCS'
-  | 'EROS-NATIVE';
+  | 'EROS-NATIVE'
+  | 'MANUAL_IMPORT';
 
 export type IndustrialDataType =
   | 'FLOAT'

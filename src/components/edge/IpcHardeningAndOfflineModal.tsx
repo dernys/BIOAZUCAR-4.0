@@ -67,6 +67,7 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
   const [bastionSessions, setBastionSessions] = useState<BastionSession[]>(ztController.getSessions());
   const [commandLogs, setCommandLogs] = useState<SessionCommandAuditRecord[]>(ztController.getCommandAuditLogs());
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
+  const [authErrorMsg, setAuthErrorMsg] = useState<string | null>(null);
   const [newSessionForm, setNewSessionForm] = useState({
     engineerName: "Ing. Roberto Diaz (DCS EROS Specialist)",
     role: "AUTOMATION_SPECIALIST" as const,
@@ -139,11 +140,28 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
     });
   };
 
-  const handleCopyIptables = () => {
+  const handleCopyIptables = async () => {
     const script = dualNicManager.generateIptablesRulesScript();
-    navigator.clipboard?.writeText(script);
-    setCopiedIptables(true);
-    setTimeout(() => setCopiedIptables(false), 2000);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(script);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = script;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+      setCopiedIptables(true);
+      setTimeout(() => setCopiedIptables(false), 2500);
+    } catch {
+      setCopiedIptables(true);
+      setTimeout(() => setCopiedIptables(false), 2500);
+    }
   };
 
   const handleRevokeSession = (sessionId: string) => {
@@ -163,6 +181,7 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
 
   const handleCreateSession = (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthErrorMsg(null);
     const res = ztController.requestSession({
       engineerId: "usr_ext_eng_" + Math.floor(Math.random() * 1000),
       engineerName: newSessionForm.engineerName,
@@ -177,126 +196,133 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
 
     if (res.success) {
       setShowNewSessionModal(false);
+      setAuthErrorMsg(null);
     } else {
-      alert("Error al autorizar sesión: " + res.error);
+      setAuthErrorMsg(res.error || "Error al autorizar sesión bastión Zero-Trust");
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[120] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-fadeIn">
+    <div className="fixed inset-0 z-[120] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto min-w-0">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden animate-fadeIn min-w-0">
         {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+        <div className="px-4 sm:px-5 py-3.5 border-b border-slate-800 bg-slate-950 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-white font-tech tracking-wide">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-bold text-white font-tech tracking-wide truncate">
                   HARDENING DE INFRAESTRUCTURA IPC & MODO OFFLINE
                 </h2>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
                   OLA 4 • IEC 62443 L3
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 truncate font-sans mt-0.5">
                 Segmentación Dual-NIC, autonomía offline en sala de control, túneles Zero-Trust y CIS Benchmark
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0 ml-2"
             title="Cerrar modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-800 bg-slate-950/60 px-4 gap-2 overflow-x-auto text-xs font-semibold">
-          <button
-            onClick={() => setActiveTab("OFFLINE_SCADA")}
-            className={`flex items-center gap-2 py-3 px-3 border-b-2 transition whitespace-nowrap ${
-              activeTab === "OFFLINE_SCADA"
-                ? "border-cyan-500 text-cyan-300"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {offlineStatus.isOnline ? (
-              <Wifi className="w-4 h-4 text-emerald-400" />
-            ) : (
-              <WifiOff className="w-4 h-4 text-amber-400" />
-            )}
-            <span>I10: SCADA Offline-First</span>
-            {offlineStatus.pendingCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/30 text-amber-300 font-mono">
-                {offlineStatus.pendingCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab("DUAL_NIC")}
-            className={`flex items-center gap-2 py-3 px-3 border-b-2 transition whitespace-nowrap ${
-              activeTab === "DUAL_NIC"
-                ? "border-cyan-500 text-cyan-300"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Network className="w-4 h-4 text-cyan-400" />
-            <span>I11: Dual-NIC & Firewall</span>
-            <span
-              className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
-                nicAudit.complianceScore >= 90
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : "bg-rose-500/20 text-rose-300"
+        {/* Navigation Tabs - Responsive Segmented Controls */}
+        <div className="border-b border-slate-800 bg-slate-950/70 p-2 sm:px-4 shrink-0 overflow-hidden">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+            <button
+              onClick={() => setActiveTab("OFFLINE_SCADA")}
+              className={`flex items-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition shrink-0 border whitespace-nowrap ${
+                activeTab === "OFFLINE_SCADA"
+                  ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
               }`}
             >
-              {nicAudit.complianceScore}%
-            </span>
-          </button>
+              {offlineStatus.isOnline ? (
+                <Wifi className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
+              )}
+              <span>I10: SCADA Offline-First</span>
+              {offlineStatus.pendingCount > 0 ? (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/30 text-amber-300 font-mono font-bold">
+                  {offlineStatus.pendingCount} pend.
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-mono">
+                  Al Día
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => setActiveTab("ZERO_TRUST")}
-            className={`flex items-center gap-2 py-3 px-3 border-b-2 transition whitespace-nowrap ${
-              activeTab === "ZERO_TRUST"
-                ? "border-cyan-500 text-cyan-300"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Lock className="w-4 h-4 text-indigo-400" />
-            <span>I12: Zero-Trust Bastion</span>
-            {ztStatus.isLockdownActive ? (
-              <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500/30 text-rose-300 font-bold">
-                LOCKDOWN
+            <button
+              onClick={() => setActiveTab("DUAL_NIC")}
+              className={`flex items-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition shrink-0 border whitespace-nowrap ${
+                activeTab === "DUAL_NIC"
+                  ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <Network className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>I11: Dual-NIC & Firewall</span>
+              <span
+                className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold ${
+                  nicAudit.complianceScore >= 90
+                    ? "bg-emerald-500/20 text-emerald-300"
+                    : "bg-rose-500/20 text-rose-300"
+                }`}
+              >
+                {nicAudit.complianceScore}%
               </span>
-            ) : (
-              <span className="px-1.5 py-0.2 rounded text-[10px] bg-indigo-500/20 text-indigo-300 font-mono">
-                {ztStatus.activeSessionsCount} activas
-              </span>
-            )}
-          </button>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("CIS_HARDENING")}
-            className={`flex items-center gap-2 py-3 px-3 border-b-2 transition whitespace-nowrap ${
-              activeTab === "CIS_HARDENING"
-                ? "border-cyan-500 text-cyan-300"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <FileCheck className="w-4 h-4 text-emerald-400" />
-            <span>I13: CIS Benchmark Linux</span>
-            <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
-              {cisReport.overallScore}% Grade A
-            </span>
-          </button>
+            <button
+              onClick={() => setActiveTab("ZERO_TRUST")}
+              className={`flex items-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition shrink-0 border whitespace-nowrap ${
+                activeTab === "ZERO_TRUST"
+                  ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <Lock className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span>I12: Zero-Trust Bastion</span>
+              {ztStatus.isLockdownActive ? (
+                <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
+                  LOCKDOWN
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.2 rounded text-[10px] bg-indigo-500/20 text-indigo-300 font-mono">
+                  {ztStatus.activeSessionsCount} activas
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("CIS_HARDENING")}
+              className={`flex items-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition shrink-0 border whitespace-nowrap ${
+                activeTab === "CIS_HARDENING"
+                  ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <FileCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>I13: CIS Benchmark Linux</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                {cisReport.overallScore}% Grade A
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Content Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-5">
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 min-w-0">
           {/* ========================================================================= */}
           {/* TAB 1: I10 OFFLINE-FIRST SCADA                                            */}
           {/* ========================================================================= */}
@@ -405,8 +431,8 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
                   </button>
                 </div>
 
-                <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
-                  <table className="w-full text-left text-xs font-mono">
+                <div className="border border-slate-800 rounded-xl overflow-x-auto bg-slate-950">
+                  <table className="w-full min-w-[580px] text-left text-xs font-mono">
                     <thead className="bg-slate-900 border-b border-slate-800 text-slate-400 text-[11px]">
                       <tr>
                         <th className="p-2.5">ID Journal</th>
@@ -646,8 +672,8 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
                   <Terminal className="w-3.5 h-3.5 text-indigo-400" /> Sesiones de Mantenimiento Remoto Activas
                 </h4>
 
-                <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
-                  <table className="w-full text-left text-xs font-mono">
+                <div className="border border-slate-800 rounded-xl overflow-x-auto bg-slate-950">
+                  <table className="w-full min-w-[650px] text-left text-xs font-mono">
                     <thead className="bg-slate-900 border-b border-slate-800 text-slate-400 text-[11px]">
                       <tr>
                         <th className="p-2.5">ID Sesión</th>
@@ -717,16 +743,16 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
                 </h4>
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2 max-h-48 overflow-y-auto font-mono text-xs">
                   {commandLogs.map((log) => (
-                    <div key={log.auditId} className="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                        <span className="px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[10px]">
+                    <div key={log.auditId} className="flex flex-wrap items-center justify-between gap-2 p-2 rounded bg-slate-900 border border-slate-800">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="text-[10px] text-slate-500 shrink-0">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                        <span className="px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[10px] shrink-0 font-mono">
                           {log.sessionId}
                         </span>
-                        <span className="text-slate-200 font-bold">{log.commandText}</span>
-                        <span className="text-slate-400 text-[11px]">→ {log.targetTagOrAddress}</span>
+                        <span className="text-slate-200 font-bold break-all font-mono">{log.commandText}</span>
+                        <span className="text-slate-400 text-[11px] break-all font-mono">→ {log.targetTagOrAddress}</span>
                       </div>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0 font-mono">
                         {log.outcome}
                       </span>
                     </div>
@@ -832,6 +858,12 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
             </div>
 
             <form onSubmit={handleCreateSession} className="space-y-3 text-xs">
+              {authErrorMsg && (
+                <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>{authErrorMsg}</span>
+                </div>
+              )}
               <div>
                 <label className="text-slate-400 block mb-1">Nombre del Especialista</label>
                 <input

@@ -16,6 +16,8 @@ import {
 import { IndustrialSimulationRuntime } from "./IndustrialSimulationRuntime";
 import { createDefaultTenantConfig } from "./defaultTenantConfig";
 
+import { AlarmShelvingService, ShelvingReasonCode } from "../alarms/AlarmShelvingService";
+
 export class TenantRuntime {
   public readonly tenantId: string;
   private mode: RuntimeMode;
@@ -375,7 +377,71 @@ export class TenantRuntime {
   }
 
   public getAlarms(): AlarmEvent[] {
+    // Evaluate automatic expiration of shelved alarms per ISA-18.2
+    const shelvingService = AlarmShelvingService.getInstance();
+    const { updatedAlarms } = shelvingService.evaluateExpirations(this.alarms);
+    this.alarms = updatedAlarms;
     return this.alarms;
+  }
+
+  public getShelvedAlarms(): AlarmEvent[] {
+    return this.getAlarms().filter((a) => a.shelved);
+  }
+
+  public acknowledgeAlarm(alarmId: string, operatorName: string = "Operador de Consola"): boolean {
+    const alarm = this.alarms.find((a) => a.id === alarmId);
+    if (!alarm) return false;
+
+    alarm.acknowledged = true;
+    alarm.acknowledgedBy = operatorName;
+    alarm.acknowledgedAt = new Date().toISOString();
+    alarm.status = "ACKNOWLEDGED";
+    alarm.isaState = alarm.shelved ? "SHELVED_ACTIVE" : "ACK_ALARM";
+    return true;
+  }
+
+  public shelveAlarm(
+    alarmId: string,
+    durationMinutes: number,
+    reasonCode: ShelvingReasonCode,
+    customReason?: string,
+    operatorName: string = "Operador de Consola",
+    operatorRole: string = "operador"
+  ): AlarmEvent | null {
+    const idx = this.alarms.findIndex((a) => a.id === alarmId);
+    if (idx === -1) return null;
+
+    const shelvingService = AlarmShelvingService.getInstance();
+    const updated = shelvingService.shelveAlarm(this.alarms[idx], {
+      alarmId,
+      durationMinutes,
+      reasonCode,
+      customReason,
+      operatorName,
+      operatorRole,
+    });
+
+    this.alarms[idx] = updated;
+    return updated;
+  }
+
+  public unshelveAlarm(alarmId: string, operatorName: string = "Operador de Consola"): AlarmEvent | null {
+    const idx = this.alarms.findIndex((a) => a.id === alarmId);
+    if (idx === -1) return null;
+
+    const shelvingService = AlarmShelvingService.getInstance();
+    const updated = shelvingService.unshelveAlarm(this.alarms[idx], operatorName);
+    this.alarms[idx] = updated;
+    return updated;
+  }
+
+  public clearAlarm(alarmId: string): boolean {
+    const alarm = this.alarms.find((a) => a.id === alarmId);
+    if (!alarm) return false;
+
+    alarm.status = "CLEARED";
+    alarm.isaState = alarm.shelved ? "SHELVED_CLEARED" : "NORMAL";
+    return true;
   }
 
   public getHistorianRecords(tag?: string, limit: number = 50): HistorianRecord[] {

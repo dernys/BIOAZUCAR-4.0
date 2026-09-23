@@ -66,6 +66,7 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
   const [isMaximized, setIsMaximized] = useState<boolean>(false);
   const [fps, setFps] = useState<number>(60);
   const [hoveredEqName, setHoveredEqName] = useState<string | null>(null);
+  const [webGlError, setWebGlError] = useState<string | null>(null);
 
   // References for Three.js objects
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -320,11 +321,19 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
     camera.lookAt(cameraTargetRef.current.target);
 
     // 3. WebGL Renderer with High Precision & Shadows
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: "high-performance",
-      stencil: false,
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: "high-performance",
+        stencil: false,
+      });
+      setWebGlError(null);
+    } catch (glInitErr: any) {
+      console.warn("[DigitalTwin3D] WebGL initialization fallback:", glInitErr);
+      setWebGlError(glInitErr?.message || "Aceleración WebGL no disponible en este entorno");
+      return;
+    }
     rendererRef.current = renderer;
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -1694,6 +1703,18 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
           }`}
         >
           <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+
+          {webGlError && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-slate-950/95 text-center">
+              <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/30 text-amber-400 mb-3">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <h4 className="text-lg font-bold text-slate-100">Modo Gemelo Digital 2D (Sin GPU WebGL)</h4>
+              <p className="max-w-md text-sm text-slate-400 mt-1">
+                La aceleración WebGL no está disponible en este entorno ({webGlError}). Las dimensiones analíticas (Balance Masa/Energía, What-If, Degradación RUL y OT Sync) continúan operando normalmente.
+              </p>
+            </div>
+          )}
 
           {/* Top-Left Telemetry Badge & Performance Indicator with Strict Provenance */}
           <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 shadow-lg">

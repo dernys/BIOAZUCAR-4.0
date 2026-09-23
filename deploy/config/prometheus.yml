@@ -1,0 +1,24 @@
+# BioAzúcar 4.0 — Industrial Observability Scrape Configuration
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: "bioazucar-application"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["application:3000"]
+        labels:
+          system: "bioazucar-4.0"
+          component: "central-scada"
+          tier: "IT"
+
+  - job_name: "bioazucar-edge-node"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["edge:9099"]
+        labels:
+          system: "bioazucar-4.0"
+          component: "edge-gateway"
+          tier: "OT"

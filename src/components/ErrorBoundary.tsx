@@ -4,6 +4,7 @@ import { AlertOctagon, RefreshCw, Trash2 } from "lucide-react";
 export interface ErrorBoundaryProps {
   children: any;
   fallbackTitle?: string;
+  moduleKey?: string;
   onReset?: () => void;
   theme?: "dark" | "light";
 }
@@ -82,7 +83,7 @@ export class ErrorBoundary extends (Component as { new (props: any): any }) {
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-lg font-bold text-rose-500">
-                {this.props.fallbackTitle || "Error en el Módulo Agronómico (PDA)"}
+                {this.props.fallbackTitle || "Error en el Módulo Operativo / Industrial"}
               </h3>
               <p className="mt-1 text-sm text-slate-400">
                 Se detectó una excepción en la vista. Los datos maestros y el estado se han preservado de forma segura.

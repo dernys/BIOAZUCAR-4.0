@@ -28,6 +28,9 @@ export interface SqliteDatabaseHandle {
 function getNativeSqliteModule(): { DatabaseSync: new (location: string, options?: any) => SqliteDatabaseHandle } | null {
   if (typeof window === "undefined" && typeof process !== "undefined" && process.versions?.node) {
     try {
+      if (typeof (process as any).getBuiltinModule === "function") {
+        return (process as any).getBuiltinModule("node:sqlite");
+      }
       const nodeRequire =
         typeof (globalThis as any).__non_webpack_require__ !== "undefined"
           ? (globalThis as any).__non_webpack_require__
@@ -43,6 +46,12 @@ function getNativeSqliteModule(): { DatabaseSync: new (location: string, options
 function getNodeFsModule(): { fs: any; path: any } | null {
   if (typeof window === "undefined" && typeof process !== "undefined" && process.versions?.node) {
     try {
+      if (typeof (process as any).getBuiltinModule === "function") {
+        return {
+          fs: (process as any).getBuiltinModule("node:fs"),
+          path: (process as any).getBuiltinModule("node:path"),
+        };
+      }
       const nodeRequire =
         typeof (globalThis as any).__non_webpack_require__ !== "undefined"
           ? (globalThis as any).__non_webpack_require__

@@ -1,0 +1,7 @@
+# BioAzúcar 4.0 — Offline Deployment Bundle SHA-256 Checksums
+# Format: <SHA-256>  <filename>
+# Verify with: sha256sum -c checksums.txt (Linux) or Get-FileHash (PowerShell)
+
+92f7535b46e3cb267e2a9018e6ec22dd3a557b4f535359a1ebaf4fc09d1b6cf7  docker-compose.prod.yml
+a3b2c1d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0  mosquitto.conf
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  manifest.json

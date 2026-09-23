@@ -1,0 +1,95 @@
+# ==============================================================================
+# BIOAZÚCAR 4.0 — DOCKER COMPOSE STANDARD STACK
+# ==============================================================================
+version: "3.8"
+
+services:
+  application:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.app
+    image: bioazucar/platform:4.0.0-prod
+    container_name: bioazucar-platform
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BIOAZUCAR_MQTT_BROKER_URL=mqtt://broker:1883
+    volumes:
+      - bioazucar-data:/app/data
+      - bioazucar-logs:/app/logs
+      - ../certificates:/app/certs:ro
+    networks:
+      - industrial-it-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  edge:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.edge
+    image: bioazucar/edge-daemon:4.0.0-edge
+    container_name: bioazucar-edge
+    restart: unless-stopped
+    ports:
+      - "9099:9099"
+    environment:
+      - NODE_ENV=production
+      - BIOAZUCAR_CLOUD_URL=http://application:3000/api/edge/telemetry-sync
+      - BIOAZUCAR_MQTT_BROKER_URL=mqtt://broker:1883
+    volumes:
+      - bioazucar-edge-data:/var/lib/bioazucar-edge
+      - bioazucar-edge-logs:/var/log/bioazucar
+      - ../certificates:/etc/bioazucar/certs:ro
+    networks:
+      - industrial-it-net
+      - industrial-ot-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9099/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      application:
+        condition: service_healthy
+
+  broker:
+    image: eclipse-mosquitto:2.0.18
+    container_name: bioazucar-mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ../config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - bioazucar-broker-data:/mosquitto/data
+    networks:
+      - industrial-it-net
+      - industrial-ot-net
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/broker/version' -C 1 -i healthcheck || exit 0"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  industrial-it-net:
+    driver: bridge
+  industrial-ot-net:
+    driver: bridge
+
+volumes:
+  bioazucar-data:
+  bioazucar-logs:
+  bioazucar-edge-data:
+  bioazucar-edge-logs:
+  bioazucar-broker-data:

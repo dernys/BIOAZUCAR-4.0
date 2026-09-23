@@ -46,6 +46,8 @@ import {
 } from "../services/dbService";
 import { IpcHardeningAndOfflineModal } from "./edge/IpcHardeningAndOfflineModal";
 import { IndustrialFatSatDeliveryModal } from "./edge/IndustrialFatSatDeliveryModal";
+import { ProductionDeploymentModal } from "./deployment/ProductionDeploymentModal";
+import { Iec62443CertificationModal } from "./security/Iec62443CertificationModal";
 
 interface SystemConfigVerificationProps {
   currentRole: UserRole;
@@ -86,6 +88,8 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isIpcModalOpen, setIsIpcModalOpen] = useState(false);
   const [isFatSatModalOpen, setIsFatSatModalOpen] = useState(false);
+  const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState(false);
+  const [isIecCertModalOpen, setIsIecCertModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<SystemParameterConfig | null>(null);
   const [deletingConfigId, setDeletingConfigId] = useState<string | null>(null);
 
@@ -375,6 +379,24 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
             >
               <Award className="w-3.5 h-3.5 text-amber-400" />
               <span>FAT/SAT & Entrega (Ola 5)</span>
+            </button>
+
+            <button
+              onClick={() => setIsDeploymentModalOpen(true)}
+              className="px-3.5 py-2 bg-gradient-to-r from-emerald-950 to-slate-800 hover:from-emerald-900 hover:to-slate-700 text-emerald-300 text-xs font-mono rounded-xl border border-emerald-500/50 flex items-center gap-1.5 transition shadow-sm"
+              title="Despliegue Industrial, Health Gates, Migraciones y Recuperación ante Desastres (P0-26)"
+            >
+              <Server className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Despliegue & Recuperación (P0-26)</span>
+            </button>
+
+            <button
+              onClick={() => setIsIecCertModalOpen(true)}
+              className="px-3.5 py-2 bg-gradient-to-r from-emerald-950 via-slate-800 to-cyan-950 hover:from-emerald-900 hover:to-cyan-900 text-emerald-300 text-xs font-mono rounded-xl border border-emerald-500/50 flex items-center gap-1.5 transition shadow-sm"
+              title="Compendio Formal de Certificación y Auditoría IEC 62443-4-2 / IEC 62443-3-3 (P0-10)"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Auditoría IEC 62443 SL3 (P0-10)</span>
             </button>
           </div>
         </div>
@@ -906,6 +928,19 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
         isOpen={isFatSatModalOpen}
         onClose={() => setIsFatSatModalOpen(false)}
         currentRole={currentRole}
+      />
+
+      {/* P0-26: Production Deployment, Health Gates, Migrations & Disaster Recovery Modal */}
+      <ProductionDeploymentModal
+        isOpen={isDeploymentModalOpen}
+        onClose={() => setIsDeploymentModalOpen(false)}
+      />
+
+      {/* P0-10: IEC 62443-4-2 / IEC 62443-3-3 Certification Pack Modal */}
+      <Iec62443CertificationModal
+        isOpen={isIecCertModalOpen}
+        onClose={() => setIsIecCertModalOpen(false)}
+        tenantId={activeTenant?.id}
       />
     </div>
   );

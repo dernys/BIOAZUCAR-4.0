@@ -64,7 +64,8 @@ export type NavigationTab =
   | "enterprises"
   | "users_roles"
   | "presentation"
-  | "industrial_connections";
+  | "industrial_connections"
+  | "sat_fat_acceptance";
 
 export type NavTabId = NavigationTab;
 
@@ -608,6 +609,12 @@ export interface AlarmEvent {
   acknowledgedAt?: string;
   shelved: boolean;
   shelvedUntil?: string;
+  shelvedAt?: string;
+  shelvedBy?: string;
+  shelveReason?: string;
+  shelveDurationMinutes?: number;
+  suppressionState?: "UNSUPPRESSED" | "SHELVED" | "SUPPRESSED_BY_DESIGN" | "OUT_OF_SERVICE";
+  isaState?: "NORMAL" | "UNACK_ALARM" | "ACK_ALARM" | "RTN_UNACK" | "SHELVED_ACTIVE" | "SHELVED_CLEARED";
   interlockActive?: boolean;
   possibleCause: string;
   recommendedAction: string;

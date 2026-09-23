@@ -127,9 +127,9 @@ try {
 /**
  * Strips secrets, passwords, tokens and credentials from audit metadata (SEC-7)
  */
-function sanitizeAuditMetadata(meta?: Record<string, any>): Record<string, any> | undefined {
+export function sanitizeAuditMetadata(meta?: Record<string, any>): Record<string, any> | undefined {
   if (!meta) return undefined;
-  const sensitiveKeys = ["token", "password", "secret", "authorization", "apikey", "bearer", "key", "passwordhash"];
+  const sensitiveKeys = ["token", "password", "secret", "authorization", "apikey", "bearer", "key", "passwordhash", "jwt", "credential"];
   const clean: Record<string, any> = {};
   for (const [k, v] of Object.entries(meta)) {
     if (sensitiveKeys.some((s) => k.toLowerCase().includes(s))) {

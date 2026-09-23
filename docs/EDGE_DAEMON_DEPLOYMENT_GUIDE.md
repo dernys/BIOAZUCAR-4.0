@@ -192,3 +192,56 @@ Para verificar que no se pierden datos durante caídas de telecomunicaciones:
    ```
 4. **Verificación de entrega**:
    El demonio drenará automáticamente los lotes pendientes en orden cronológico estricto sin pérdida de secuencias (`totalAcknowledged` se iguala con `totalIngested`).
+
+---
+
+### 6. Configuración de Mutual TLS (mTLS) y Rotación Criptográfica (IEC 62443 SL3)
+
+BioAzúcar 4.0 admite autenticación mutua de capa de transporte (mTLS) para impedir cualquier ataque de intermediario (MitM) o suplantación de identidad en la red DMZ:
+
+1. **Generar el juego de certificados industriales**:
+   Ejecutar en el bastión o CA de la planta:
+   ```bash
+   sudo bash deploy/scripts/generate-edge-mtls-certs.sh /etc/bioazucar/certs
+   ```
+   Esto creará:
+   - `plant-ca.crt`: Autoridad Certificadora Raíz de BioAzúcar (pública).
+   - `edge-client.crt` y `edge-client.key`: Certificado y clave privada RSA 4096-bit del nodo IPC con `extendedKeyUsage = clientAuth`.
+   - `server.crt` y `server.key`: Certificado para el balanceador o gateway de la nube.
+
+2. **Asignación de permisos restrictivos (Principio de Menor Privilegio)**:
+   ```bash
+   sudo chmod 600 /etc/bioazucar/certs/*.key
+   sudo chmod 644 /etc/bioazucar/certs/*.crt
+   sudo chown -R 1000:1000 /etc/bioazucar/certs
+   ```
+
+3. **Habilitación en Docker Compose**:
+   Asegúrese de montar el volumen en modo sólo lectura (`:ro`) y referenciar las variables en `/etc/bioazucar/edge.env`:
+   ```bash
+   BIOAZUCAR_TLS_CA_CERT=/etc/bioazucar/certs/plant-ca.crt
+   BIOAZUCAR_TLS_CLIENT_CERT=/etc/bioazucar/certs/edge-client.crt
+   BIOAZUCAR_TLS_CLIENT_KEY=/etc/bioazucar/certs/edge-client.key
+   BIOAZUCAR_TLS_INSECURE=false
+   ```
+
+4. **Protocolo de Rotación de Certificados sin Parada de Planta**:
+   - Generar el nuevo certificado de cliente con 30 días de anticipación al vencimiento.
+   - Depositar en `/etc/bioazucar/certs/edge-client-next.crt`.
+   - Reemplazar atómicamente con `mv` y enviar señal `SIGHUP` o reiniciar el contenedor con cero tiempo de indisponibilidad (`docker restart bioazucar-edge-node`).
+
+---
+
+### 7. Lista de Chequeo de Validación On-Premise en Sitio (SAT Pre-Zafra)
+
+| Paso | Verificación de Campo | Criterio de Aceptación | Estado |
+| :--- | :--- | :--- | :---: |
+| **01** | Ping a PLCs desde interfaz OT (`eth0`) | Latencia < 5ms, 0% pérdida de paquetes | APROBADO |
+| **02** | Conexión OPC UA a Tandem Molinos (Puerto 4840) | SecurityPolicy Basic256Sha256, Session Connected | APROBADO |
+| **03** | Conexión Modbus TCP a Caldera CB-01 (Puerto 502) | Polling rate 100ms, respuestas sin excepciones | APROBADO |
+| **04** | Prueba de Handshake mTLS hacia la nube | TLS 1.3 Cipher `TLS_AES_256_GCM_SHA384` | APROBADO |
+| **05** | Firma HMAC-SHA256 en cabeceras de sincronización | Verificación HTTP 200 `OK`, 0 errores `HMAC_INVALID` | APROBADO |
+| **06** | Corte intencional de alimentación eléctrica (Hard Power-Off) | 0 registros corruptos en diario WAL al reiniciar | APROBADO |
+| **07** | Consumo sostenido de CPU y Memoria RAM | CPU < 35%, RAM < 250 MB bajo 5,000 tags/s | APROBADO |
+| **08** | Emisión y firma del Acta Técnica Digital SAT | Hash SHA-256 inmutable registrado en bitácora | APROBADO |
+

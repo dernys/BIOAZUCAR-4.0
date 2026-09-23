@@ -25,6 +25,10 @@ services:
       - NODE_ENV=production
       - BIOAZUCAR_SAF_JOURNAL_PATH=/var/lib/bioazucar-edge/saf-journal.json
       - BIOAZUCAR_EDGE_HEALTH_PORT=9099
+      - BIOAZUCAR_TLS_CA_CERT=/etc/bioazucar/certs/plant-ca.crt
+      - BIOAZUCAR_TLS_CLIENT_CERT=/etc/bioazucar/certs/edge-client.crt
+      - BIOAZUCAR_TLS_CLIENT_KEY=/etc/bioazucar/certs/edge-client.key
+      - BIOAZUCAR_TLS_INSECURE=false
 
     volumes:
       # Persistent journal store-and-forward buffer

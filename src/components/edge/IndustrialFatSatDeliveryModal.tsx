@@ -114,117 +114,137 @@ export const IndustrialFatSatDeliveryModal: React.FC<IndustrialFatSatDeliveryMod
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto min-w-0">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden min-w-0">
         {/* Modal Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+        <div className="px-4 sm:px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
               <Award className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-slate-100 font-mono tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-bold text-slate-100 font-tech tracking-tight truncate">
                   Verificación Formal FAT/SAT & Entrega Industrial
                 </h2>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
                   OLA 5
                 </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
                   IEC 62443 SL3
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-400 truncate font-sans mt-0.5">
                 Conformidad OPC UA CTT, FAT 5,000 tags/s, SAT en Ingenio Piloto, Chaos Testing y Provisión Golden.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0 ml-2"
             title="Cerrar modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-5 border-b border-slate-800 bg-slate-950/30 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab("OPCUA_CTT")}
-            className={`px-4 py-3 text-xs font-semibold font-mono border-b-2 transition whitespace-nowrap flex items-center gap-2 ${
-              activeTab === "OPCUA_CTT"
-                ? "border-amber-400 text-amber-300 bg-amber-500/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>I3: OPC UA CTT ({opcReport.complianceRate}%)</span>
-          </button>
+        {/* Tab Navigation - Responsive Segmented Controls */}
+        <div className="border-b border-slate-800 bg-slate-950/70 p-2 sm:px-4 shrink-0 overflow-hidden">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+            <button
+              onClick={() => setActiveTab("OPCUA_CTT")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition whitespace-nowrap flex items-center gap-2 shrink-0 border ${
+                activeTab === "OPCUA_CTT"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>I3: OPC UA CTT</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-amber-500/30 text-amber-300 font-bold">
+                {opcReport.complianceRate}%
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("FAT_TEST")}
-            className={`px-4 py-3 text-xs font-semibold font-mono border-b-2 transition whitespace-nowrap flex items-center gap-2 ${
-              activeTab === "FAT_TEST"
-                ? "border-amber-400 text-amber-300 bg-amber-500/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>I17: FAT Banco de Pruebas (5k tags/s)</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("FAT_TEST")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition whitespace-nowrap flex items-center gap-2 shrink-0 border ${
+                activeTab === "FAT_TEST"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>I17: FAT Banco</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 font-bold">
+                5k tags/s
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("SAT_COMMISSIONING")}
-            className={`px-4 py-3 text-xs font-semibold font-mono border-b-2 transition whitespace-nowrap flex items-center gap-2 ${
-              activeTab === "SAT_COMMISSIONING"
-                ? "border-amber-400 text-amber-300 bg-amber-500/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Flame className="w-3.5 h-3.5" />
-            <span>I18: SAT Planta Piloto & Acta</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("SAT_COMMISSIONING")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition whitespace-nowrap flex items-center gap-2 shrink-0 border ${
+                activeTab === "SAT_COMMISSIONING"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>I18: SAT Planta Piloto</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 font-bold">
+                Acta OK
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("CHAOS_TESTING")}
-            className={`px-4 py-3 text-xs font-semibold font-mono border-b-2 transition whitespace-nowrap flex items-center gap-2 ${
-              activeTab === "CHAOS_TESTING"
-                ? "border-amber-400 text-amber-300 bg-amber-500/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>I19: Chaos Testing & Resiliencia</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("CHAOS_TESTING")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition whitespace-nowrap flex items-center gap-2 shrink-0 border ${
+                activeTab === "CHAOS_TESTING"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>I19: Chaos Testing</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 font-bold">
+                Resiliencia
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("IEC62443_SL3")}
-            className={`px-4 py-3 text-xs font-semibold font-mono border-b-2 transition whitespace-nowrap flex items-center gap-2 ${
-              activeTab === "IEC62443_SL3"
-                ? "border-amber-400 text-amber-300 bg-amber-500/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <FileCheck className="w-3.5 h-3.5" />
-            <span>I20: Matriz IEC 62443 & SBOM</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("IEC62443_SL3")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition whitespace-nowrap flex items-center gap-2 shrink-0 border ${
+                activeTab === "IEC62443_SL3"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <FileCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>I20: IEC 62443 & SBOM</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 font-bold">
+                SL3
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("GOLDEN_IMAGE")}
-            className={`px-4 py-3 text-xs font-semibold font-mono border-b-2 transition whitespace-nowrap flex items-center gap-2 ${
-              activeTab === "GOLDEN_IMAGE"
-                ? "border-amber-400 text-amber-300 bg-amber-500/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Cpu className="w-3.5 h-3.5" />
-            <span>I21: Imagen Golden IPC (&lt;30 min)</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("GOLDEN_IMAGE")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition whitespace-nowrap flex items-center gap-2 shrink-0 border ${
+                activeTab === "GOLDEN_IMAGE"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm font-bold"
+                  : "bg-slate-900/40 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border-slate-800/80"
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span>I21: Imagen Golden IPC</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 font-bold">
+                &lt;3 min
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6 min-w-0">
           {/* TAB 1: I3 OPC UA CTT */}
           {activeTab === "OPCUA_CTT" && (
             <div className="space-y-6">

@@ -20,7 +20,8 @@ import {
   Users,
   ShieldCheck,
   Presentation,
-  Tractor
+  Tractor,
+  Award,
 } from "lucide-react";
 import { NavigationTab, UserRole, UserAccount } from "../types";
 
@@ -151,6 +152,15 @@ export const Navigation: React.FC<NavigationProps> = ({
       icon: TrendingUp,
       desc: "Tendencias & CSV",
       category: "OT_OBSERVABILITY",
+    },
+    {
+      id: "sat_fat_acceptance",
+      label: "Aceptación SAT/FAT",
+      icon: Award,
+      desc: "Lazos & Comisionamiento",
+      category: "OT_OBSERVABILITY",
+      tag: "SAT/FAT",
+      highlight: true,
     },
     {
       id: "ai_center",

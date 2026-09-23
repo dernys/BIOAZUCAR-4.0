@@ -1,16 +1,36 @@
 <!doctype html>
 <html lang="es">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
       // Defensive handler: prevent external browser extensions and benign platform [vite] HMR logs
       // from throwing unhandled rejections or polluting window error events in sandboxed iframes
       (function() {
         var isViteOrExtensionLog = function(args) {
+          if (!args) return false;
           for (var i = 0; i < args.length; i++) {
             var arg = args[i];
-            if (typeof arg === 'string' && (arg.indexOf('[vite]') !== -1 || arg.indexOf('failed to connect to websocket') !== -1)) {
+            if (!arg) continue;
+            var str = '';
+            if (typeof arg === 'string') {
+              str = arg;
+            } else if (arg instanceof Error) {
+              str = (arg.message || '') + ' ' + (arg.stack || '');
+            } else {
+              try {
+                str = (arg.message || '') + ' ' + String(arg);
+              } catch (e) {
+                str = '';
+              }
+            }
+            var lower = str.toLowerCase();
+            if (
+              lower.indexOf('[vite]') !== -1 ||
+              lower.indexOf('vite-hmr') !== -1 ||
+              lower.indexOf('failed to connect to websocket') !== -1 ||
+              lower.indexOf('connecting to websocket') !== -1 ||
+              lower.indexOf('polling for restart') !== -1 ||
+              str === '[vite]'
+            ) {
               return true;
             }
           }
@@ -20,7 +40,6 @@
         var origConsoleError = console.error;
         console.error = function() {
           if (isViteOrExtensionLog(arguments)) {
-            console.debug.apply(console, arguments);
             return;
           }
           return origConsoleError.apply(console, arguments);
@@ -29,23 +48,52 @@
         var origConsoleWarn = console.warn;
         console.warn = function() {
           if (isViteOrExtensionLog(arguments)) {
-            console.debug.apply(console, arguments);
             return;
           }
           return origConsoleWarn.apply(console, arguments);
         };
 
+        var origConsoleInfo = console.info;
+        console.info = function() {
+          if (isViteOrExtensionLog(arguments)) {
+            return;
+          }
+          return origConsoleInfo.apply(console, arguments);
+        };
+
+        var origConsoleDebug = console.debug;
+        console.debug = function() {
+          if (isViteOrExtensionLog(arguments)) {
+            return;
+          }
+          return origConsoleDebug ? origConsoleDebug.apply(console, arguments) : undefined;
+        };
+
+        var origConsoleLog = console.log;
+        console.log = function() {
+          if (isViteOrExtensionLog(arguments)) {
+            return;
+          }
+          return origConsoleLog.apply(console, arguments);
+        };
+
         var isExtensionNoise = function(err) {
           if (!err) return false;
+          if (typeof Event !== 'undefined' && err instanceof Event) {
+            if (err.target && (err.target instanceof WebSocket || (err.target.constructor && err.target.constructor.name === 'WebSocket'))) {
+              return true;
+            }
+          }
           var msg = typeof err === 'string' ? err : (err.message || err.reason || err.description || '');
           if (typeof msg !== 'string') {
-            try { msg = String(msg); } catch (e) { return false; }
+            try { msg = String(msg); } catch (e) { msg = ''; }
           }
           var lower = msg.toLowerCase();
           return (
             lower.includes('[vite]') ||
             lower.includes('failed to connect to websocket') ||
             lower.includes('websocket closed') ||
+            lower.includes('vite-hmr') ||
             lower.includes('metamask') ||
             lower.includes('failed to connect to metamask') ||
             lower.includes('ethereum') ||
@@ -65,14 +113,38 @@
         }, true);
 
         window.addEventListener('error', function(event) {
-          if (isExtensionNoise(event.message) || isExtensionNoise(event.error)) {
+          if (
+            isExtensionNoise(event.message) ||
+            isExtensionNoise(event.error) ||
+            (event.target && event.target instanceof WebSocket) ||
+            (event.filename && event.filename.indexOf('@vite/client') !== -1)
+          ) {
             event.preventDefault();
             event.stopImmediatePropagation();
             return false;
           }
         }, true);
+
+        window.onerror = function(message, source, lineno, colno, error) {
+          if (
+            isExtensionNoise(message) ||
+            isExtensionNoise(error) ||
+            (typeof source === 'string' && source.indexOf('@vite/client') !== -1)
+          ) {
+            return true;
+          }
+          return false;
+        };
+
+        // Fast Refresh / Vite preamble fallback to ensure window.$RefreshReg$ is always defined
+        // before any component module executes, eliminating "@vitejs/plugin-react can't detect preamble"
+        window.$RefreshReg$ = window.$RefreshReg$ || function() {};
+        window.$RefreshSig$ = window.$RefreshSig$ || function() { return function(type) { return type; }; };
+        window.__vite_plugin_react_preamble_installed__ = true;
       })();
     </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BioAzúcar 4.0 - Smart Mill & Cogeneration MES/IIoT</title>
     <meta name="description" content="Plataforma de Industria 4.0, Gemelo Digital y Planificación Agrícola PDA para Central Azucarero y Cogeneración Eléctrica con balance de masa/energía, SCADA, curvas TCH, logística CCT, IA analítica y OEE." />
     <meta property="og:title" content="BioAzúcar 4.0 - Smart Mill & Cogeneration MES/IIoT" />

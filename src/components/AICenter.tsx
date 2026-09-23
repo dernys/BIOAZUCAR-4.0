@@ -17,6 +17,7 @@ import {
   ArrowRight,
   Info,
   Cpu,
+  Database,
 } from "lucide-react";
 import { TelemetryData, UserRole, TenantEnterprise, EquipmentItem, AlarmEvent } from "../types";
 import { OperationalPredictionsView } from "./bioai/OperationalPredictionsView";
@@ -24,6 +25,7 @@ import { RootCauseAnalysisView } from "./bioai/RootCauseAnalysisView";
 import { IndustrialRecommendationsView } from "./bioai/IndustrialRecommendationsView";
 import { IndustrialGatewayStatusView } from "./bioai/IndustrialGatewayStatusView";
 import { AiModelGatewayManagerView } from "./bioai/AiModelGatewayManagerView";
+import { BioAiDatasetsCalibrationView } from "./bioai/BioAiDatasetsCalibrationView";
 import {
   diagnoseAnomalyWithAI,
   optimizeCombustionWithAI,
@@ -45,6 +47,7 @@ export type BioAiTab =
   | "operational_predictions"
   | "root_cause_analysis"
   | "recommendations"
+  | "datasets_calibration"
   | "gateway_status"
   | "model_gateway"
   | "copilot_assistant";
@@ -201,6 +204,18 @@ export const AICenter: React.FC<AICenterProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveBioAiTab("datasets_calibration")}
+          className={`px-4 py-2 rounded-lg text-xs font-mono transition flex items-center gap-2 ${
+            activeBioAiTab === "datasets_calibration"
+              ? "bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-600/30"
+              : "bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800"
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          <span>Datasets Zafra & Calibración (P0-09)</span>
+        </button>
+
+        <button
           onClick={() => setActiveBioAiTab("gateway_status")}
           className={`px-4 py-2 rounded-lg text-xs font-mono transition flex items-center gap-2 ${
             activeBioAiTab === "gateway_status"
@@ -263,6 +278,10 @@ export const AICenter: React.FC<AICenterProps> = ({
           alarms={alarms}
           equipmentList={equipmentList}
         />
+      )}
+
+      {activeBioAiTab === "datasets_calibration" && (
+        <BioAiDatasetsCalibrationView />
       )}
 
       {activeBioAiTab === "gateway_status" && (

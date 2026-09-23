@@ -1,0 +1,50 @@
+{
+  "product": "BioAzúcar 4.0",
+  "version": "4.0.0-prod",
+  "release": "2026.09.20-P0-26",
+  "schemaVersion": "003",
+  "edgeVersion": "4.0.0-edge",
+  "databaseVersion": "SQLite-WAL-3.45",
+  "minimumUpgradeVersion": "3.8.0",
+  "rollbackSupported": true,
+  "images": [
+    {
+      "name": "bioazucar/platform",
+      "tag": "4.0.0-prod",
+      "archiveFile": "images/bioazucar-platform-4.0.0-prod.tar",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sizeBytes": 150000000
+    },
+    {
+      "name": "bioazucar/edge-daemon",
+      "tag": "4.0.0-edge",
+      "archiveFile": "images/bioazucar-edge-daemon-4.0.0-edge.tar",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sizeBytes": 85000000
+    },
+    {
+      "name": "eclipse-mosquitto",
+      "tag": "2.0.18",
+      "archiveFile": "images/eclipse-mosquitto-2.0.18.tar",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sizeBytes": 15000000
+    },
+    {
+      "name": "prom/prometheus",
+      "tag": "v2.51.0",
+      "archiveFile": "images/prometheus-v2.51.0.tar",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sizeBytes": 95000000
+    }
+  ],
+  "artifacts": [
+    {
+      "relativePath": "docker-compose.prod.yml",
+      "sha256": "92f7535b46e3cb267e2a9018e6ec22dd3a557b4f535359a1ebaf4fc09d1b6cf7"
+    },
+    {
+      "relativePath": "mosquitto.conf",
+      "sha256": "a3b2c1d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0"
+    }
+  ]
+}
