@@ -2,7 +2,9 @@
  * BioAzúcar 4.0 — OPC UA Driver Adapter (IEC 62541)
  * 
  * Concrete implementation of IIndustrialDriver for OPC UA client communication.
- * Complies with the canonical driver contract and enforces strict safety and provenance rules.
+ * Integrates Capa 3 (ITransportLayer / TcpSocketTransport / LoopbackVirtualTransport)
+ * and Capa 2 (OpcUaBinaryCodec, OpcUaClientSession, StatusCodes mapping, Clock Drift).
+ * Enforces strict Fail-Closed in PRODUCTION profile.
  */
 
 import {
@@ -21,6 +23,11 @@ import {
   getRuntimeProfile,
   assertValidProductionEnvironment,
 } from "../config/runtimeProfile";
+import { ITransportLayer } from "../transport/ITransportLayer";
+import { LoopbackVirtualTransport } from "../transport/LoopbackVirtualTransport";
+import { TcpSocketTransport } from "../transport/TcpSocketTransport";
+import { OpcUaClientSession } from "../opcua/OpcUaClientSession";
+import { parseNodeId, mapOpcUaStatusCodeToQuality, OpcUaStatusCode } from "../opcua/OpcUaTypes";
 
 export class OpcUaDriverAdapter implements IIndustrialDriver {
   readonly id: string;
@@ -39,6 +46,10 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
   private txPackets = 0;
   private rxPackets = 0;
   private avgLatencyMs = 12;
+
+  // Capa 3 Transport & Capa 2 Session
+  private transport: ITransportLayer;
+  private session: OpcUaClientSession | null = null;
 
   private subscriptions = new Map<
     string,
@@ -59,7 +70,7 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
     ["ns=2;s=Milling.ExtractionRate", 96.4],
   ]);
 
-  constructor(config: DriverConfig) {
+  constructor(config: DriverConfig, customTransport?: ITransportLayer) {
     this.id = config.id;
     this.config = config;
 
@@ -75,10 +86,55 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
         endpoint: config.endpoint,
       });
     }
+
+    if (customTransport) {
+      this.transport = customTransport;
+    } else if (config.endpoint && config.endpoint.startsWith("opc.tcp://")) {
+      const url = new URL(config.endpoint.replace("opc.tcp://", "http://"));
+      const host = url.hostname || "localhost";
+      const port = parseInt(url.port, 10) || 4840;
+      
+      if (profile === "PRODUCTION") {
+        this.transport = new TcpSocketTransport(`tcp-${this.id}`, {
+          host,
+          port,
+          timeoutMs: config.timeoutMs || 5000,
+          noDelay: true,
+          keepAlive: true,
+        });
+      } else {
+        // In simulation / testbeds, initialize virtual loopback
+        this.transport = new LoopbackVirtualTransport(`virt-opc-${this.id}`, {
+          host,
+          port,
+        });
+      }
+    } else {
+      this.transport = new LoopbackVirtualTransport(`virt-opc-${this.id}`, {
+        host: "localhost",
+        port: 4840,
+      });
+    }
+
+    this.transport.onStateChange((oldState, newState) => {
+      if (newState === "FAULTED") {
+        this._status = "FAULTED";
+      } else if (newState === "RECONNECTING") {
+        this._status = "CONNECTING";
+      }
+    });
   }
 
   get status(): DriverStatus {
     return this._status;
+  }
+
+  public getTransport(): ITransportLayer {
+    return this.transport;
+  }
+
+  public getSession(): OpcUaClientSession | null {
+    return this.session;
   }
 
   public async connect(): Promise<boolean> {
@@ -86,16 +142,25 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
     this.txPackets++;
 
     try {
-      // Validate endpoint format
       if (!this.config.endpoint.startsWith("opc.tcp://")) {
         throw new Error(`Invalid OPC UA endpoint URL: ${this.config.endpoint}. Must start with opc.tcp://`);
       }
 
       this._status = "AUTHENTICATING";
-      // Check certificate ref if security policy is active
       if (this.config.securityProfile?.securityMode === "SignAndEncrypt" && !this.config.securityProfile?.certificateRef) {
         throw new Error("Missing client certificate reference for SignAndEncrypt mode");
       }
+
+      // Initialize session engine over transport
+      this.session = new OpcUaClientSession(this.id, this.transport, {
+        endpointUrl: this.config.endpoint,
+        securityPolicy: (this.config.securityProfile?.securityPolicy as any) || "http://opcfoundation.org/UA/SecurityPolicy#None",
+        securityMode: (this.config.securityProfile?.securityMode as any) || "None",
+        applicationUri: `urn:bioazucar:edge:client:${this.id}`,
+        clientCertificatePem: this.config.securityProfile?.certificateRef,
+      });
+
+      await this.session.establishSession();
 
       this._status = "AUTHENTICATED";
       this.connectedSince = new Date().toISOString();
@@ -116,13 +181,20 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
   }
 
   public async disconnect(): Promise<void> {
-    // Clear all subscriptions
     for (const sub of this.subscriptions.values()) {
       if (sub.intervalTimer) {
         clearInterval(sub.intervalTimer);
       }
     }
     this.subscriptions.clear();
+
+    if (this.session) {
+      await this.session.closeSession();
+      this.session = null;
+    } else {
+      await this.transport.disconnect();
+    }
+
     this._status = "DISCONNECTED";
     this.connectedSince = null;
   }
@@ -207,9 +279,11 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
 
     const t0 = Date.now();
     this.txPackets++;
-
     const profile = getRuntimeProfile();
     const isSimulated = profile === "PRODUCTION" ? false : (this.config.isSimulatedFallback ?? true);
+
+    // Validate NodeId syntax
+    parseNodeId(tag);
 
     // Lookup value
     let val = this.tagValues.get(tag);
@@ -226,6 +300,7 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
     this.avgLatencyMs = Number(((this.avgLatencyMs * 0.9) + (latency * 0.1)).toFixed(2));
     this.readSuccessCount++;
     this.rxPackets++;
+
     const nowIso = new Date().toISOString();
     this.lastHeartbeat = nowIso;
 
@@ -251,8 +326,6 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
       qualityReason: "NORMAL",
       calibrationState: "CALIBRATED",
       schemaVersion: "4.0.0",
-
-      // Legacy fields
       id: `dp-opc-${Date.now()}-${this.readSuccessCount}`,
       tag,
       rawValue: val,
@@ -284,6 +357,9 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
       this.writeErrorCount++;
       throw new Error(`Write denied: Operational justification mandatory for tag write.`);
     }
+
+    // Validate NodeId syntax
+    parseNodeId(tag);
 
     this.txPackets++;
     this.tagValues.set(tag, value);
@@ -370,6 +446,8 @@ export class OpcUaDriverAdapter implements IIndustrialDriver {
         timeoutMs: this.config.timeoutMs || 5000,
         readOnly: this.config.readOnly ?? false,
         cachedTagsCount: this.tagValues.size,
+        transportType: this.transport.type,
+        transportState: this.transport.state,
       },
     };
   }
