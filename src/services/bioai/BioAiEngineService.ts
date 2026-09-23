@@ -468,7 +468,7 @@ export class BioAiEngineService {
           "Instalar control automático feed-forward de imbibición indexado a la humedad en línea del bagazo.",
           "Inspección de desgaste en peines y raspadores de bagazo en Molino 5.",
         ],
-        financialImpactEstimatedUSD: "$8,200 USD/día por menor despacho de energía MWh exportable a la red",
+        financialImpactEstimatedUSD: "[ESTIMATED/MODELLED] $8,200 USD/día por menor despacho de energía MWh exportable a la red",
         isAiGenerated: true,
       };
     }
@@ -537,7 +537,7 @@ export class BioAiEngineService {
         "Planificar chequeo boroscópico de casquillo de bronce en próximo paro de zafra.",
         "Ajustar pernos de bancada con llave dinamométrica según torque especificado de 1,200 Nm.",
       ],
-      financialImpactEstimatedUSD: "Riesgo de falla catastrófica de maza y paro de tándem: ~$18,500 USD/hora",
+      financialImpactEstimatedUSD: "[ESTIMATED/MODELLED] Riesgo de falla catastrófica de maza y paro de tándem: ~$18,500 USD/hora",
       isAiGenerated: true,
     };
   }

@@ -15,8 +15,12 @@ import * as crypto from "crypto";
 import { fileURLToPath } from "url";
 import { SqliteWalEngine } from "../../src/services/edge/storage/SqliteWalEngine";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentFilename = typeof __filename !== "undefined"
+  ? __filename
+  : (typeof import.meta !== "undefined" && import.meta.url ? fileURLToPath(import.meta.url) : process.cwd());
+const currentDirname = typeof __dirname !== "undefined"
+  ? __dirname
+  : path.dirname(currentFilename);
 
 export interface MigrationRecord {
   version: string;
@@ -56,7 +60,7 @@ export class MigrationRunner {
     }
     const dbPath = options?.dbPath || path.join(defaultDataDir, "bioazucar-production.sqlite");
     this.engine = new SqliteWalEngine({ dbPath });
-    this.migrationsDir = options?.migrationsDir || path.resolve(__dirname);
+    this.migrationsDir = options?.migrationsDir || path.resolve(currentDirname);
   }
 
   public getEngine(): SqliteWalEngine {

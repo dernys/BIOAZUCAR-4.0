@@ -424,7 +424,7 @@ export class IndustrialToolExecutor {
               factoryInternalPowerMW: internalMw,
               gridExportPowerMW: exportMw,
               energySurplus: exportMw > 0 ? "SUPERAVITARIO" : "DEFICITARIO",
-              ppaRevenueEstimateUSD: `${Math.round(exportMw * 85)} USD/h`,
+              ppaRevenueEstimateUSD: `${Math.round(exportMw * 85)} USD/h (ESTIMATED/MODELLED)`,
             },
             widgets: [
               {
@@ -1307,7 +1307,7 @@ export class IndustrialToolExecutor {
               targetSteamConsumption: `${energyPred.targetSteamConsumptionKgPerKgCane} kg vapor / kg caña`,
               powerExportMW: `${powerExport} MW`,
               projectedExport24hMWh: `${energyPred.projectedExport24hMWh} MWh`,
-              projectedRevenueUSD: `$${energyPred.projectedRevenue24hUSD.toLocaleString()} USD`,
+              projectedRevenueUSD: `$${energyPred.projectedRevenue24hUSD.toLocaleString()} USD (ESTIMATED/MODELLED)`,
               bagasseSurplusStorageTph: `${energyPred.bagasseSurplusStorageTph} t/h`,
               confidenceScore: energyPred.confidenceScore,
               lossesBreakdown: energyPred.lossesBreakdown,
@@ -1326,7 +1326,7 @@ export class IndustrialToolExecutor {
                   { parametro: "Consumo Específico Vapor", valor: `${steamSpecific} kg/kg` },
                   { parametro: "Despacho SEN Activo", valor: `${powerExport} MW` },
                   { parametro: "Excedente Bagazo", valor: `+${energyPred.bagasseSurplusStorageTph} t/h` },
-                  { parametro: "Ingreso Proyectado 24h", valor: `$${energyPred.projectedRevenue24hUSD.toLocaleString()} USD` },
+                  { parametro: "Ingreso Proyectado 24h", valor: `$${energyPred.projectedRevenue24hUSD.toLocaleString()} USD (ESTIMATED/MODELLED)` },
                 ],
               },
             ],

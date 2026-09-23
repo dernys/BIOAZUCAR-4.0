@@ -233,11 +233,11 @@ export const OperationalPredictionsView: React.FC<OperationalPredictionsViewProp
             </div>
             <div className="text-xs font-mono text-emerald-400 mt-1 flex items-center gap-1">
               <DollarSign className="w-3.5 h-3.5" />
-              Ingreso: ${energyPred ? energyPred.projectedRevenue24hUSD.toLocaleString() : "..."} USD
+              Ingreso: ${energyPred ? energyPred.projectedRevenue24hUSD.toLocaleString() : "..."} USD (MODELADO)
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
-            <span>PPA Tarifa:</span>
+            <span>PPA Tarifa (Modelada):</span>
             <span className="text-white font-bold">$78.50 / MWh</span>
           </div>
         </div>

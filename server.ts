@@ -48,7 +48,7 @@ if (typeof (globalThis as any).__dirname !== "undefined") {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Apply IEC 62443 / OWASP Security Headers
 app.use(securityHeadersMiddleware);
