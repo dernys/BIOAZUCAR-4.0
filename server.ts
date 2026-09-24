@@ -39,6 +39,7 @@ import { MigrationRunner } from "./deploy/migrations/migrationRunner";
 import { HighDensityTelemetryStreamer } from "./src/services/telemetry/HighDensityTelemetryStreamer";
 import { Iec62443CertificationPackService } from "./src/services/security/Iec62443CertificationPack";
 import { SystemHealthCheckService } from "./src/services/verification/SystemHealthCheckService";
+import { ZeroTouchProvisioningService } from "./src/services/edge/provisioning/ZeroTouchProvisioningService";
 
 dotenv.config();
 
@@ -2318,6 +2319,112 @@ app.get("/api/ai/gateway/metrics", (_req, res) => {
   res.setHeader("Content-Type", "text/plain; version=0.0.4");
   res.send(AiModelGatewayService.getInstance().exportPrometheusMetrics());
 });
+
+// ============================================================================
+// Zero-Touch Remote Provisioning (ZTP) & X.509 mTLS Endpoints (PRV-02 / P0-05)
+// ============================================================================
+app.post("/api/edge/ztp/bootstrap-token", requireAuth, (req, res) => {
+  try {
+    const { tenantId, siteId, gatewayId, ttlHours, allowedSubnets } = req.body || {};
+    if (!tenantId || !siteId || !gatewayId) {
+      return res.status(400).json({ error: "Missing required fields: tenantId, siteId, gatewayId" });
+    }
+    const ztpService = ZeroTouchProvisioningService.getInstance();
+    const token = ztpService.generateBootstrapToken({
+      tenantId,
+      siteId,
+      gatewayId,
+      ttlHours,
+      allowedSubnets,
+    });
+    res.json({ success: true, token });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to generate bootstrap token" });
+  }
+});
+
+app.post("/api/edge/ztp/pre-register", requireAuth, (req, res) => {
+  try {
+    const { gatewayId, tenantId, siteId, expectedChassisUuid, expectedMacAddress, expectedSerialNumber, assignedRuntimeProfile } = req.body || {};
+    if (!gatewayId || !tenantId || !siteId) {
+      return res.status(400).json({ error: "Missing required fields: gatewayId, tenantId, siteId" });
+    }
+    const ztpService = ZeroTouchProvisioningService.getInstance();
+    ztpService.preRegisterDevice({
+      gatewayId,
+      tenantId,
+      siteId,
+      expectedChassisUuid,
+      expectedMacAddress,
+      expectedSerialNumber,
+      assignedRuntimeProfile: assignedRuntimeProfile || "SIMULATION",
+      registeredAt: new Date().toISOString(),
+      registeredBy: (req as any).user?.uid || "admin",
+      status: "UNPROVISIONED",
+    });
+    res.json({ success: true, message: `Device '${gatewayId}' pre-registered successfully.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to pre-register device" });
+  }
+});
+
+app.post("/api/edge/ztp/enroll", async (req, res) => {
+  try {
+    const csrRequest = req.body;
+    if (!csrRequest || !csrRequest.csrPem || !csrRequest.bootstrapTokenId || !csrRequest.bootstrapTokenProof) {
+      return res.status(400).json({ error: "Invalid CSR enrollment payload." });
+    }
+    const ztpService = ZeroTouchProvisioningService.getInstance();
+    const result = await ztpService.processEnrollment(csrRequest);
+    if (!result.success) {
+      return res.status(403).json(result);
+    }
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Enrollment failed" });
+  }
+});
+
+app.post("/api/edge/ztp/verify-mtls", (req, res) => {
+  try {
+    const mtlsReq = req.body;
+    if (!mtlsReq || !mtlsReq.clientCertificatePem || !mtlsReq.clientSignatureProof) {
+      return res.status(400).json({ error: "Invalid mTLS verification request." });
+    }
+    const ztpService = ZeroTouchProvisioningService.getInstance();
+    const result = ztpService.verifyMtlsHandshake(mtlsReq);
+    if (!result.authenticated) {
+      return res.status(401).json(result);
+    }
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "mTLS verification failed" });
+  }
+});
+
+app.get("/api/edge/ztp/devices", requireAuth, (_req, res) => {
+  try {
+    const ztpService = ZeroTouchProvisioningService.getInstance();
+    res.json({ devices: ztpService.getAllDevices() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve devices" });
+  }
+});
+
+app.post("/api/edge/ztp/revoke", requireAuth, (req, res) => {
+  try {
+    const { gatewayId, reason } = req.body || {};
+    if (!gatewayId || !reason) {
+      return res.status(400).json({ error: "Missing required fields: gatewayId, reason" });
+    }
+    const ztpService = ZeroTouchProvisioningService.getInstance();
+    const success = ztpService.revokeDevice(gatewayId, reason);
+    res.json({ success });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Revocation failed" });
+  }
+});
+
 
 // Setup Vite development middleware or static file serving
 async function startServer() {

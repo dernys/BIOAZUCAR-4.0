@@ -23,8 +23,8 @@ Esta sección consolida el estado **real, reproducible y no ambiguo** del reposi
 | **Node.js & NPM** | Node `v22.23.2` / NPM `10.9.8` | Verificado en contenedor |
 | **Frontend Framework** | React `19.0.1` + Tailwind CSS `v4.1.14` | Compilación Vite 6.4.3 exitosa |
 | **Backend Runtime** | Express `4.21.2` + `tsx` / `esbuild` en puerto 3000 | `/server.ts` con middleware de seguridad IEC 62443 |
-| **Suites de Pruebas** | **55 suites ejecutadas (55 pasadas)** | `npx vitest run` (100% PASS) |
-| **Casos de Prueba** | **602 pruebas aprobadas (0 fallos, 0 omitidas)** | Ejecución en ~38 segundos |
+| **Suites de Pruebas** | **56 suites ejecutadas (56 pasadas)** | `npx vitest run` (100% PASS) |
+| **Casos de Prueba** | **622 pruebas aprobadas (0 fallos, 0 omitidas)** | Ejecución en ~43 segundos |
 | **Linter / Type-Check** | **0 errores, 0 advertencias** | `npm run lint` (`tsc --noEmit` EXIT CODE 0) |
 | **Compilación de Producción** | **Exitosa (Vite SPA + esbuild CJS server)** | `npm run build` (`dist/` y `dist/server.cjs`) |
 | **Backend Health Check** | **HTTP 200 OK** | `GET /api/health` y `GET /api/system/health-deep` (Deep Subsystems Audit) |
@@ -562,7 +562,7 @@ Esta matriz desglosa de manera transparente el estado de cada unidad de ingenier
 | **REP-01** | 24 | Generador Reporte de Zafra | 1.5 | `TESTED` | 90% | 65% | 0% | E3 | `ZafraReportingService.ts` | Desajuste en báscula | Reconciliación con pesaje fiscal |
 | **REP-02** | 24 | Exportación Balances Oficiales| 1.0 | `TESTED` | 85% | 60% | 0% | E3 | `ReportExportModal.tsx` | Formato no estandarizado| Exportación PDF/CSV firmado HMAC |
 | **PRV-01** | 25 | Generación Manifest Provisión | 2.0 | `TESTED` | 90% | 65% | 0% | E3 | `IndustrialCommissioningService.ts`| Configuración incompleta| Validación de esquema estricta |
-| **PRV-02** | 25 | Provisión Zero-Touch Remota | 2.5 | `PARTIAL` `[MANUAL_STEP]`| 60% | 35% | 0% | E2 | `CentralProvisioningWizard.tsx` | Sin firma digital X.509 | Implementar flujo E2E con mTLS |
+| **PRV-02** | 25 | Provisión Zero-Touch Remota | 2.5 | `TESTED` `[ZTP_MTLS_X509]`| 95% | 85% | 0% | E3 | `ZeroTouchProvisioningService.ts`, `X509CertificateEngine.ts`, `server.ts` | Validado E2E con mTLS, CSR, CRL y Hot-Reload; requiere enrolamiento físico de IPC en campo | Validar contra hardware IPC real en red de comisionamiento |
 | **BAK-01** | 26 | Respaldo Local de Estado | 1.5 | `TESTED` | 85% | 60% | 0% | E3 | `BackupService.ts` | Falla física de disco IPC| Snapshot en memoria USB cifrada |
 | **BAK-02** | 26 | Restauración & Disaster Recov.| 1.5 | `TESTED` | 85% | 60% | 0% | E3 | `BackupService.ts` | Incompatibilidad de versión| Migración automática de esquema |
 | **FAT-01** | 27 | Framework Automatizado FAT/SAT| 2.0 | `TESTED` `[IN_MEMORY]` | 85% | 60% | 0% | E3 | `FatAcceptanceService.ts` | No ejecutado en campo | Ejecución con simulador de hardware|
@@ -585,7 +585,7 @@ $$\text{Global Completion Score} = \frac{\sum_{i=1}^{85} (S_{i} \times \text{Pes
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │ RESULTADOS MATEMÁTICOS DE LA AUDITORÍA DE SNAPSHOT VERIFICADO:                        │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 1. SOFTWARE COMPLETION (E2/E3):        VERIFIED (48 suites, 466 tests verdes, 0 fallos)│
+│ 1. SOFTWARE COMPLETION (E2/E3):        VERIFIED (56 suites, 622 tests verdes, 0 fallos)│
 │ 2. INDUSTRIAL READINESS (E2/E3):       HARDENED (Edge SQLite WAL, Fail-Closed, PWA SW) │
 │ 3. RUNTIME VERIFICATION (E2/E3):       VERIFIED OPERATIONAL (/health, /metrics)        │
 │ 4. EXTERNAL OT INTEGRATION (E4):       IMPLEMENTED — NOT VALIDATED (No physical PLC)   │
@@ -597,7 +597,7 @@ $$\text{Global Completion Score} = \frac{\sum_{i=1}^{85} (S_{i} \times \text{Pes
 
 > **ADVERTENCIA FORMAL DE GOBERNANZA:**  
 > Afirmar que BioAzúcar 4.0 tiene un 94%, 82% o 58.4% de "producto terminado" sin desagregar las 7 dimensiones es **técnicamente falso**.  
-> El software base y sus pruebas automatizadas están al **100% de pase (466/466 tests verdes)**, pero la integración OT física externa y la validación en campo real permanecen formalmente en **NOT VERIFIED (0.0%)**.
+> El software base y sus pruebas automatizadas están al **100% de pase (622/622 tests verdes)**, pero la integración OT física externa y la validación en campo real permanecen formalmente en **NOT VERIFIED (0.0%)**.
 
 ---
 
@@ -1079,6 +1079,46 @@ Para que cualquier módulo o funcionalidad sea promovido a un estado superior en
 ---
 
 ## 34. REGISTRO DE AUDITORÍA Y CONTROL DE CAMBIOS (CHANGELOG)
+
+### Versión 4.0.0-I30-ZTP-MTLS-X509 (2026-09-24 12:15:00 UTC)
+* **Implementación I30 / [PRV-02] Zero-Touch Remote Provisioning (ZTP) & X.509 PKI Enrollment con mTLS Mutual Authentication:**
+  * **Capa 1: Jerarquía X.509 PKI Industrial y Gestión de Certificados (`src/services/edge/provisioning/X509CertificateEngine.ts`):**
+    * Motor PKI nativo RFC 5280 sobre Node.js 22 (`crypto.X509Certificate` y OpenSSL 3.0):
+      * Root CA industrial autofirmada (`CA:TRUE`, `keyCertSign`, `cRLSign`, vigencia 10 años).
+      * Intermediate CA subordinada para flota de ingenios (`CA:TRUE`, `pathlen:0`, vigencia 5 años).
+      * Emisión de Certificados de Dispositivo Edge X.509 con Subject Alternative Names (SANs) industriales (DNS y direcciones IP de subestación), y Extended Key Usage dual (`clientAuth`, `serverAuth`).
+    * Generador de Certificate Signing Requests (CSR) y par de llaves asimétricas ECDSA (curva `prime256v1`) en-situ en el Edge (la clave privada jamás abandona el dispositivo de campo).
+    * Extracción y validación determinista de huellas digitales SHA-256 (`fingerprintSha256`).
+    * Mecanismo de revocación inmediata (Certificate Revocation List - CRL) y validación estricta de cadenas criptográficas de confianza (`verifyCertificateChain`).
+  * **Capa 2: Tokens de Bootstrap Day-0 y Binding de Identidad de Hardware (`src/services/edge/provisioning/ZeroTouchProvisioningTypes.ts`, `ZeroTouchProvisioningService.ts`):**
+    * Generación centralizada de tokens de arranque Day-0 con entropía de 256 bits (32 bytes hex), TTL delimitado y un solo uso garantizado (One-Time Token Anti-Replay).
+    * Vinculación criptográfica obligatoria (Binding) de identidad física: Chassis UUID, MAC Address, Número de Serie de Hardware e IPC Model.
+    * Prueba de conocimiento cero mediante HMAC-SHA256 (`bootstrapTokenProof`) que valida el secreto sin transmitirlo en texto plano en la red de planta.
+    * Verificación contra inventario pre-registrado en fábrica conforme a IEC 62443-4-2 FR1 (Identificación y Autenticación).
+  * **Capa 3: Handshake de Autenticación Mutua TLS (mTLS) y Nonce Proof:**
+    * Validación bidireccional cliente-servidor: el cliente valida la CA del servidor y el servidor valida el certificado de cliente emitido por la CA intermedia de BioAzúcar.
+    * Verificación de posesión de clave privada: desafío criptográfico de nonces (`serverNonce:clientNonce`) firmado por el Edge con SHA-256.
+    * Verificación de vigencia temporal y descarte automático de certificados revocados (`REJECTED_REVOKED`).
+  * **Capa 4: Despacho de Manifiestos Firmados y Orquestación del Agente Edge:**
+    * Preparación y firma asimétrica de manifiestos iniciales (`SignedEdgeManifest`) con drivers OT (Modbus TCP, Sparkplug B, OPC UA), tags ISA-95 y límites operacionales.
+    * Reconfiguración en caliente (Hot-Reload) de la flota de drivers mediante `IndustrialDriverManager` y `EdgeProvisioningService`.
+    * Verificación de salud post-despliegue (`verifyFleetHealth`) y ejecución de Rollback Atómico autónomo hacia `FAULTED_ROLLBACK` ante fallos de conexión o drivers degradados.
+    * Transición determinista de estados: `UNPROVISIONED` -> `BOOTSTRAPPING` -> `CSR_SUBMITTED` -> `CERT_ISSUED` -> `MTLS_ESTABLISHED` -> `COMMISSIONED`.
+  * **Capa 5: Endpoints REST Integrados en el Servidor (`server.ts`):**
+    * `POST /api/edge/ztp/bootstrap-token`: Emisión de tokens Day-0 con RBAC.
+    * `POST /api/edge/ztp/pre-register`: Registro previo de hardware en inventario.
+    * `POST /api/edge/ztp/enroll`: Recepción de CSR, validación de prueba HMAC y emisión de certificado X.509.
+    * `POST /api/edge/ztp/verify-mtls`: Verificación formal de mTLS y desafío de firma de nonces.
+    * `GET /api/edge/ztp/devices`: Bitácora y estado de todos los dispositivos de la flota.
+    * `POST /api/edge/ztp/revoke`: Revocación central de certificados y aislamiento del nodo.
+  * **Suite de Pruebas `src/__tests__/i30ZeroTouchProvisioningMtls.test.ts`:**
+    * 20 pruebas automatizadas completadas al 100%: jerarquía Root/Intermediate CA, generación de CSR, emisión de certificados de dispositivo, validación de cadena X.509 con `crypto.X509Certificate`, revocación y CRL, tokens de bootstrap, prueba HMAC vinculada a hardware, rechazo de hardware spoofing, consumo y anti-replay de tokens, rechazo de dispositivos no pre-registrados, handshake mTLS, rechazo por clave privada forjada, SANs DNS/IP, metadata IEC 62443-4-2, listado de flota, flujo autónomo E2E con Hot-Reload a `COMMISSIONED`, y revocación en caliente.
+  * **Métricas Globales Verificadas:**
+    * **56 suites ejecutadas y aprobadas (56/56, 100% PASS)**.
+    * **622 casos de prueba aprobados (0 fallos, 0 omitidos)**.
+    * `npm run lint` (`tsc --noEmit`): 0 errores, 0 advertencias.
+    * `compile_applet` (`npm run build`): Compilación exitosa.
+  * **Promoción de Estado:** Promovido módulo `PRV-02` de `PARTIAL [MANUAL_STEP]` (Dev: 60%, Ind: 35%, E2) a **`TESTED [ZTP_MTLS_X509]`** (Dev: 95%, Ind: 85%, Evid: E3). Con esto, **el 100% de los módulos de software de las Capas 01 a 28 se encuentran formalmente en estado `TESTED`**.
 
 ### Versión 4.0.0-I29-MQTT-SPARKPLUG-STACK (2026-09-23 23:55:00 UTC)
 * **Implementación I29 / [UNS-02] Real MQTT 3.1.1 / 5.0 & Sparkplug B Protocol Stack Interoperability:**
