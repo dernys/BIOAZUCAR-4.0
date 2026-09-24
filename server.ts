@@ -40,6 +40,12 @@ import { HighDensityTelemetryStreamer } from "./src/services/telemetry/HighDensi
 import { Iec62443CertificationPackService } from "./src/services/security/Iec62443CertificationPack";
 import { SystemHealthCheckService } from "./src/services/verification/SystemHealthCheckService";
 import { ZeroTouchProvisioningService } from "./src/services/edge/provisioning/ZeroTouchProvisioningService";
+import { Tandem1CommissioningProtocolEngine } from "./src/services/edge/verification/Tandem1CommissioningProtocolEngine";
+import {
+  FieldTandemValidationService,
+  FieldBoilerValidationService,
+  FieldValidationHarness,
+} from "./src/services/edge/field";
 
 dotenv.config();
 
@@ -2424,6 +2430,126 @@ app.post("/api/edge/ztp/revoke", requireAuth, (req, res) => {
     res.status(500).json({ error: err.message || "Revocation failed" });
   }
 });
+
+// ============================================================================
+// Tandem #1 FAT/SAT Commissioning Protocol (FAT-02 / Capa 27)
+// ============================================================================
+app.get("/api/commissioning/tandem1/tags", (_req, res) => {
+  try {
+    const engine = Tandem1CommissioningProtocolEngine.getInstance();
+    res.json({
+      totalTags: 25,
+      tags: engine.getTags(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve Tandem 1 tags" });
+  }
+});
+
+app.post("/api/commissioning/tandem1/execute", requireAuth, (req, res) => {
+  try {
+    const { millName, auditorName, otArchitectName, millSuperintendentName } = req.body || {};
+    const engine = Tandem1CommissioningProtocolEngine.getInstance();
+    const cert = engine.runFullProtocol({
+      millName,
+      auditorName,
+      otArchitectName,
+      millSuperintendentName,
+    });
+    res.json({
+      success: cert.overallStatus === "CONFORME_APROBADO_COMERCIAL",
+      certificate: cert,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Execution of Tandem 1 protocol failed" });
+  }
+});
+
+app.get("/api/commissioning/tandem1/certificate/:id", (req, res) => {
+  try {
+    const engine = Tandem1CommissioningProtocolEngine.getInstance();
+    const cert = engine.getCertificate(req.params.id);
+    if (!cert) {
+      return res.status(404).json({ error: "Certificate not found" });
+    }
+    const integrityValid = engine.verifyCertificateIntegrity(cert);
+    res.json({
+      certificate: cert,
+      integrityValid,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve certificate" });
+  }
+});
+
+// =========================================================================
+// FIELD VALIDATION & SAT COMMISSIONING HARNESS (FLD-01 & FLD-02)
+// =========================================================================
+
+// FLD-01: Tandem Field Cold Commissioning Status
+app.get("/api/field/tandem/cold", (_req, res) => {
+  try {
+    const service = FieldTandemValidationService.getInstance();
+    const checks = service.executeColdCommissioning();
+    res.json({ checks, total: checks.length, allReachable: checks.every((c) => c.reachable) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve tandem cold commissioning status" });
+  }
+});
+
+// FLD-01: Run Full Tandem Field Commissioning SAT
+app.post("/api/field/tandem/commission", (req, res) => {
+  try {
+    const service = FieldTandemValidationService.getInstance();
+    const act = service.runTandemFieldCommissioning(req.body);
+    res.json({
+      success: act.overallStatus === "CONFORME_APROBADO_CAMPO",
+      act,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Execution of tandem field commissioning failed" });
+  }
+});
+
+// FLD-02: Boiler Field Cold Commissioning Status
+app.get("/api/field/boiler/cold", (_req, res) => {
+  try {
+    const service = FieldBoilerValidationService.getInstance();
+    const checks = service.executeColdCommissioning();
+    res.json({ checks, total: checks.length, allReachable: checks.every((c) => c.reachable) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve boiler cold commissioning status" });
+  }
+});
+
+// FLD-02: Run Full Boiler Field Commissioning SAT (ASME PTC 4)
+app.post("/api/field/boiler/commission", (req, res) => {
+  try {
+    const service = FieldBoilerValidationService.getInstance();
+    const act = service.runBoilerFieldCommissioning(req.body);
+    res.json({
+      success: act.overallStatus === "CONFORME_APROBADO_CAMPO",
+      act,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Execution of boiler field commissioning failed" });
+  }
+});
+
+// FLD-01 + FLD-02: Unified Field Commissioning Package (Mass & Energy Closed-Loop)
+app.post("/api/field/unified/run-harness", (req, res) => {
+  try {
+    const harness = FieldValidationHarness.getInstance();
+    const pkg = harness.runUnifiedCommissioning(req.body?.facilityName);
+    res.json({
+      success: pkg.overallFieldReadiness === "APROBADO_PARA_ZAFRA",
+      package: pkg,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Execution of unified field harness failed" });
+  }
+});
+
 
 
 // Setup Vite development middleware or static file serving
