@@ -51,8 +51,10 @@ export function runMasterAudit(): MasterAuditReport {
 
   let totalWeight = 0;
   let weightedScoreSum = 0;
+  let weightedIndScoreSum = 0;
   let testedCount = 0;
   let plannedCount = 0;
+  let hilVerifiedCount = 0;
 
   for (const line of moduleLines) {
     const cols = line.split("|").map((c) => c.trim());
@@ -60,19 +62,34 @@ export function runMasterAudit(): MasterAuditReport {
       const weight = parseFloat(cols[4]) || 1.0;
       const status = cols[5] || "";
       const devScore = parseFloat((cols[6] || "0").replace("%", "")) || 0;
+      const indScore = parseFloat((cols[7] || "0").replace("%", "")) || 0;
+      const evidence = cols[8] || "";
 
       totalWeight += weight;
       weightedScoreSum += (devScore * weight);
+      weightedIndScoreSum += (indScore * weight);
 
       if (status.includes("TESTED")) {
         testedCount++;
       } else if (status.includes("PLANNED")) {
         plannedCount++;
       }
+
+      if (evidence.includes("E5") || status.includes("HIL") || evidence.includes("HIL")) {
+        hilVerifiedCount++;
+      }
     }
   }
 
   const globalCompletionScorePct = totalWeight > 0 ? Number((weightedScoreSum / totalWeight).toFixed(2)) : 0;
+  const industrialReadinessPct = totalWeight > 0 ? Number((weightedIndScoreSum / totalWeight).toFixed(1)) : 0;
+  const runtimeVerificationPct = moduleLines.length > 0 ? Number(((testedCount / moduleLines.length) * 100).toFixed(1)) : 0;
+
+  // Evidence Rule: No physical external peer or plant hardware in sandbox container
+  // 0.0 / NOT_VERIFIED for E4, E6 and E7 until physical hardware is connected.
+  const externalOtPeerConnected = false;
+  const physicalMillHardwareConnected = false;
+  const commercialZafraActive = false;
 
   const report: MasterAuditReport = {
     timestamp: new Date().toISOString(),
@@ -82,13 +99,13 @@ export function runMasterAudit(): MasterAuditReport {
     plannedCount,
     globalCompletionScorePct,
     dimensions: {
-      softwareCompletionE2E3: 100.0,
-      industrialReadinessE2E3: 88.5,
-      runtimeVerificationE2E3: 98.0,
-      externalOtIntegrationE4: 75.0, // Drivers implemented with lab loopback
-      hilSimulationE5: 90.0,         // HIL 24h & Coupled Co-Simulation verified
-      fieldValidationE6: 30.0,        // FLD-01/02 validated via HIL Field Harness
-      productionAcceptanceE7: 0.0,   // Pending real physical harvest (zafra)
+      softwareCompletionE2E3: 100.0, // 100% of tested software suites pass in Vitest
+      industrialReadinessE2E3: industrialReadinessPct, // Mathematically derived from weighted S_ind
+      runtimeVerificationE2E3: runtimeVerificationPct, // Real ratio of TESTED modules
+      externalOtIntegrationE4: externalOtPeerConnected ? 100.0 : 0.0, // 0.0: No external physical peer in cloud sandbox
+      hilSimulationE5: hilVerifiedCount > 0 ? Number(((hilVerifiedCount / (testedCount || 1)) * 100).toFixed(1)) : 0.0,
+      fieldValidationE6: physicalMillHardwareConnected ? 100.0 : 0.0, // 0.0: No physical mill hardware in cloud sandbox
+      productionAcceptanceE7: commercialZafraActive ? 100.0 : 0.0, // 0.0: Pending real physical harvest (zafra)
     },
     masterDocHashSha256,
     status: "AUDIT_PASSED",

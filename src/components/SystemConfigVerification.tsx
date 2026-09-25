@@ -32,7 +32,8 @@ import {
   RotateCcw,
   Wifi,
   WifiOff,
-  Award
+  Award,
+  Archive,
 } from "lucide-react";
 import { UserRole, SystemParameterConfig, UserAccount, TenantEnterprise } from "../types";
 import { INITIAL_SYSTEM_CONFIGS } from "../services/authService";
@@ -48,6 +49,7 @@ import { IpcHardeningAndOfflineModal } from "./edge/IpcHardeningAndOfflineModal"
 import { IndustrialFatSatDeliveryModal } from "./edge/IndustrialFatSatDeliveryModal";
 import { ProductionDeploymentModal } from "./deployment/ProductionDeploymentModal";
 import { Iec62443CertificationModal } from "./security/Iec62443CertificationModal";
+import { IndustrialSafReconciliationModal } from "./edge/IndustrialSafReconciliationModal";
 
 interface SystemConfigVerificationProps {
   currentRole: UserRole;
@@ -90,6 +92,7 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
   const [isFatSatModalOpen, setIsFatSatModalOpen] = useState(false);
   const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState(false);
   const [isIecCertModalOpen, setIsIecCertModalOpen] = useState(false);
+  const [isSafModalOpen, setIsSafModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<SystemParameterConfig | null>(null);
   const [deletingConfigId, setDeletingConfigId] = useState<string | null>(null);
 
@@ -397,6 +400,15 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>Auditoría IEC 62443 SL3 (P0-10)</span>
+            </button>
+
+            <button
+              onClick={() => setIsSafModalOpen(true)}
+              className="px-3.5 py-2 bg-gradient-to-r from-emerald-950 via-slate-800 to-teal-950 hover:from-emerald-900 hover:to-teal-900 text-teal-300 text-xs font-mono rounded-xl border border-teal-500/50 flex items-center gap-1.5 transition shadow-sm"
+              title="Store & Forward Compresión de Alta Densidad y Reconciliación de Conflictos de Proceso (P1-01 / P1-02)"
+            >
+              <Archive className="w-3.5 h-3.5 text-teal-400" />
+              <span>S&F Compresión & Reconciliación (P1-01/P1-02)</span>
             </button>
           </div>
         </div>
@@ -941,6 +953,13 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
         isOpen={isIecCertModalOpen}
         onClose={() => setIsIecCertModalOpen(false)}
         tenantId={activeTenant?.id}
+      />
+
+      {/* P1-01 / P1-02: Store & Forward Compression & Process Reconciliation Modal */}
+      <IndustrialSafReconciliationModal
+        isOpen={isSafModalOpen}
+        onClose={() => setIsSafModalOpen(false)}
+        activeTenantId={activeTenant?.id}
       />
     </div>
   );

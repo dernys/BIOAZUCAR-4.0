@@ -22,6 +22,7 @@ import {
   Presentation,
   Tractor,
   Award,
+  Workflow,
 } from "lucide-react";
 import { NavigationTab, UserRole, UserAccount } from "../types";
 
@@ -160,6 +161,15 @@ export const Navigation: React.FC<NavigationProps> = ({
       desc: "Lazos & Comisionamiento",
       category: "OT_OBSERVABILITY",
       tag: "SAT/FAT",
+      highlight: true,
+    },
+    {
+      id: "commissioning_coverage",
+      label: "Cobertura & Linaje",
+      icon: Workflow,
+      desc: "Pipeline E2E & 10 Etapas",
+      category: "OT_OBSERVABILITY",
+      tag: "E2E",
       highlight: true,
     },
     {

@@ -1,6 +1,10 @@
 import { IndustrialDataPoint } from "../../types";
 import { ForwardBatch, StoreAndForwardQueue } from "./StoreAndForwardQueue";
 import { SqliteWalEngine } from "./storage/SqliteWalEngine";
+import {
+  StoreAndForwardCompressor,
+  CompressionAlgorithm,
+} from "./storeAndForward/StoreAndForwardCompressor";
 
 export interface DiskQueueConfig {
   maxMemoryPoints?: number;
@@ -11,6 +15,8 @@ export interface DiskQueueConfig {
   sqliteDbPath?: string;
   encryptionKey?: string;
   verifyIntegrityOnBoot?: boolean;
+  enableCompression?: boolean;
+  compressionAlgorithm?: CompressionAlgorithm;
 }
 
 function getNodeModules(): { fs: any; path: any; crypto: any } | null {
@@ -60,11 +66,17 @@ export class DiskStoreAndForwardEngine {
     integrityOk: boolean;
     engine: string;
   } | null = null;
+  private enableCompression: boolean = false;
+  private compressionAlgorithm: CompressionAlgorithm = "BROTLI";
+  private compressor: StoreAndForwardCompressor;
 
   constructor(config: DiskQueueConfig = {}) {
     this.persistenceKey = config.persistenceKey || "bioazucar_edge_saf_queue";
     this.memQueue = new StoreAndForwardQueue(config.maxMemoryPoints || 50000);
     this.isNodeEnv = typeof process !== "undefined" && process.versions && !!process.versions.node;
+    this.compressor = StoreAndForwardCompressor.getInstance();
+    this.enableCompression = !!config.enableCompression;
+    this.compressionAlgorithm = config.compressionAlgorithm || "BROTLI";
 
     const envJournalPath = typeof process !== "undefined" ? process.env?.BIOAZUCAR_SAF_JOURNAL_PATH : undefined;
     this.diskJournalPath = config.diskJournalPath || envJournalPath || "./data/edge-saf-journal.json";
@@ -143,6 +155,9 @@ export class DiskStoreAndForwardEngine {
         try {
           const mods = getNodeModules();
           let payload = JSON.stringify(point);
+          if (this.enableCompression) {
+            payload = this.compressor.compressString(payload, { algorithm: this.compressionAlgorithm }).encodedPayload;
+          }
           if (this.encryptionKey && mods?.crypto) {
             payload = "ENC:" + this.encryptData(payload, this.encryptionKey, mods.crypto);
           }
@@ -170,6 +185,9 @@ export class DiskStoreAndForwardEngine {
             const now = Date.now();
             for (const p of points) {
               let payload = JSON.stringify(p);
+              if (this.enableCompression) {
+                payload = this.compressor.compressString(payload, { algorithm: this.compressionAlgorithm }).encodedPayload;
+              }
               if (this.encryptionKey && mods?.crypto) {
                 payload = "ENC:" + this.encryptData(payload, this.encryptionKey, mods.crypto);
               }
@@ -361,6 +379,17 @@ export class DiskStoreAndForwardEngine {
                 continue;
               }
             }
+            if (this.compressor.isCompressedPayload(json)) {
+              try {
+                json = this.compressor.decompressString(json);
+              } catch {
+                quarantinedCorrupted++;
+                try {
+                  this.sqliteEngine.prepare(`UPDATE saf_queue SET status = 'CORRUPTED' WHERE id = ?;`).run(row.id);
+                } catch {}
+                continue;
+              }
+            }
             try {
               const pt = JSON.parse(json) as IndustrialDataPoint;
               if (pt && pt.tag) {
@@ -543,6 +572,25 @@ export class DiskStoreAndForwardEngine {
         // Handle storage quota gracefully
       }
     }, 500);
+  }
+
+  public isCompressionEnabled(): boolean {
+    return this.enableCompression;
+  }
+
+  public setCompression(enabled: boolean, algorithm?: CompressionAlgorithm): void {
+    this.enableCompression = enabled;
+    if (algorithm) {
+      this.compressionAlgorithm = algorithm;
+    }
+  }
+
+  public getCompressor(): StoreAndForwardCompressor {
+    return this.compressor;
+  }
+
+  public getCompressionAlgorithm(): CompressionAlgorithm {
+    return this.compressionAlgorithm;
   }
 
   private encryptData(text: string, secret: string, crypto: any): string {

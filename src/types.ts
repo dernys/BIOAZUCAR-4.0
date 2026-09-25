@@ -65,7 +65,8 @@ export type NavigationTab =
   | "users_roles"
   | "presentation"
   | "industrial_connections"
-  | "sat_fat_acceptance";
+  | "sat_fat_acceptance"
+  | "commissioning_coverage";
 
 export type NavTabId = NavigationTab;
 

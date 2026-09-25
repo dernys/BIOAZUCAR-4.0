@@ -1002,8 +1002,28 @@ export class TagManagementService {
       };
     }
 
+    const profile = process.env.INDUSTRIAL_RUNTIME_PROFILE || "SIMULATION";
     const isPhysical = tag.source === "LIVE_OT";
-    const latencyMs = isPhysical ? Math.floor(Math.random() * 20 + 8) : Math.floor(Math.random() * 6 + 2);
+
+    if (profile === "PRODUCTION" && isPhysical) {
+      // Fail-closed in PRODUCTION: no synthetic data permitted for live OT tags
+      return {
+        tagId: tag.id,
+        tagName: tag.name,
+        address: tag.address,
+        operation: "READ",
+        success: false,
+        value: null,
+        quality: "BAD",
+        availability: "UNAVAILABLE",
+        latencyMs: 0,
+        timestamp: new Date().toISOString(),
+        provenance: "LIVE_OT",
+        message: `[FAIL-CLOSED] Lectura directa de tag físico en PRODUCTION rechazada sin enlace de transporte OT verificado. Estado: COMMUNICATION_LOST.`,
+      };
+    }
+
+    const latencyMs = isPhysical ? 15 : 4;
 
     if (operation === "READ") {
       let readVal: number | string | boolean;
@@ -1013,7 +1033,7 @@ export class TagManagementService {
         readVal = "RUNNING_OK";
       } else {
         const span = (tag.engMax ?? 100) - (tag.engMin ?? 0);
-        readVal = parseFloat(((tag.engMin ?? 0) + span * 0.65 + (Math.random() * 0.1 - 0.05) * span).toFixed(2));
+        readVal = parseFloat(((tag.engMin ?? 0) + span * 0.65).toFixed(2));
       }
 
       return {

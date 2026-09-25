@@ -26,6 +26,7 @@ import { IndustrialConnectionModal } from "./components/IndustrialConnectionModa
 import { IpcHardeningAndOfflineModal } from "./components/edge/IpcHardeningAndOfflineModal";
 import { IndustrialFatSatDeliveryModal } from "./components/edge/IndustrialFatSatDeliveryModal";
 import { UnifiedAcceptancePanel } from "./components/verification/UnifiedAcceptancePanel";
+import { IndustrialCommissioningCoverageView } from "./components/commissioning/IndustrialCommissioningCoverageView";
 import { ProductionDeploymentModal } from "./components/deployment/ProductionDeploymentModal";
 import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -821,6 +822,10 @@ export default function App() {
           <UnifiedAcceptancePanel
             onOpenFullModal={() => setIsFatSatModalOpen(true)}
           />
+        )}
+
+        {activeTab === "commissioning_coverage" && (
+          <IndustrialCommissioningCoverageView activeTenantId={activeTenant.id} />
         )}
 
         {activeTab === "ai_center" && (

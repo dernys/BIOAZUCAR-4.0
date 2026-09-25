@@ -46,6 +46,9 @@ import {
   FieldBoilerValidationService,
   FieldValidationHarness,
 } from "./src/services/edge/field";
+import { CommissioningCoverageEngine } from "./src/services/edge/verification/CommissioningCoverageEngine";
+import { StoreAndForwardCompressor } from "./src/services/edge/storeAndForward/StoreAndForwardCompressor";
+import { SemanticProcessConflictReconciler } from "./src/services/semantic/SemanticProcessConflictReconciler";
 
 dotenv.config();
 
@@ -2547,6 +2550,165 @@ app.post("/api/field/unified/run-harness", (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Execution of unified field harness failed" });
+  }
+});
+
+// =========================================================================
+// COMMISSIONING COVERAGE ENGINE (PHASE 14 / SECTION 14)
+// =========================================================================
+
+app.get("/api/commissioning/coverage", (_req, res) => {
+  try {
+    const engine = CommissioningCoverageEngine.getInstance();
+    const globalReport = engine.generateGlobalReport();
+    res.json(globalReport);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to generate global commissioning coverage report" });
+  }
+});
+
+app.get("/api/commissioning/coverage/tenant/:tenantId", (req, res) => {
+  try {
+    const engine = CommissioningCoverageEngine.getInstance();
+    const tenantReport = engine.generateTenantReport(req.params.tenantId);
+    res.json(tenantReport);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to generate tenant commissioning coverage report" });
+  }
+});
+
+app.get("/api/commissioning/coverage/tenant/:tenantId/area/:areaId", (req, res) => {
+  try {
+    const engine = CommissioningCoverageEngine.getInstance();
+    const areaReport = engine.generateAreaReport(req.params.tenantId, req.params.areaId);
+    res.json(areaReport);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to generate area commissioning coverage report" });
+  }
+});
+
+app.get("/api/commissioning/coverage/tenant/:tenantId/hierarchy", (req, res) => {
+  try {
+    const engine = CommissioningCoverageEngine.getInstance();
+    const hierarchy = engine.getHierarchy(req.params.tenantId);
+    res.json(hierarchy);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve hierarchy" });
+  }
+});
+
+app.get("/api/commissioning/coverage/tenant/:tenantId/area/:areaId/equipments", (req, res) => {
+  try {
+    const engine = CommissioningCoverageEngine.getInstance();
+    const equipments = engine.getEquipmentsForArea(req.params.tenantId, req.params.areaId);
+    res.json(equipments);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve equipments for area" });
+  }
+});
+
+app.get("/api/commissioning/coverage/tenant/:tenantId/tag/:tagId", (req, res) => {
+  try {
+    const engine = CommissioningCoverageEngine.getInstance();
+    const detail = engine.getTagDetail(req.params.tenantId, req.params.tagId);
+    if (!detail) {
+      return res.status(404).json({ error: `Tag '${req.params.tagId}' not found for tenant '${req.params.tenantId}'` });
+    }
+    res.json(detail);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve tag detail" });
+  }
+});
+
+app.post("/api/commissioning/coverage/ingest-point", (req, res) => {
+  try {
+    const engine = CommissioningCoverageEngine.getInstance();
+    engine.ingestDataPoint(req.body);
+    res.json({ success: true, message: "Telemetry point ingested into coverage engine." });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "Failed to ingest telemetry point" });
+  }
+});
+
+// =========================================================================
+// STORE & FORWARD HIGH-DENSITY COMPRESSION (P1-01)
+// =========================================================================
+
+app.get("/api/saf/compression/stats", (_req, res) => {
+  try {
+    const compressor = StoreAndForwardCompressor.getInstance();
+    res.json(compressor.getMetrics());
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to get compression metrics" });
+  }
+});
+
+app.post("/api/saf/compression/compress-batch", (req, res) => {
+  try {
+    const { points, algorithm, batchId } = req.body;
+    if (!Array.isArray(points)) {
+      return res.status(400).json({ error: "Missing or invalid 'points' array" });
+    }
+    const compressor = StoreAndForwardCompressor.getInstance();
+    const result = compressor.compressBatch(points, batchId, { algorithm });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Compression of batch failed" });
+  }
+});
+
+app.post("/api/saf/compression/decompress-batch", (req, res) => {
+  try {
+    const { envelope } = req.body;
+    if (!envelope || typeof envelope !== "string") {
+      return res.status(400).json({ error: "Missing or invalid 'envelope' string" });
+    }
+    const compressor = StoreAndForwardCompressor.getInstance();
+    const points = compressor.decompressBatch(envelope);
+    res.json({ count: points.length, points });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "Decompression failed" });
+  }
+});
+
+// =========================================================================
+// SEMANTIC INDUSTRIAL PROCESS CONFLICT RECONCILIATION (P1-02)
+// =========================================================================
+
+app.post("/api/semantic/reconcile/batch", (req, res) => {
+  try {
+    const { points, metadata } = req.body;
+    if (!Array.isArray(points)) {
+      return res.status(400).json({ error: "Missing or invalid 'points' array" });
+    }
+    const reconciler = SemanticProcessConflictReconciler.getInstance();
+    const result = reconciler.reconcileBatch(points, metadata || {});
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Reconciliation failed" });
+  }
+});
+
+app.get("/api/semantic/reconcile/reports", (_req, res) => {
+  try {
+    const reconciler = SemanticProcessConflictReconciler.getInstance();
+    res.json(reconciler.getReportsHistory());
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve reconciliation reports" });
+  }
+});
+
+app.get("/api/semantic/reconcile/reports/:id", (req, res) => {
+  try {
+    const reconciler = SemanticProcessConflictReconciler.getInstance();
+    const report = reconciler.getReport(req.params.id);
+    if (!report) {
+      return res.status(404).json({ error: `Reconciliation report '${req.params.id}' not found` });
+    }
+    const isValid = reconciler.verifyReportSeal(report);
+    res.json({ ...report, cryptographicSealValid: isValid });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve report" });
   }
 });
 
