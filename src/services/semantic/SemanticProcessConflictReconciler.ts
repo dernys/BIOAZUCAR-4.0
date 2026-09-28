@@ -22,7 +22,7 @@
  *    with SHA-256 for IEC 62443 compliance.
  */
 
-import crypto from "crypto";
+import { createHash, randomHex } from "../../utils/cryptoUtils";
 import { IndustrialDataPoint } from "../../types/industrialDataPoint";
 import { SemanticIndustrialModel } from "./SemanticIndustrialModel";
 
@@ -324,7 +324,7 @@ export class SemanticProcessConflictReconciler {
     }
 
     // Build tamper-evident seal
-    const reportId = `REC-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+    const reportId = `REC-${Date.now()}-${randomHex(3)}`;
     const reportPreimage = JSON.stringify({
       reportId,
       timestamp: nowIso,
@@ -337,7 +337,7 @@ export class SemanticProcessConflictReconciler {
       gapsCount: gaps.length,
       skewStats,
     });
-    const tamperSealSha256 = crypto.createHash("sha256").update(reportPreimage).digest("hex");
+    const tamperSealSha256 = createHash("sha256").update(reportPreimage).digest("hex");
 
     const report: ReconciliationReport = {
       reportId,
@@ -384,7 +384,7 @@ export class SemanticProcessConflictReconciler {
       gapsCount: report.sequenceGaps.length,
       skewStats: report.clockSkewAnalysis,
     });
-    const expectedSeal = crypto.createHash("sha256").update(reportPreimage).digest("hex");
+    const expectedSeal = createHash("sha256").update(reportPreimage).digest("hex");
     return expectedSeal === report.tamperSealSha256;
   }
 

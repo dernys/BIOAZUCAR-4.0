@@ -7,7 +7,7 @@
  * Toledo/Mettler Truck Scale (Modbus TCP), Danfoss/ABB VFDs.
  */
 
-import crypto from "crypto";
+import { createHash, createHmac } from "../../../utils/cryptoUtils";
 
 export interface ColdCommissioningCheck {
   item: string;
@@ -256,15 +256,13 @@ export class FieldTandemValidationService {
       timestamp,
     });
 
-    const conformanceHashSha256 = crypto
-      .createHash("sha256")
+    const conformanceHashSha256 = createHash("sha256")
       .update(payload)
       .digest("hex");
 
     const secret = "bioazucar-fld01-tandem-hmac-key";
     const createSig = (role: string, name: string) => {
-      return crypto
-        .createHmac("sha256", secret)
+      return createHmac("sha256", secret)
         .update(`${actId}:${role}:${name}:${conformanceHashSha256}`)
         .digest("hex");
     };
@@ -325,8 +323,7 @@ export class FieldTandemValidationService {
       timestamp: act.timestamp,
     });
 
-    const expectedHash = crypto
-      .createHash("sha256")
+    const expectedHash = createHash("sha256")
       .update(payload)
       .digest("hex");
 
@@ -336,8 +333,7 @@ export class FieldTandemValidationService {
 
     const secret = "bioazucar-fld01-tandem-hmac-key";
     for (const sig of act.signatures) {
-      const expectedSig = crypto
-        .createHmac("sha256", secret)
+      const expectedSig = createHmac("sha256", secret)
         .update(`${act.actId}:${sig.role}:${sig.name}:${act.conformanceHashSha256}`)
         .digest("hex");
       if (expectedSig !== sig.signatureHmac) {

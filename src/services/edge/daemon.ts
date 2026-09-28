@@ -27,6 +27,7 @@ import {
   getRuntimeProfile,
   assertValidProductionEnvironment,
 } from "./config/runtimeProfile";
+import { DualNicManager } from "./network/DualNicManager";
 
 export interface EdgeDaemonConfig {
   tenantId: string;
@@ -70,6 +71,18 @@ export class BioAzucarEdgeDaemon {
   private compressor = new SwingingDoorCompressor({ compDev: 0.25, compMinSeconds: 0.5 });
   private unsubscribeEdge: (() => void) | null = null;
 
+  // Store & Forward accounting metrics conforming to industrial requirements
+  private safAccounting = {
+    generated: 0,
+    persisted: 0,
+    recovered: 0,
+    transmitted: 0,
+    acknowledged: 0,
+    duplicated: 0,
+    lost: 0,
+  };
+  private sequenceCounter = 0;
+
   // Diagnostics counters
   private consecutiveErrors = 0;
   private totalTransmittedBatches = 0;
@@ -79,6 +92,10 @@ export class BioAzucarEdgeDaemon {
   private startTime = Date.now();
 
   constructor(private config: EdgeDaemonConfig = defaultDaemonConfig) {}
+
+  public getSafAccounting() {
+    return { ...this.safAccounting };
+  }
 
   public async start(): Promise<void> {
     console.log("=================================================================");
@@ -97,6 +114,36 @@ export class BioAzucarEdgeDaemon {
     console.log("-----------------------------------------------------------------");
 
     if (profile === "PRODUCTION") {
+      // 1. Missing or insecure secret = startup failure (IEC 62443-4-2 FR1)
+      const secret = this.config.edgeSecret?.trim();
+      const insecureDefaults = [
+        "bioazucar_industrial_edge_super_secret_key",
+        "default-secret",
+        "secret",
+        "password",
+        "change-me",
+      ];
+      if (!secret || insecureDefaults.includes(secret.toLowerCase())) {
+        throw new Error(
+          "[SECURITY_FATAL] Missing or insecure BIOAZUCAR_EDGE_SECRET in PRODUCTION deployment profile. Startup aborted conforming to IEC 62443-4-2."
+        );
+      }
+
+      // 2. HTTP = reject, HTTPS/mTLS = required (IEC 62443-3-3 FR5)
+      if (!this.config.cloudSyncUrl.startsWith("https://")) {
+        throw new Error(
+          `[SECURITY_FATAL] Insecure HTTP sync endpoint (${this.config.cloudSyncUrl}) rejected in PRODUCTION profile. HTTPS or mTLS is required conforming to IEC 62443-3-3.`
+        );
+      }
+
+      // 3. Dual-NIC isolation verification (IEC 62443-3-3 FR5)
+      const dualNicAudit = DualNicManager.getInstance().auditDualNicCompliance();
+      if (!dualNicAudit.ipForwardingDisabled) {
+        throw new Error(
+          "[SECURITY_FATAL] Dual-NIC kernel IP forwarding is enabled (net.ipv4.ip_forward = 1). Direct OT/IT packet leak hazard. Startup aborted."
+        );
+      }
+
       assertValidProductionEnvironment({
         runtimeProfile: "PRODUCTION",
         isSimulated: false,
@@ -117,7 +164,9 @@ export class BioAzucarEdgeDaemon {
     this.unsubscribeEdge = industrialEdge.subscribeAll((pointsMap) => {
       const points = Array.from(pointsMap.values());
       if (points.length > 0) {
+        this.safAccounting.generated += points.length;
         diskStoreAndForward.enqueueBatch(points);
+        this.safAccounting.persisted += points.length;
       }
     });
 
@@ -290,6 +339,8 @@ export class BioAzucarEdgeDaemon {
         diskStoreAndForward.acknowledgeBatch(batch.batchId);
         this.totalTransmittedBatches++;
         this.totalTransmittedPoints += batch.points.length;
+        this.safAccounting.transmitted += batch.points.length;
+        this.safAccounting.acknowledged += batch.points.length;
         this.lastSuccessfulSync = Date.now();
         this.consecutiveErrors = 0;
         this.lastErrorReason = null;
@@ -345,6 +396,8 @@ export class BioAzucarEdgeDaemon {
             lastSuccessfulSync: this.lastSuccessfulSync ? new Date(this.lastSuccessfulSync).toISOString() : null,
             lastErrorReason: this.lastErrorReason,
             bufferState: diskStoreAndForward.getState(),
+            safAccounting: this.getSafAccounting(),
+            dualNicCompliance: DualNicManager.getInstance().auditDualNicCompliance(),
             supervisor: edgeRuntimeSupervisor.getSupervisionStatus(),
             securityStandard: "IEC-62443-4-2 SL3",
             mtlsConfigured: Boolean(this.config.tlsClientCertPath && this.config.tlsClientKeyPath),

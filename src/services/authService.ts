@@ -81,34 +81,45 @@ export const PREDEFINED_USERS: UserAccount[] = [
   },
 ];
 
-const AUTH_STORAGE_KEY = "bioazucar_active_user_session";
+const AUTH_SESSION_KEY = "bioazucar_operator_active_session";
+let inMemoryActiveUser: UserAccount | null = null;
 
 /**
  * Returns current authenticated user or minimal non-privileged operator session.
- * Never defaults to unverified Superadmin.
+ * Never defaults to unverified Superadmin. Never stores credentials in localStorage.
  */
 export function getStoredUser(): UserAccount {
+  if (inMemoryActiveUser && inMemoryActiveUser.email) {
+    return inMemoryActiveUser;
+  }
   try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.email) {
-        return parsed;
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      const raw = window.sessionStorage.getItem(AUTH_SESSION_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.email) {
+          inMemoryActiveUser = parsed;
+          return parsed;
+        }
       }
     }
   } catch (e) {
-    console.error("Error reading stored user:", e);
+    console.error("Error reading stored user from session:", e);
   }
   // Default to DCS Operator (Nivel 2) instead of Superadmin backdoor
   const defaultUser = PREDEFINED_USERS.find((u) => u.role === "operador") || PREDEFINED_USERS[3];
-  return { ...defaultUser };
+  inMemoryActiveUser = { ...defaultUser };
+  return inMemoryActiveUser;
 }
 
 export function saveStoredUser(user: UserAccount): void {
+  inMemoryActiveUser = { ...user };
   try {
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      window.sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+    }
   } catch (e) {
-    console.error("Error saving stored user:", e);
+    console.error("Error saving active user to session:", e);
   }
 }
 
@@ -168,7 +179,12 @@ export async function signOutFirebase(): Promise<void> {
   } catch (e) {
     console.warn("Firebase signout warning:", e);
   }
-  localStorage.removeItem(AUTH_STORAGE_KEY);
+  inMemoryActiveUser = null;
+  try {
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    }
+  } catch {}
 }
 
 /**

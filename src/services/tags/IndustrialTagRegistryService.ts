@@ -7,7 +7,7 @@
  * to CanonicalIndustrialDataPoint.
  */
 
-import crypto from "crypto";
+import { createHash } from "../../utils/cryptoUtils";
 import {
   CanonicalIndustrialTagRecord,
   TagCreationInput,
@@ -420,12 +420,11 @@ export class IndustrialTagRegistryService {
       tag.version,
     ].join("|");
 
-    return crypto.createHash("sha256").update(payload).digest("hex");
+    return createHash("sha256").update(payload).digest("hex");
   }
 
   private computePointHash(tagId: string, value: unknown, timestamp: string): string {
-    return crypto
-      .createHash("sha256")
+    return createHash("sha256")
       .update(`${tagId}|${value}|${timestamp}`)
       .digest("hex")
       .substring(0, 16);

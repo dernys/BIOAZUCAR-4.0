@@ -1444,7 +1444,7 @@ export const ExecutivePresentation: React.FC<ExecutivePresentationProps> = ({
               <div className="p-5 rounded-2xl bg-slate-900/90 border border-emerald-500/40 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    ALCANCE FASE 1 (PRODUCCIÓN INMEDIATA)
+                    ALCANCE OPERACIONAL (PRODUCCIÓN INMEDIATA)
                   </span>
                   <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                 </div>
@@ -1485,7 +1485,7 @@ export const ExecutivePresentation: React.FC<ExecutivePresentationProps> = ({
               <div className="p-5 rounded-2xl bg-slate-900/90 border border-cyan-500/40 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                    ALCANCE FASE 2 (EN DESARROLLO - Q3/Q4 2026)
+                    ALCANCE EXPANSIÓN INDUSTRIAL (Q3/Q4 2026)
                   </span>
                   <Workflow className="w-5 h-5 text-cyan-400" />
                 </div>
@@ -1514,7 +1514,7 @@ export const ExecutivePresentation: React.FC<ExecutivePresentationProps> = ({
               <div className="p-5 rounded-2xl bg-slate-900/90 border border-purple-500/40 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                    ALCANCE FASE 3 (ROADMAP 2027)
+                    ALCANCE OPTIMIZACIÓN AUTÓNOMA (2027)
                   </span>
                   <TrendingUp className="w-5 h-5 text-purple-400" />
                 </div>
@@ -1695,7 +1695,7 @@ export const ExecutivePresentation: React.FC<ExecutivePresentationProps> = ({
                   <span className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono font-bold flex items-center justify-center text-xs">
                     S1-2
                   </span>
-                  <span className="text-[10px] font-mono text-slate-500">FASE 1</span>
+                  <span className="text-[10px] font-mono text-slate-500">ETAPA 1</span>
                 </div>
                 <h3 className="font-bold text-white text-sm">Tenant Cloud & Mapeo de Tags</h3>
                 <p className="text-slate-400 text-xs leading-relaxed">
@@ -1708,7 +1708,7 @@ export const ExecutivePresentation: React.FC<ExecutivePresentationProps> = ({
                   <span className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 font-mono font-bold flex items-center justify-center text-xs">
                     S3-4
                   </span>
-                  <span className="text-[10px] font-mono text-slate-500">FASE 2</span>
+                  <span className="text-[10px] font-mono text-slate-500">ETAPA 2</span>
                 </div>
                 <h3 className="font-bold text-white text-sm">Edge Gateway No Invasivo</h3>
                 <p className="text-slate-400 text-xs leading-relaxed">
@@ -1721,7 +1721,7 @@ export const ExecutivePresentation: React.FC<ExecutivePresentationProps> = ({
                   <span className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-400 font-mono font-bold flex items-center justify-center text-xs">
                     S5-6
                   </span>
-                  <span className="text-[10px] font-mono text-slate-500">FASE 3</span>
+                  <span className="text-[10px] font-mono text-slate-500">ETAPA 3</span>
                 </div>
                 <h3 className="font-bold text-white text-sm">Calibración ASME PTC 4 & Copilot</h3>
                 <p className="text-slate-400 text-xs leading-relaxed">

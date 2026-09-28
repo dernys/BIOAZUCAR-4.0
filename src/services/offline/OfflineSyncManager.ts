@@ -16,6 +16,8 @@
  * - Backlog flushing with automatic retry, exponential backoff, and packet batching.
  */
 
+import { IndustrialIndexedDbVault } from "../storage/IndustrialIndexedDbVault";
+
 export interface OfflineJournalEntry<T = any> {
   id: string;
   collection: string;
@@ -370,29 +372,26 @@ export class OfflineSyncManager {
   }
 
   /**
-   * Persistence mechanisms (LocalStorage with safe fallback)
+   * Persistence mechanisms (IndustrialIndexedDbVault / in-memory fallback)
    */
   private persistToLocalJournal(): void {
-    if (typeof window !== "undefined" && window.localStorage) {
-      try {
-        const data = {
-          pending: this.pendingQueue.slice(0, 500),
-          lastSyncTimestamp: this.lastSyncTimestamp,
-          logicalClock: this.logicalClock,
-        };
-        localStorage.setItem(this.storageKey, JSON.stringify(data));
-      } catch (e) {
-        console.warn("Could not save offline journal to localStorage", e);
-      }
-    }
+    const data = {
+      pending: this.pendingQueue.slice(0, 500),
+      lastSyncTimestamp: this.lastSyncTimestamp,
+      logicalClock: this.logicalClock,
+    };
+    IndustrialIndexedDbVault.getInstance()
+      .setItem("offline_journal", this.storageKey, data, "WORK_ORDERS")
+      .catch((e) => {
+        console.warn("Could not save offline journal to vault:", e);
+      });
   }
 
   private restoreFromLocalJournal(): void {
-    if (typeof window !== "undefined" && window.localStorage) {
-      try {
-        const raw = localStorage.getItem(this.storageKey);
-        if (raw) {
-          const parsed = JSON.parse(raw);
+    IndustrialIndexedDbVault.getInstance()
+      .getItem<any>("offline_journal", this.storageKey)
+      .then((parsed) => {
+        if (parsed) {
           if (Array.isArray(parsed.pending)) {
             this.pendingQueue = parsed.pending;
           }
@@ -403,9 +402,9 @@ export class OfflineSyncManager {
             this.logicalClock = parsed.logicalClock;
           }
         }
-      } catch (e) {
-        console.warn("Could not restore offline journal from localStorage", e);
-      }
-    }
+      })
+      .catch((e) => {
+        console.warn("Could not restore offline journal from vault:", e);
+      });
   }
 }

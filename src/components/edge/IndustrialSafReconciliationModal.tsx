@@ -174,7 +174,7 @@ export const IndustrialSafReconciliationModal: React.FC<Props> = ({
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 Store & Forward Compression & Process Reconciliation
                 <span className="text-xs px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/40 text-emerald-300 font-mono">
-                  [P1-01 / P1-02]
+                  RESILIENCIA DE DATOS
                 </span>
               </h2>
               <p className="text-xs text-slate-400 font-mono">
@@ -211,7 +211,7 @@ export const IndustrialSafReconciliationModal: React.FC<Props> = ({
             }`}
           >
             <HardDrive className="w-4 h-4" />
-            [P1-01] Compresión de Alta Densidad (Brotli/Gzip)
+            Compresión de Alta Densidad (Brotli/Gzip)
           </button>
           <button
             onClick={() => setActiveTab("RECONCILIATION")}
@@ -222,7 +222,7 @@ export const IndustrialSafReconciliationModal: React.FC<Props> = ({
             }`}
           >
             <ArrowRightLeft className="w-4 h-4" />
-            [P1-02] Reconciliación Semántica de Conflictos
+            Reconciliación Semántica de Conflictos
           </button>
         </div>
 
@@ -312,7 +312,7 @@ export const IndustrialSafReconciliationModal: React.FC<Props> = ({
 
               {/* Architecture Explanation */}
               <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-lg space-y-2 text-xs text-slate-400 leading-relaxed">
-                <h5 className="font-bold text-slate-200">Gobernanza Industrial de Almacenamiento (P1-01):</h5>
+                <h5 className="font-bold text-slate-200">Gobernanza Industrial de Almacenamiento Local:</h5>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>
                     <strong className="text-slate-300">Protección de Memorias Flash Industriales:</strong> La compresión Brotli reduce hasta un 80% las escrituras al disco en IPCs con chips eMMC/SSD, multiplicando por 5x la vida útil del hardware.

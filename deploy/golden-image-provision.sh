@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# BIOAZÚCAR 4.0 — PROVISIÓN AUTOMATIZADA DE IMAGEN GOLDEN IPC (Ola 5 / I21)
+# BIOAZÚCAR 4.0 — PROVISIÓN OFICIAL AUTOMATIZADA DE IMAGEN GOLDEN IPC
 # ==============================================================================
 # Script de auto-comisionamiento desatendido para pasarelas industriales (IPC).
 # Ejecución total en <30 minutos garantizando conformidad IEC 62443 SL3.

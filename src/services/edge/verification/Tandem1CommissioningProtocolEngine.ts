@@ -6,7 +6,7 @@
  * Normas: ISA-95 Nivel 2/3, IEC 62443 SL3, ASME PTC 4, ISO 22400-2.
  */
 
-import crypto from "crypto";
+import { createHash, createHmac } from "../../../utils/cryptoUtils";
 
 export interface Tandem1CriticalTagSpec {
   index: number;
@@ -622,16 +622,14 @@ export class Tandem1CommissioningProtocolEngine {
       timestamp,
     });
 
-    const conformanceHashSha256 = crypto
-      .createHash("sha256")
+    const conformanceHashSha256 = createHash("sha256")
       .update(payloadForHash)
       .digest("hex");
 
     // Firmantes oficiales
     const secretKeyForSignatures = "bioazucar-tandem1-commissioning-hmac-key";
     const createSig = (signerRole: string, signerName: string) => {
-      return crypto
-        .createHmac("sha256", secretKeyForSignatures)
+      return createHmac("sha256", secretKeyForSignatures)
         .update(`${actNumber}:${signerRole}:${signerName}:${conformanceHashSha256}`)
         .digest("hex");
     };
@@ -715,8 +713,7 @@ export class Tandem1CommissioningProtocolEngine {
       timestamp: certificate.timestamp,
     });
 
-    const expectedHash = crypto
-      .createHash("sha256")
+    const expectedHash = createHash("sha256")
       .update(payloadForHash)
       .digest("hex");
 
@@ -726,8 +723,7 @@ export class Tandem1CommissioningProtocolEngine {
 
     const secretKeyForSignatures = "bioazucar-tandem1-commissioning-hmac-key";
     for (const sig of certificate.signatories) {
-      const expectedSig = crypto
-        .createHmac("sha256", secretKeyForSignatures)
+      const expectedSig = createHmac("sha256", secretKeyForSignatures)
         .update(`${certificate.actNumber}:${sig.role}:${sig.name}:${certificate.conformanceHashSha256}`)
         .digest("hex");
       if (expectedSig !== sig.signatureHmac) {

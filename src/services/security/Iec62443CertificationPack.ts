@@ -8,8 +8,8 @@
  * ============================================================================
  */
 
-import { createHash, createHmac, randomBytes } from "node:crypto";
-import { sanitizeAuditMetadata } from "../../server/authMiddleware.js";
+import { createHash, createHmac, randomBytes } from "../../utils/cryptoUtils";
+import { sanitizeAuditMetadata } from "../../utils/securitySanitizer";
 
 export type SecurityLevel = "SL1" | "SL2" | "SL3" | "SL4";
 

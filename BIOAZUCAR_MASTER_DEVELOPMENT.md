@@ -924,7 +924,13 @@ Estos diez bloqueadores impiden la entrada de BioAzúcar 4.0 a una fábrica en o
    * Precedencia absoluta de enclavamientos físicos locales sobre consignas centrales (ISA-84 / IEC 61511).
    * Backfill a SQLite WAL Historian sin perturbación de telemetría viva en SCADA y detección de saltos de secuencia monotónica.
    * Sello criptográfico SHA-256 en actas de reconciliación.
-3. **[P1-03] Soporte WebAuthn / FIDO2 Físico:** Autenticación de operadores mediante llaves YubiKey en sala de control.
+3. **[P1-03] Soporte WebAuthn / FIDO2 Físico — `COMPLETED & VERIFIED [TESTED I35_WEBAUTHN_FIDO2]`:**
+   * Motor isomórfico `WebAuthnParser.ts` y servicio de servidor `WebAuthnServerService.ts` con nonces criptográficos de 32 bytes y 300s TTL.
+   * Verificación de presencia humana física (`UP = 1` en contacto dorado de YubiKey) y flags `UV` conforme a IEC 62443-4-2 FR1/FR2 SL3.
+   * Protección anti-clonación estricta por contador monotónico de firmas (`signCount` regresivo suspende inmediatamente el token).
+   * Protocolo de sobremarcha de emergencia (Break-Glass) con autorización dual de 2 supervisores distintos (principio de 4-ojos) y sello criptográfico SHA-256.
+   * Consola de sala de control `WebAuthnControlRoomModal.tsx` montada en `Header.tsx` y `App.tsx`.
+   * Suite de pruebas `src/__tests__/i35WebAuthnFido2PhysicalSecurity.test.tsx` con 16/16 tests pasando al 100%.
 4. **[P1-04] Virtualización de Grilla SCADA con WebGL:** Reemplazo de SVG intensivo en P&IDs con más de 5,000 elementos dinámicos concurrentes.
 5. **[P1-05] Streaming de Respuestas en Copilot:** Renderizado progresivo con soporte de cancelación por usuario (`AbortController`).
 6. **[P1-06] Syslog RFC 5424 sobre TLS:** Exportación continua de eventos de seguridad hacia SIEM industrial externo.
@@ -1019,8 +1025,33 @@ Para que cualquier módulo o funcionalidad sea promovido a un estado superior en
   6. Componente UI `IndustrialSafReconciliationModal.tsx` montado en `SystemConfigVerification.tsx`.
   7. Suite de pruebas exhaustiva `src/__tests__/i34StoreAndForwardCompressionAndReconciliation.test.ts` con 13/13 tests pasando al 100%. Total global: **60 suites pasando, 678 tests verdes sin fallos**.
 
-### Próxima Acción Inmediata: `[P1-03] Soporte WebAuthn / FIDO2 Físico en Sala de Control`
-* **Objetivo:** Implementar autenticación de dos factores física con llaves de hardware (YubiKey / FIDO2) conforme a IEC 62443-4-2 FR1 (Identificación y Autenticación de Operadores de Planta).
+### Funcionalidad Completada: `[P1-03] Soporte WebAuthn / FIDO2 Físico en Sala de Control`
+* **Estado:** **`COMPLETED & VERIFIED [TESTED I35_WEBAUTHN_FIDO2]`**
+* **Evidencia Técnica:**
+  1. Diseñado e implementado `src/types/webauthn.ts` con definiciones formales de datos para W3C Web Authentication Level 2/3, FIDO2 CTAP 2.1 e IEC 62443-4-2 FR1/FR2 SL3.
+  2. Implementado parser isomórfico `src/services/security/webauthn/WebAuthnParser.ts` para decodificación de `ClientDataJSON` y extracción binaria de `AuthenticatorData` (flags `UP`, `UV`, `AT`, hash de RP ID y contador monotónico de 32 bits).
+  3. Implementado servicio central de servidor `src/services/security/webauthn/WebAuthnServerService.ts`:
+     - Generación de challenges con 32 bytes de entropía criptográfica y TTL estricto de 300 segundos.
+     - Verificación de ceremonias de registro de llaves físicas YubiKey 5 Series (USB/NFC).
+     - Validación de ceremonias de aserción / login con prueba obligatoria de presencia humana (`UP = 1`).
+     - Protección determinista contra ataques de clonación mediante auditoría de contador de firmas monotónico (`signCount`).
+     - Protocolo de sobremarcha de emergencia (Break-Glass) con autorización dual simultánea de 2 supervisores (principio de 4-ojos) y sello criptográfico SHA-256.
+  4. Implementado cliente web `src/services/security/webauthn/WebAuthnClientService.ts` interactuando con `navigator.credentials` y almacenando credenciales de sesión en `sessionStorage` e IndexedDB Vault (`auth_session`), con exclusión absoluta de `localStorage`.
+  5. Expuestos endpoints REST en `server.ts`:
+     - `POST /api/auth/webauthn/register-challenge`
+     - `POST /api/auth/webauthn/register-verify`
+     - `POST /api/auth/webauthn/login-challenge`
+     - `POST /api/auth/webauthn/login-verify`
+     - `POST /api/auth/webauthn/emergency-override`
+     - `GET /api/auth/webauthn/credentials`
+     - `DELETE /api/auth/webauthn/credentials/:id`
+     - `GET /api/auth/webauthn/audits`
+     - `GET /api/auth/webauthn/status`
+  6. Diseñado y montado el componente de interfaz `WebAuthnControlRoomModal.tsx` con acceso rápido desde `Header.tsx` y montura en `App.tsx`.
+  7. Creada la suite de pruebas `src/__tests__/i35WebAuthnFido2PhysicalSecurity.test.tsx` con 16/16 pruebas pasando al 100%.
+
+### Próxima Acción Inmediata: `[P1-04] Virtualización de Grilla SCADA con WebGL`
+* **Objetivo:** Reemplazar el renderizado SVG intensivo en P&IDs industriales con más de 5,000 elementos dinámicos concurrentes mediante WebGL acelerado por hardware para garantizar 60 FPS estables en consolas de sala de control.
 
 ---
 
@@ -1043,6 +1074,25 @@ Para que cualquier módulo o funcionalidad sea promovido a un estado superior en
 ---
 
 ## 34. REGISTRO DE AUDITORÍA Y CONTROL DE CAMBIOS (CHANGELOG)
+
+### Versión 4.0.0-I35-WEBAUTHN-FIDO2-PHYSICAL-SECURITY (2026-09-26 21:26:00 UTC)
+* **Implementación I35 / [P1-03] Soporte WebAuthn / FIDO2 Físico en Sala de Control (IEC 62443-4-2 FR1/FR2 SL3):**
+  * **Capa 1: Data Contracts & Parser Criptográfico Isomórfico (`src/types/webauthn.ts` & `src/services/security/webauthn/WebAuthnParser.ts`):**
+    * Definiciones alineadas con W3C WebAuthn Level 2/3 y FIDO2 CTAP 2.1.
+    * Decodificación y validación estricta de `ClientDataJSON` (type, challenge, origin, crossOrigin).
+    * Parser binario de `AuthenticatorData` extrayendo hash RP ID, flags `UP` (User Present), `UV` (User Verified), `AT` (Attested Credential Data) y contador monotónico `signCount` de 32 bits big-endian.
+  * **Capa 2: Motor de Servidor y Autorización (`src/services/security/webauthn/WebAuthnServerService.ts`):**
+    * Generador de challenges con 32 bytes de entropía criptográfica (Web Crypto / PRNG seguro) y TTL de 300 segundos.
+    * Verificación de ceremonias de registro y aserción con prueba obligatoria de presencia humana física (`UP = 1`).
+    * Protección anti-clonación determinista: suspensión inmediata de la llave ante regresión de `signCount`.
+    * Protocolo de sobremarcha de emergencia (Break-Glass) con principio de 4-ojos (2 supervisores distintos simultáneos) y acta inmutable con sello SHA-256.
+  * **Capa 3: Integración de API REST (`server.ts`):**
+    * Endpoints `/api/auth/webauthn/register-challenge`, `/api/auth/webauthn/register-verify`, `/api/auth/webauthn/login-challenge`, `/api/auth/webauthn/login-verify`, `/api/auth/webauthn/emergency-override`, `/api/auth/webauthn/credentials`, `/api/auth/webauthn/audits` y `/api/auth/webauthn/status`.
+  * **Capa 4: Interfaz de Sala de Control (`src/components/security/WebAuthnControlRoomModal.tsx`):**
+    * Consola industrial con 4 pestañas: Verificación YubiKey, Enrolar Nueva Llave, Registro de Llaves y Sobremarcha de Emergencia.
+    * Acceso rápido integrado en `Header.tsx` con badge de estado SL3 y montaje en `App.tsx`.
+  * **Capa 5: Verificación y Gobernanza (`src/__tests__/i35WebAuthnFido2PhysicalSecurity.test.tsx`):**
+    * 16/16 pruebas unitarias e integradas pasando al 100%. Cero credenciales en `localStorage`.
 
 ### Versión 4.0.0-I34-SAF-COMPRESSION-RECONCILIATION (2026-09-24 16:30:00 UTC)
 * **Implementación I34 / [P1-01 & P1-02] Store & Forward High-Density Compression & Semantic Process Conflict Reconciliation:**

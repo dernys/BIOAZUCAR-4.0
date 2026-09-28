@@ -212,7 +212,7 @@ export const AICenter: React.FC<AICenterProps> = ({
           }`}
         >
           <Database className="w-4 h-4" />
-          <span>Datasets Zafra & Calibración (P0-09)</span>
+          <span>Datasets Zafra & Calibración de Modelos</span>
         </button>
 
         <button

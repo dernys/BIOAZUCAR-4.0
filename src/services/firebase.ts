@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, Firestore } from "firebase/firestore";
+import { initializeFirestore, getFirestore, Firestore } from "firebase/firestore";
 import { getAuth, Auth } from "firebase/auth";
 import firebaseConfigJson from "../../firebase-applet-config.json";
 
@@ -20,7 +20,22 @@ export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfi
 export const auth: Auth = getAuth(app);
 
 // Initialize Firestore with specific provisioned database ID
-export const db: Firestore = getFirestore(
-  app,
-  firebaseConfigJson.firestoreDatabaseId || "(default)"
-);
+// Uses experimentalForceLongPolling to eliminate 10s backend connection timeouts in preview/proxy environments
+const firestoreDbId = firebaseConfigJson.firestoreDatabaseId || "(default)";
+
+function initFirestore(): Firestore {
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalForceLongPolling: true,
+        ignoreUndefinedProperties: true,
+      },
+      firestoreDbId
+    );
+  } catch (_err) {
+    return getFirestore(app, firestoreDbId);
+  }
+}
+
+export const db: Firestore = initFirestore();

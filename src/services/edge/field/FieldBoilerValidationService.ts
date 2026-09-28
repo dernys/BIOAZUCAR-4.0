@@ -8,7 +8,7 @@
  * Yokogawa / Emerson Differential Pressure 3-Element Drum Level.
  */
 
-import crypto from "crypto";
+import { createHash, createHmac } from "../../../utils/cryptoUtils";
 
 export interface BoilerColdCommissioningCheck {
   item: string;
@@ -305,15 +305,13 @@ export class FieldBoilerValidationService {
       timestamp,
     });
 
-    const conformanceHashSha256 = crypto
-      .createHash("sha256")
+    const conformanceHashSha256 = createHash("sha256")
       .update(payload)
       .digest("hex");
 
     const secret = "bioazucar-fld02-boiler-hmac-key";
     const createSig = (role: string, name: string) => {
-      return crypto
-        .createHmac("sha256", secret)
+      return createHmac("sha256", secret)
         .update(`${actId}:${role}:${name}:${conformanceHashSha256}`)
         .digest("hex");
     };
@@ -374,8 +372,7 @@ export class FieldBoilerValidationService {
       timestamp: act.timestamp,
     });
 
-    const expectedHash = crypto
-      .createHash("sha256")
+    const expectedHash = createHash("sha256")
       .update(payload)
       .digest("hex");
 
@@ -385,8 +382,7 @@ export class FieldBoilerValidationService {
 
     const secret = "bioazucar-fld02-boiler-hmac-key";
     for (const sig of act.signatures) {
-      const expectedSig = crypto
-        .createHmac("sha256", secret)
+      const expectedSig = createHmac("sha256", secret)
         .update(`${act.actId}:${sig.role}:${sig.name}:${act.conformanceHashSha256}`)
         .digest("hex");
       if (expectedSig !== sig.signatureHmac) {

@@ -4,6 +4,7 @@ delete (globalThis as any).__dirname;
 import express from "express";
 import http from "http";
 import path from "path";
+import fs from "fs";
 import crypto from "crypto";
 import net from "net";
 import { createServer as createViteServer } from "vite";
@@ -49,6 +50,10 @@ import {
 import { CommissioningCoverageEngine } from "./src/services/edge/verification/CommissioningCoverageEngine";
 import { StoreAndForwardCompressor } from "./src/services/edge/storeAndForward/StoreAndForwardCompressor";
 import { SemanticProcessConflictReconciler } from "./src/services/semantic/SemanticProcessConflictReconciler";
+import {
+  webAuthnServerService,
+  WebAuthnSecurityError,
+} from "./src/services/security/webauthn/WebAuthnServerService";
 
 dotenv.config();
 
@@ -939,7 +944,15 @@ app.post("/api/edge/telemetry-sync", (req, res) => {
   }
 
   // HMAC verification (IEC 62443-4-2 SL3)
+  const isProduction = process.env.INDUSTRIAL_RUNTIME_PROFILE === "PRODUCTION" || process.env.NODE_ENV === "production";
   const edgeSecret = process.env.BIOAZUCAR_EDGE_SECRET || "bioazucar_industrial_edge_super_secret_key";
+
+  if (isProduction && (!process.env.BIOAZUCAR_EDGE_SECRET || process.env.BIOAZUCAR_EDGE_SECRET === "bioazucar_industrial_edge_super_secret_key")) {
+    return res.status(500).json({
+      error: "[SECURITY_FATAL] Missing or insecure BIOAZUCAR_EDGE_SECRET in PRODUCTION profile. Startup/sync rejected.",
+    });
+  }
+
   if (edgeSignature) {
     const expected = crypto
       .createHmac("sha256", edgeSecret)
@@ -951,7 +964,7 @@ app.post("/api/edge/telemetry-sync", (req, res) => {
         error: "HMAC_INVALID: Firma criptográfica de nodo Edge inválida",
       });
     }
-  } else if (process.env.NODE_ENV === "production" && process.env.BIOAZUCAR_ENFORCE_EDGE_AUTH === "true") {
+  } else if (isProduction) {
     return res.status(401).json({
       error: "AUTH_REQUIRED: Cabecera x-bioazucar-edge-signature requerida en producción",
     });
@@ -2712,24 +2725,264 @@ app.get("/api/semantic/reconcile/reports/:id", (req, res) => {
   }
 });
 
+// =========================================================================
+// WEBAUTHN / FIDO2 HARDWARE AUTHENTICATION & CONTROL ROOM SECURITY (P1-03)
+// Conforms to IEC 62443-4-2 FR1 / FR2 (Human User Identification SL3)
+// =========================================================================
+
+app.post("/api/auth/webauthn/register-challenge", (req, res) => {
+  try {
+    const { userUid, userEmail, userVerification } = req.body;
+    if (!userUid || !userEmail) {
+      return res.status(400).json({ error: "Missing required 'userUid' or 'userEmail'" });
+    }
+    const challenge = webAuthnServerService.generateChallenge({
+      userUid,
+      userEmail,
+      type: "REGISTRATION",
+      userVerification,
+    });
+    res.json(challenge);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to generate registration challenge" });
+  }
+});
+
+app.post("/api/auth/webauthn/register-verify", (req, res) => {
+  try {
+    const payload = req.body;
+    if (!payload.challengeId || !payload.credentialId || !payload.clientDataJSON) {
+      return res.status(400).json({ error: "Invalid registration payload" });
+    }
+    const result = webAuthnServerService.verifyRegistration(payload);
+    logServerAuditEvent({
+      actorUid: result.credential.userUid,
+      actorRole: "operador",
+      tenantId: "BIOAZUCAR-DEMO",
+      action: "WEBAUTHN_TOKEN_REGISTERED",
+      resource: `YUBIKEY:${result.credential.id}`,
+      result: "SUCCESS",
+      metadata: { deviceName: result.credential.deviceName, standard: "IEC-62443-4-2-FR1" },
+    });
+    res.json(result);
+  } catch (err: any) {
+    const statusCode = err instanceof WebAuthnSecurityError ? 400 : 500;
+    res.status(statusCode).json({ error: err.message || "Registration verification failed" });
+  }
+});
+
+app.post("/api/auth/webauthn/login-challenge", (req, res) => {
+  try {
+    const { userEmail, userVerification } = req.body;
+    if (!userEmail) {
+      return res.status(400).json({ error: "Missing required 'userEmail'" });
+    }
+    const challenge = webAuthnServerService.generateChallenge({
+      userUid: userEmail,
+      userEmail,
+      type: "AUTHENTICATION",
+      userVerification,
+    });
+    res.json(challenge);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to generate authentication challenge" });
+  }
+});
+
+app.post("/api/auth/webauthn/login-verify", (req, res) => {
+  try {
+    const payload = req.body;
+    if (!payload.challengeId || !payload.credentialId || !payload.clientDataJSON || !payload.authenticatorData) {
+      return res.status(400).json({ error: "Invalid authentication assertion payload" });
+    }
+    const result = webAuthnServerService.verifyAuthentication(payload);
+    logServerAuditEvent({
+      actorUid: result.session.userUid,
+      actorRole: result.session.role,
+      tenantId: "BIOAZUCAR-DEMO",
+      action: "WEBAUTHN_OPERATOR_AUTHENTICATED",
+      resource: `SESSION:${result.session.sessionId}`,
+      result: "SUCCESS",
+      metadata: {
+        deviceName: result.session.deviceName,
+        userPresent: result.session.userPresent,
+        sl3Certified: result.session.sl3Certified,
+      },
+    });
+    res.json(result);
+  } catch (err: any) {
+    const statusCode = err instanceof WebAuthnSecurityError ? 401 : 500;
+    res.status(statusCode).json({ error: err.message || "Authentication verification failed" });
+  }
+});
+
+app.post("/api/auth/webauthn/emergency-override", (req, res) => {
+  try {
+    const request = req.body;
+    const result = webAuthnServerService.executeEmergencyBreakGlass(request);
+    logServerAuditEvent({
+      actorUid: request.targetUserUid,
+      actorRole: "operador",
+      tenantId: "BIOAZUCAR-DEMO",
+      action: "EMERGENCY_BREAK_GLASS_PLANT_OVERRIDE",
+      resource: `ZONE:${request.plantZone}`,
+      result: "SUCCESS",
+      metadata: {
+        supervisors: [request.supervisorAEmail, request.supervisorBEmail],
+        reason: request.reason,
+        seal: result.audit.tamperSealSha256,
+      },
+    });
+    res.json(result);
+  } catch (err: any) {
+    const statusCode = err instanceof WebAuthnSecurityError ? 400 : 500;
+    res.status(statusCode).json({ error: err.message || "Emergency override failed" });
+  }
+});
+
+app.get("/api/auth/webauthn/credentials", (req, res) => {
+  try {
+    const userUid = typeof req.query.userUid === "string" ? req.query.userUid : undefined;
+    const credentials = webAuthnServerService.getEnrolledCredentials(userUid);
+    res.json({ credentials });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to list credentials" });
+  }
+});
+
+app.delete("/api/auth/webauthn/credentials/:id", (req, res) => {
+  try {
+    const success = webAuthnServerService.revokeCredential(req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: `Credential '${req.params.id}' not found` });
+    }
+    res.json({ success: true, message: `Credential '${req.params.id}' revoked.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to revoke credential" });
+  }
+});
+
+app.get("/api/auth/webauthn/audits", (_req, res) => {
+  try {
+    const audits = webAuthnServerService.getEmergencyAudits();
+    res.json({ audits });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to retrieve audits" });
+  }
+});
+
+app.get("/api/auth/webauthn/status", (_req, res) => {
+  try {
+    const credentials = webAuthnServerService.getEnrolledCredentials();
+    res.json({
+      enabled: true,
+      standard: "IEC-62443-4-2-FR1-SL3",
+      rpId: webAuthnServerService.rpId,
+      rpName: webAuthnServerService.rpName,
+      enrolledKeysCount: credentials.length,
+      activeKeysCount: credentials.filter((c) => c.status === "ACTIVE").length,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to get WebAuthn status" });
+  }
+});
+
 
 
 // Setup Vite development middleware or static file serving
 async function startServer() {
+  if (process.env.INDUSTRIAL_RUNTIME_PROFILE === "PRODUCTION") {
+    const secret = process.env.BIOAZUCAR_EDGE_SECRET?.trim();
+    const insecure = ["bioazucar_industrial_edge_super_secret_key", "default-secret", "secret", "password", "change-me"];
+    if (!secret || insecure.includes(secret.toLowerCase())) {
+      throw new Error(
+        "[SECURITY_FATAL] Missing or insecure BIOAZUCAR_EDGE_SECRET in PRODUCTION deployment profile. Server startup aborted."
+      );
+    }
+  }
+
   const httpServer = http.createServer(app);
 
   if (process.env.NODE_ENV !== "production") {
     // In tsx/Node 22, ensure globalThis.__dirname does not break ESM plugins
     delete (globalThis as any).__dirname;
 
-    // Attach Vite HMR directly to httpServer so browser connects to origin:3000 without orphan port 24678
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: { server: httpServer },
+        hmr: false,
+        ws: false,
       },
       appType: "spa",
     });
+
+    // Custom HTML interceptor ensuring browser extensions and [vite] HMR logs are suppressed
+    // BEFORE /@vite/client executes in sandboxed cloud iFrames (conforming to AI Studio constraints).
+    app.use(async (req, res, next) => {
+      if (req.method !== "GET" && req.method !== "HEAD") return next();
+      if (
+        req.path.startsWith("/api/") ||
+        req.path.startsWith("/@") ||
+        req.path.startsWith("/src/") ||
+        req.path.startsWith("/node_modules/")
+      ) {
+        return next();
+      }
+
+      const accept = req.headers.accept || "";
+      if (req.path === "/" || req.path === "/index.html" || accept.includes("text/html")) {
+        try {
+          const rawHtml = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf-8");
+          let html = await vite.transformIndexHtml(req.originalUrl || "/", rawHtml);
+          html = html.replace(
+            '<script type="module" src="/@vite/client"></script>',
+            `<script>
+(function() {
+  var isViteNoise = function(args) {
+    if (!args) return false;
+    for (var i = 0; i < args.length; i++) {
+      var a = args[i];
+      if (!a) continue;
+      var s = (typeof a === 'string') ? a : ((a && (a.message || a.stack)) ? (a.message + ' ' + (a.stack || '')) : String(a));
+      var l = s.toLowerCase();
+      if (l.indexOf('[vite]') !== -1 || l.indexOf('vite-hmr') !== -1 || l.indexOf('failed to connect to websocket') !== -1 || l.indexOf('websocket') !== -1 || s.indexOf('[vite]') !== -1) return true;
+    }
+    return false;
+  };
+  ['error', 'warn', 'debug', 'info', 'log'].forEach(function(fn) {
+    var orig = console[fn];
+    console[fn] = function() {
+      if (isViteNoise(arguments)) return;
+      if (orig) return orig.apply(console, arguments);
+    };
+  });
+  window.addEventListener('error', function(e) {
+    var msg = (e && (e.message || (e.error && e.error.message))) || '';
+    if (typeof msg === 'string' && (msg.indexOf('[vite]') !== -1 || msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite') !== -1)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return true;
+    }
+  }, true);
+  window.addEventListener('unhandledrejection', function(e) {
+    var r = (e && (e.reason && (e.reason.message || e.reason.stack))) || String(e ? e.reason : '');
+    if (typeof r === 'string' && (r.indexOf('[vite]') !== -1 || r.indexOf('WebSocket') !== -1 || r.indexOf('vite') !== -1)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return true;
+    }
+  }, true);
+})();
+</script><script type="module" src="/@vite/client"></script>`
+          );
+          return res.status(200).set({ "Content-Type": "text/html" }).send(html);
+        } catch (err) {
+          return next(err);
+        }
+      }
+      next();
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");

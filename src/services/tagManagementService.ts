@@ -5,6 +5,7 @@ import {
   UserRole,
 } from "../types";
 import { logAuditEventToDb } from "./dbService";
+import { IndustrialIndexedDbVault } from "./storage/IndustrialIndexedDbVault";
 
 export const INITIAL_TAG_CATALOG: IndustrialTagDefinition[] = [
   {
@@ -725,13 +726,27 @@ export interface TagTestResult {
   message: string;
 }
 
+function isProductionEnvironment(): boolean {
+  try {
+    if (typeof process !== "undefined" && process.env?.INDUSTRIAL_RUNTIME_PROFILE === "PRODUCTION") {
+      return true;
+    }
+    if (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_INDUSTRIAL_RUNTIME_PROFILE === "PRODUCTION") {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 export class TagManagementService {
   private static instance: TagManagementService;
   private readonly STORAGE_KEY = "bioazucar_canonical_tags_v1";
   private memoryTags: Map<string, IndustrialTagDefinition> = new Map();
 
   private constructor() {
-    this.initializeFromStorageOrCatalog();
+    this.hydrateFromVault().catch((err) => {
+      console.warn("[TagManagementService] Non-fatal initial hydration warning:", err);
+    });
   }
 
   public static getInstance(): TagManagementService {
@@ -743,35 +758,114 @@ export class TagManagementService {
 
   private persistToLocalStorage(): void {
     try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const serialized = JSON.stringify(Array.from(this.memoryTags.values()));
-        window.localStorage.setItem(this.STORAGE_KEY, serialized);
-      }
+      const records = Array.from(this.memoryTags.values());
+      IndustrialIndexedDbVault.getInstance()
+        .setItem("industrial_tags", this.STORAGE_KEY, records, "OT_CONFIG")
+        .catch((err) => {
+          console.warn("[TagManagementService] Could not persist tags to vault:", err);
+        });
     } catch (err) {
-      console.warn("[TagManagementService] Could not persist to localStorage:", err);
+      console.warn("[TagManagementService] Could not persist tags to vault:", err);
     }
   }
 
-  private initializeFromStorageOrCatalog(): void {
-    let loadedFromStorage = false;
+  public async hydrateFromVault(): Promise<{ success: boolean; source: string; tagCount: number; error?: string }> {
+    const isProd = isProductionEnvironment();
     try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const saved = window.localStorage.getItem(this.STORAGE_KEY);
-        if (saved) {
-          const parsed: IndustrialTagDefinition[] = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed.forEach((t) => this.memoryTags.set(t.id, t));
-            loadedFromStorage = true;
+      const vault = IndustrialIndexedDbVault.getInstance();
+
+      // 1. Check schema
+      await vault.verifySchemaIntegrity();
+
+      // 2. Read tags from object store 'industrial_tags'
+      let parsed = await vault.getItem<IndustrialTagDefinition[]>("industrial_tags", this.STORAGE_KEY);
+
+      // 3. Check migration from legacy stores 'tags' or 'ot_tags' if primary is empty
+      let migrated = false;
+      if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
+        const fromTags = await vault.getItem<IndustrialTagDefinition[]>("tags", this.STORAGE_KEY);
+        if (Array.isArray(fromTags) && fromTags.length > 0) {
+          parsed = fromTags;
+          migrated = true;
+        } else {
+          const fromOt = await vault.getItem<IndustrialTagDefinition[]>("ot_tags", this.STORAGE_KEY);
+          if (Array.isArray(fromOt) && fromOt.length > 0) {
+            parsed = fromOt;
+            migrated = true;
           }
         }
       }
-    } catch (err) {
-      console.warn("[TagManagementService] Failed to hydrate tags from storage:", err);
-    }
 
-    if (!loadedFromStorage || this.memoryTags.size === 0) {
-      INITIAL_TAG_CATALOG.forEach((t) => this.memoryTags.set(t.id, t));
-      this.persistToLocalStorage();
+      // 4. Validate structure
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const validTags: IndustrialTagDefinition[] = [];
+        for (const t of parsed) {
+          if (t && typeof t === "object" && typeof t.id === "string" && typeof t.name === "string") {
+            validTags.push(t);
+          }
+        }
+
+        if (validTags.length > 0) {
+          this.memoryTags.clear();
+          validTags.forEach((t) => this.memoryTags.set(t.id, t));
+
+          if (migrated) {
+            await vault.setItem("industrial_tags", this.STORAGE_KEY, validTags, "OT_CONFIG");
+          }
+
+          console.info(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              component: "TagManagementService",
+              action: "HYDRATE_TAGS",
+              status: "SUCCESS",
+              tagCount: validTags.length,
+              migrated,
+            })
+          );
+
+          return { success: true, source: migrated ? "VAULT_MIGRATED" : "VAULT_PERSISTED", tagCount: validTags.length };
+        }
+      }
+
+      // 5. Handle empty DB
+      if (isProd) {
+        // Strict production rule: NO synthetic fallback!
+        this.memoryTags.clear();
+        console.warn(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            component: "TagManagementService",
+            action: "HYDRATE_TAGS",
+            status: "EMPTY_PRODUCTION_SAFE",
+            message: "Vault empty in PRODUCTION mode. Synthetic catalog fallback suppressed.",
+          })
+        );
+        return { success: true, source: "EMPTY_PRODUCTION", tagCount: 0 };
+      } else {
+        // LAB / SIMULATION: Seed initial catalog
+        this.memoryTags.clear();
+        INITIAL_TAG_CATALOG.forEach((t) => this.memoryTags.set(t.id, t));
+        await vault.setItem("industrial_tags", this.STORAGE_KEY, Array.from(this.memoryTags.values()), "OT_CONFIG");
+        return { success: true, source: "INITIAL_CATALOG_SEEDED", tagCount: this.memoryTags.size };
+      }
+    } catch (err: any) {
+      const errMessage = err?.message || String(err);
+      console.warn(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          component: "TagManagementService",
+          action: "HYDRATE_TAGS",
+          status: "FAILED",
+          error: errMessage,
+        })
+      );
+
+      if (!isProd && this.memoryTags.size === 0) {
+        INITIAL_TAG_CATALOG.forEach((t) => this.memoryTags.set(t.id, t));
+      }
+
+      return { success: false, source: "ERROR_RECOVERY", tagCount: this.memoryTags.size, error: errMessage };
     }
   }
 

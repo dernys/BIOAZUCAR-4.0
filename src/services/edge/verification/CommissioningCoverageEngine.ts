@@ -30,7 +30,7 @@
  * - Cryptographic SHA-256 seal for tamper-evident reporting.
  */
 
-import crypto from "crypto";
+import { createHash } from "../../../utils/cryptoUtils";
 import { IndustrialTagRegistryService } from "../../tags/IndustrialTagRegistryService";
 import { CanonicalIndustrialTagRecord } from "../../../types/canonicalTagRecord";
 import {
@@ -629,7 +629,7 @@ export class CommissioningCoverageEngine {
         status: telemetry ? "PASSED" : "PENDING",
         timestamp: timestampStr,
         details: `Instrumento físico/sensor en ${tag.originalAddress}.`,
-        checksumSha256: crypto.createHash("sha256").update(`${tag.tagId}:${tag.originalAddress}`).digest("hex"),
+        checksumSha256: createHash("sha256").update(`${tag.tagId}:${tag.originalAddress}`).digest("hex"),
       },
       {
         stage: "DRIVER",
@@ -850,8 +850,7 @@ export class CommissioningCoverageEngine {
       unmetCriteria,
     };
 
-    const reportHashSha256 = crypto
-      .createHash("sha256")
+    const reportHashSha256 = createHash("sha256")
       .update(JSON.stringify(reportWithoutHash))
       .digest("hex");
 
@@ -928,8 +927,7 @@ export class CommissioningCoverageEngine {
       evidenceMatrix,
     };
 
-    const masterCoverageSealSha256 = crypto
-      .createHash("sha256")
+    const masterCoverageSealSha256 = createHash("sha256")
       .update(JSON.stringify(summaryPayload))
       .digest("hex");
 
@@ -944,8 +942,7 @@ export class CommissioningCoverageEngine {
    */
   public verifyCoverageSeal(report: TenantCoverageReport): boolean {
     const { reportHashSha256, ...rest } = report;
-    const computed = crypto
-      .createHash("sha256")
+    const computed = createHash("sha256")
       .update(JSON.stringify(rest))
       .digest("hex");
     return computed === reportHashSha256;

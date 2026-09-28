@@ -69,7 +69,7 @@ export const BioAiDatasetsCalibrationView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Banner: Dataset Provenance & P0-09 Certification */}
+      {/* Top Banner: Dataset Provenance & Model Calibration Certification */}
       <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-800/40 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="p-3 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
@@ -81,7 +81,7 @@ export const BioAiDatasetsCalibrationView: React.FC = () => {
                 Dataset Zafra Real Anonimizado & Provenance Criptográfico
               </h3>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> P0-09 CERTIFICADO
+                <ShieldCheck className="w-3.5 h-3.5" /> CALIBRADO & AUDITADO
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
@@ -317,7 +317,7 @@ export const BioAiDatasetsCalibrationView: React.FC = () => {
           </div>
 
           <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-            <span className="text-xs font-mono text-slate-500">Dictamen Criterio P0-09:</span>
+            <span className="text-xs font-mono text-slate-500">Dictamen de Calibración Industrial:</span>
             <div className="text-sm font-bold font-mono text-emerald-300 mt-1 flex items-center gap-1">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" /> CUMPLE (MAPE &lt; 3.5%)
             </div>

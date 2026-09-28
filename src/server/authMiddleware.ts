@@ -124,24 +124,8 @@ try {
   // Silent fallback to clean in-memory buffer
 }
 
-/**
- * Strips secrets, passwords, tokens and credentials from audit metadata (SEC-7)
- */
-export function sanitizeAuditMetadata(meta?: Record<string, any>): Record<string, any> | undefined {
-  if (!meta) return undefined;
-  const sensitiveKeys = ["token", "password", "secret", "authorization", "apikey", "bearer", "key", "passwordhash", "jwt", "credential"];
-  const clean: Record<string, any> = {};
-  for (const [k, v] of Object.entries(meta)) {
-    if (sensitiveKeys.some((s) => k.toLowerCase().includes(s))) {
-      clean[k] = "[REDACTED]";
-    } else if (v && typeof v === "object" && !Array.isArray(v)) {
-      clean[k] = sanitizeAuditMetadata(v);
-    } else {
-      clean[k] = v;
-    }
-  }
-  return clean;
-}
+import { sanitizeAuditMetadata } from "../utils/securitySanitizer";
+export { sanitizeAuditMetadata };
 
 export function logServerAuditEvent(record: Partial<ServerAuditRecord>): ServerAuditRecord {
   const actorUid = record.actorUid || record.userId || "ANONYMOUS";

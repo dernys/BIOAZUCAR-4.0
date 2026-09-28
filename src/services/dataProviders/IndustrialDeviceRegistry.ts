@@ -10,6 +10,7 @@
 
 import { IndustrialDeviceDefinition, ConnectionRegistryEntry, UserRole, IndustrialProtocol } from "../../types";
 import { logAuditEventToDb } from "../dbService";
+import { IndustrialIndexedDbVault } from "../storage/IndustrialIndexedDbVault";
 
 export class IndustrialDeviceRegistry {
   private static instance: IndustrialDeviceRegistry;
@@ -29,36 +30,30 @@ export class IndustrialDeviceRegistry {
 
   private persistToLocalStorage(): void {
     try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const serialized = JSON.stringify(Array.from(this.devices.values()));
-        window.localStorage.setItem(this.STORAGE_KEY, serialized);
-      }
+      const records = Array.from(this.devices.values());
+      IndustrialIndexedDbVault.getInstance()
+        .setItem("ot_devices", this.STORAGE_KEY, records, "OT_CONFIG")
+        .catch((err) => {
+          console.warn("[IndustrialDeviceRegistry] Could not persist devices to vault:", err);
+        });
     } catch (err) {
-      console.warn("[IndustrialDeviceRegistry] Could not persist to localStorage:", err);
+      console.warn("[IndustrialDeviceRegistry] Could not persist devices to vault:", err);
     }
   }
 
   private initializeFromStorage(): void {
-    let loadedFromStorage = false;
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const saved = window.localStorage.getItem(this.STORAGE_KEY);
-        if (saved) {
-          const parsed: IndustrialDeviceDefinition[] = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed.forEach((d) => this.devices.set(d.id, d));
-            loadedFromStorage = true;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("[IndustrialDeviceRegistry] Failed to hydrate devices from storage:", err);
-    }
+    this.initializeDefaultFixtures();
 
-    if (!loadedFromStorage || this.devices.size === 0) {
-      this.initializeDefaultFixtures();
-      this.persistToLocalStorage();
-    }
+    IndustrialIndexedDbVault.getInstance()
+      .getItem<IndustrialDeviceDefinition[]>("ot_devices", this.STORAGE_KEY)
+      .then((parsed) => {
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          parsed.forEach((d) => this.devices.set(d.id, d));
+        }
+      })
+      .catch((err) => {
+        console.warn("[IndustrialDeviceRegistry] Failed to hydrate devices from vault:", err);
+      });
   }
 
   /**

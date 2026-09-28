@@ -217,7 +217,7 @@ export const IpcHardeningAndOfflineModal: React.FC<IpcHardeningAndOfflineModalPr
                   HARDENING DE INFRAESTRUCTURA IPC & MODO OFFLINE
                 </h2>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
-                  OLA 4 • IEC 62443 L3
+                  INFRAESTRUCTURA IPC • IEC 62443 SL3
                 </span>
               </div>
               <p className="text-xs text-slate-400 truncate font-sans mt-0.5">

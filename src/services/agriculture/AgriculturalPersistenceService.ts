@@ -35,6 +35,7 @@ import {
   ClosedLoopFeedbackSummary,
 } from "../../types/agriculture";
 import { CaneBatch, WorkOrder } from "../../types";
+import { IndustrialIndexedDbVault } from "../storage/IndustrialIndexedDbVault";
 import {
   AgriculturalParameterRegistry,
   CANONICAL_AGRICULTURAL_PARAMETERS,
@@ -75,23 +76,31 @@ const STORAGE_KEYS = {
 
 const memoryStore: Record<string, string> = {};
 
+// Hydrate from vault asynchronously on module load
+if (typeof window !== "undefined") {
+  Object.values(STORAGE_KEYS).forEach((k) => {
+    IndustrialIndexedDbVault.getInstance()
+      .getItem<string>("agricultural_persistence", k)
+      .then((val) => {
+        if (val !== null && val !== undefined) {
+          memoryStore[k] = val;
+        }
+      })
+      .catch(() => {});
+  });
+}
+
 export function safeGetItem(key: string): string | null {
-  if (typeof localStorage !== "undefined") {
-    try {
-      const val = localStorage.getItem(key);
-      if (val !== null) return val;
-    } catch {}
-  }
   return memoryStore[key] ?? null;
 }
 
 export function safeSetItem(key: string, value: string): void {
   memoryStore[key] = value;
-  if (typeof localStorage !== "undefined") {
-    try {
-      localStorage.setItem(key, value);
-    } catch {}
-  }
+  IndustrialIndexedDbVault.getInstance()
+    .setItem("agricultural_persistence", key, value, "PRODUCTION_PARAMS")
+    .catch((err) => {
+      console.warn("[AgriculturalPersistenceService] Vault write failed:", err);
+    });
 }
 
 export function cleanUndefinedFields<T extends Record<string, any>>(obj: T): T {
@@ -1105,7 +1114,7 @@ export class AgriculturalPersistenceService {
 
   public static getLocalCachedCampaign(): AgriculturalCampaign | null {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.CAMPAIGN);
+      const raw = safeGetItem(STORAGE_KEYS.CAMPAIGN);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed) return normalizeCampaign(parsed);
@@ -1117,7 +1126,7 @@ export class AgriculturalPersistenceService {
   public static setLocalCachedCampaign(campaign: AgriculturalCampaign): void {
     try {
       const normalized = normalizeCampaign(campaign);
-      localStorage.setItem(STORAGE_KEYS.CAMPAIGN, JSON.stringify(normalized));
+      safeSetItem(STORAGE_KEYS.CAMPAIGN, JSON.stringify(normalized));
     } catch {}
   }
 
@@ -1390,7 +1399,7 @@ export class AgriculturalPersistenceService {
    */
   public static getOperations(tenantId: string = "TENANT_AZUCAR_01"): AgroOperationMaster[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.OPERATIONS);
+      const raw = safeGetItem(STORAGE_KEYS.OPERATIONS);
       if (raw) {
         const parsed = JSON.parse(raw) as AgroOperationMaster[];
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -1402,7 +1411,7 @@ export class AgriculturalPersistenceService {
 
   public static setLocalCachedOperations(ops: AgroOperationMaster[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.OPERATIONS, JSON.stringify(ops));
+      safeSetItem(STORAGE_KEYS.OPERATIONS, JSON.stringify(ops));
     } catch {}
   }
 
@@ -1517,7 +1526,7 @@ export class AgriculturalPersistenceService {
    */
   public static getEquipmentAssets(tenantId: string = "TENANT_AZUCAR_01"): AgriculturalEquipmentAsset[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.EQUIPMENT);
+      const raw = safeGetItem(STORAGE_KEYS.EQUIPMENT);
       if (raw) {
         const parsed = JSON.parse(raw) as AgriculturalEquipmentAsset[];
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -1529,7 +1538,7 @@ export class AgriculturalPersistenceService {
 
   public static setLocalCachedEquipment(assets: AgriculturalEquipmentAsset[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(assets));
+      safeSetItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(assets));
     } catch {}
   }
 
@@ -1643,7 +1652,7 @@ export class AgriculturalPersistenceService {
    */
   public static getInputs(tenantId: string = "TENANT_AZUCAR_01"): AgriculturalInputMaster[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.INPUTS);
+      const raw = safeGetItem(STORAGE_KEYS.INPUTS);
       if (raw) {
         const parsed = JSON.parse(raw) as AgriculturalInputMaster[];
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -1655,7 +1664,7 @@ export class AgriculturalPersistenceService {
 
   public static setLocalCachedInputs(inputs: AgriculturalInputMaster[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.INPUTS, JSON.stringify(inputs));
+      safeSetItem(STORAGE_KEYS.INPUTS, JSON.stringify(inputs));
     } catch {}
   }
 
@@ -1771,7 +1780,7 @@ export class AgriculturalPersistenceService {
   public static getScenarios(tenantId: string = "TENANT_AZUCAR_01", campaignId?: string): AgriculturalScenario[] {
     let list = INITIAL_AGRICULTURAL_SCENARIOS;
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.SCENARIOS);
+      const raw = safeGetItem(STORAGE_KEYS.SCENARIOS);
       if (raw) {
         const parsed = JSON.parse(raw) as AgriculturalScenario[];
         if (Array.isArray(parsed) && parsed.length > 0) list = parsed;
@@ -1786,7 +1795,7 @@ export class AgriculturalPersistenceService {
 
   public static setLocalCachedScenarios(scenarios: AgriculturalScenario[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.SCENARIOS, JSON.stringify(scenarios));
+      safeSetItem(STORAGE_KEYS.SCENARIOS, JSON.stringify(scenarios));
     } catch {}
   }
 

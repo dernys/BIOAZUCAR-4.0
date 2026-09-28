@@ -30,7 +30,8 @@ import {
   WifiOff,
   Layers,
   Server,
-  Award
+  Award,
+  Key
 } from "lucide-react";
 import { UserRole, PlantStatus, AlarmEvent, SimulationScenario, UserAccount, TenantEnterprise, TelemetryData } from "../types";
 import { RuntimeMode } from "../services/runtime/types";
@@ -55,6 +56,7 @@ export interface HeaderProps {
   onOpenIndustrialConnectionModal?: () => void;
   onOpenIpcHardening?: () => void;
   onOpenIndustrialFatSat?: () => void;
+  onOpenWebAuthnModal?: () => void;
   runtimeMode?: RuntimeMode;
   telemetry?: TelemetryData;
   plantStatus?: PlantStatus;
@@ -89,6 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenIndustrialConnectionModal,
   onOpenIpcHardening,
   onOpenIndustrialFatSat,
+  onOpenWebAuthnModal,
   runtimeMode = "SIMULATION",
   telemetry,
   plantStatus = "OPERACION_NORMAL",
@@ -384,7 +387,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Ola 4: IPC Hardening & Offline-First Quick Access Button */}
+          {/* IPC Hardening & Offline-First Quick Access Button */}
           {onOpenIpcHardening && (
             <button
               onClick={onOpenIpcHardening}
@@ -398,12 +401,12 @@ export const Header: React.FC<HeaderProps> = ({
               <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
               <span className="hidden sm:inline">HARDENING IPC</span>
               <span className="px-1 py-0.2 rounded text-[9px] bg-cyan-500/20 text-cyan-300 font-bold">
-                OLA 4
+                IEC 62443
               </span>
             </button>
           )}
 
-          {/* Ola 5: FAT/SAT & Industrial Delivery Quick Access Button */}
+          {/* FAT/SAT & Industrial Delivery Quick Access Button */}
           {onOpenIndustrialFatSat && (
             <button
               onClick={onOpenIndustrialFatSat}
@@ -417,7 +420,26 @@ export const Header: React.FC<HeaderProps> = ({
               <Award className="w-3.5 h-3.5 text-amber-400" />
               <span className="hidden sm:inline">FAT/SAT</span>
               <span className="px-1 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 font-bold">
-                OLA 5
+                COMISIONAMIENTO
+              </span>
+            </button>
+          )}
+
+          {/* FIDO2 / YubiKey Hardware Token SL3 Access Button */}
+          {onOpenWebAuthnModal && (
+            <button
+              onClick={onOpenWebAuthnModal}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold font-mono transition border ${
+                isLight
+                  ? "bg-cyan-50 hover:bg-cyan-100 text-cyan-900 border-cyan-300 font-bold"
+                  : "bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-500/40"
+              }`}
+              title="Autenticación Física WebAuthn / FIDO2 YubiKey — Sala de Control IEC 62443 SL3"
+            >
+              <Key className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">FIDO2 / YubiKey</span>
+              <span className="px-1 py-0.2 rounded text-[9px] bg-cyan-500/20 text-cyan-300 font-bold">
+                SL3
               </span>
             </button>
           )}
@@ -603,7 +625,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Master Production Deployment & Recovery (P0-26) */}
+          {/* Master Production Deployment & Recovery */}
           {onOpenProductionDeployment && (
             <button
               onClick={onOpenProductionDeployment}
@@ -612,10 +634,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? "bg-emerald-100 hover:bg-emerald-200 border-emerald-400 text-emerald-950 font-bold shadow-xs"
                   : "bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 font-bold"
               }`}
-              title="Panel Maestro de Despliegue, Health Gates y Disaster Recovery (P0-26)"
+              title="Panel Maestro de Despliegue, Health Gates y Disaster Recovery"
             >
               <Server className={`w-3.5 h-3.5 ${isLight ? "text-emerald-800" : "text-emerald-400"}`} />
-              <span className="hidden xl:inline font-bold">P0-26 SRE</span>
+              <span className="hidden xl:inline font-bold">DESPLIEGUE SRE</span>
             </button>
           )}
 

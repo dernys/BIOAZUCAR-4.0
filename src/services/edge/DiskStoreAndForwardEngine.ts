@@ -5,6 +5,7 @@ import {
   StoreAndForwardCompressor,
   CompressionAlgorithm,
 } from "./storeAndForward/StoreAndForwardCompressor";
+import { industrialIndexedDbVault } from "../storage/IndustrialIndexedDbVault";
 
 export interface DiskQueueConfig {
   maxMemoryPoints?: number;
@@ -138,10 +139,10 @@ export class DiskStoreAndForwardEngine {
     return this.sqliteEngine !== null && this.sqliteEngine.isAvailable() && this.sqliteEngine.isWal();
   }
 
-  public getStorageEngine(): "SQLITE_WAL" | "JSON_FILE" | "LOCAL_STORAGE" | "MEMORY" {
+  public getStorageEngine(): "SQLITE_WAL" | "JSON_FILE" | "INDEXED_DB" | "MEMORY" {
     if (this.isWalDurable()) return "SQLITE_WAL";
     if (this.isNodeEnv) return "JSON_FILE";
-    if (typeof window !== "undefined" && window.localStorage) return "LOCAL_STORAGE";
+    if (typeof window !== "undefined") return "INDEXED_DB";
     return "MEMORY";
   }
 
@@ -257,6 +258,15 @@ export class DiskStoreAndForwardEngine {
     return this.memQueue.getState();
   }
 
+  public clear(): void {
+    this.memQueue.clear();
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      try {
+        this.sqliteEngine.exec(`DELETE FROM saf_queue;`);
+      } catch {}
+    }
+  }
+
   public getQueueLength(): number {
     return this.memQueue.getState().bufferedCount;
   }
@@ -302,10 +312,8 @@ export class DiskStoreAndForwardEngine {
     }
 
     try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const raw = JSON.stringify(pending);
-        const encoded = "ENC_B64:" + btoa(unescape(encodeURIComponent(raw)));
-        window.localStorage.setItem(this.persistenceKey, encoded);
+      if (typeof window !== "undefined") {
+        industrialIndexedDbVault.setItem("saf_telemetry", this.persistenceKey, pending, "TELEMETRY").catch(() => {});
       }
     } catch (_err) {
       // Handle storage quota gracefully
@@ -466,23 +474,13 @@ export class DiskStoreAndForwardEngine {
     }
 
     try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const saved = window.localStorage.getItem(this.persistenceKey);
-        if (saved) {
-          let jsonStr = saved;
-          if (saved.startsWith("ENC_B64:")) {
-            try {
-              jsonStr = decodeURIComponent(escape(atob(saved.slice(8))));
-            } catch {
-              jsonStr = saved;
-            }
-          }
-          const parsed = JSON.parse(jsonStr) as IndustrialDataPoint[];
-          if (Array.isArray(parsed) && parsed.length > 0) {
+      if (typeof window !== "undefined") {
+        industrialIndexedDbVault.getItem<IndustrialDataPoint[]>("saf_telemetry", this.persistenceKey).then((saved) => {
+          if (Array.isArray(saved) && saved.length > 0) {
             this.memQueue.clear();
-            this.memQueue.enqueueBatch(parsed);
+            this.memQueue.enqueueBatch(saved);
           }
-        }
+        }).catch(() => {});
       }
     } catch (_err) {
       // Storage unavailable or quota reached
@@ -563,10 +561,8 @@ export class DiskStoreAndForwardEngine {
       }
 
       try {
-        if (typeof window !== "undefined" && window.localStorage) {
-          const raw = JSON.stringify(pending);
-          const encoded = "ENC_B64:" + btoa(unescape(encodeURIComponent(raw)));
-          window.localStorage.setItem(this.persistenceKey, encoded);
+        if (typeof window !== "undefined") {
+          industrialIndexedDbVault.setItem("saf_telemetry", this.persistenceKey, pending, "TELEMETRY").catch(() => {});
         }
       } catch (_err) {
         // Handle storage quota gracefully

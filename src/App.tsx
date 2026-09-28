@@ -25,6 +25,7 @@ import { ExecutivePresentation } from "./components/ExecutivePresentation";
 import { IndustrialConnectionModal } from "./components/IndustrialConnectionModal";
 import { IpcHardeningAndOfflineModal } from "./components/edge/IpcHardeningAndOfflineModal";
 import { IndustrialFatSatDeliveryModal } from "./components/edge/IndustrialFatSatDeliveryModal";
+import { WebAuthnControlRoomModal } from "./components/security/WebAuthnControlRoomModal";
 import { UnifiedAcceptancePanel } from "./components/verification/UnifiedAcceptancePanel";
 import { IndustrialCommissioningCoverageView } from "./components/commissioning/IndustrialCommissioningCoverageView";
 import { ProductionDeploymentModal } from "./components/deployment/ProductionDeploymentModal";
@@ -108,6 +109,7 @@ export default function App() {
   const [isIndustrialModalOpen, setIsIndustrialModalOpen] = useState<boolean>(false);
   const [isIpcHardeningModalOpen, setIsIpcHardeningModalOpen] = useState<boolean>(false);
   const [isFatSatModalOpen, setIsFatSatModalOpen] = useState<boolean>(false);
+  const [isWebAuthnModalOpen, setIsWebAuthnModalOpen] = useState<boolean>(false);
   const [isDeploymentModalOpen, setIsDeploymentModalOpen] = useState<boolean>(false);
   const [selectedLineage, setSelectedLineage] = useState<DataLineageInfo | null>(null);
   const [dbLatencyMs, setDbLatencyMs] = useState<number>(24);
@@ -695,6 +697,7 @@ export default function App() {
         onOpenIndustrialConnectionModal={() => setIsIndustrialModalOpen(true)}
         onOpenIpcHardening={() => setIsIpcHardeningModalOpen(true)}
         onOpenIndustrialFatSat={() => setIsFatSatModalOpen(true)}
+        onOpenWebAuthnModal={() => setIsWebAuthnModalOpen(true)}
         onOpenProductionDeployment={() => setIsDeploymentModalOpen(true)}
         runtimeMode={runtimeMode}
         telemetry={telemetry}
@@ -1064,21 +1067,30 @@ export default function App() {
         theme={theme}
       />
 
-      {/* 9. Ola 4: IPC Infrastructure Hardening, Dual-NIC & Offline Modal */}
+      {/* 9. IPC Infrastructure Hardening, Dual-NIC & Offline Modal */}
       <IpcHardeningAndOfflineModal
         isOpen={isIpcHardeningModalOpen}
         onClose={() => setIsIpcHardeningModalOpen(false)}
         currentRole={currentRole}
       />
 
-      {/* 10. Ola 5: Industrial FAT/SAT, OPC UA CTT & IEC 62443 SL3 Delivery Modal */}
+      {/* 10. Industrial FAT/SAT, OPC UA CTT & IEC 62443 SL3 Delivery Modal */}
       <IndustrialFatSatDeliveryModal
         isOpen={isFatSatModalOpen}
         onClose={() => setIsFatSatModalOpen(false)}
         currentRole={currentRole}
       />
 
-      {/* 11. P0-26: Production Deployment, Health Gates, Migrations & Disaster Recovery Modal */}
+      {/* 11. WebAuthn / FIDO2 Physical Security & YubiKey Control Room Modal (IEC 62443 SL3) */}
+      <WebAuthnControlRoomModal
+        isOpen={isWebAuthnModalOpen}
+        onClose={() => setIsWebAuthnModalOpen(false)}
+        currentUserEmail={currentUser.email}
+        currentUserUid={currentUser.id}
+        currentRole={currentRole}
+      />
+
+      {/* 12. Production Deployment, Health Gates, Migrations & Disaster Recovery Modal */}
       <ProductionDeploymentModal
         isOpen={isDeploymentModalOpen}
         onClose={() => setIsDeploymentModalOpen(false)}

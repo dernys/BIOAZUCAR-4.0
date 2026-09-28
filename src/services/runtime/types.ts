@@ -8,7 +8,19 @@ import {
   EquipmentItem,
 } from "../../types";
 
-export type RuntimeMode = "SIMULATION" | "LIVE_OT" | "HYBRID" | "HISTORICAL_REPLAY";
+export type {
+  DeploymentProfile,
+  ConnectivityState,
+  ValidationState,
+  UnifiedIndustrialState,
+} from "../../types/industrialStateModel";
+
+export type RuntimeMode =
+  | "SIMULATION"
+  | "LIVE_OT"
+  | "HYBRID"
+  | "HISTORICAL_REPLAY"
+  | "WAITING_FOR_COMMISSIONING";
 
 export type OTConnectionStatus =
   | "WAITING_FOR_COMMISSIONING"
@@ -169,9 +181,18 @@ export interface TenantConfiguration {
   equipment: EquipmentConfiguration[];
 }
 
+export type HistorianOriginMark =
+  | "LIVE_OT"
+  | "SIMULATION"
+  | "DERIVED"
+  | "REPLAY"
+  | "UNKNOWN";
+
 export interface HistorianRecord {
   id?: string;
-  timestamp: string;
+  timestamp: string; // ISO 8601 UTC
+  sourceTimestamp?: string; // Origin UTC timestamp from sensor/PLC
+  ingestionTimestamp?: string; // Edge/Historian ingestion UTC timestamp
   tenantId: string;
   tag: string;
   value: number | string | boolean;
@@ -179,6 +200,7 @@ export interface HistorianRecord {
   quality: DataQuality;
   source: DataSourceType;
   provenance: "SIMULATED_PROCESS_MODEL" | "OBSERVED_OT" | "CALCULATED" | "MANUAL_INPUT";
+  originMark?: HistorianOriginMark; // Strict demarcation to prevent mixing simulated and live data
   isSimulated: boolean;
   scenario: SimulationScenario;
   sequence: number;

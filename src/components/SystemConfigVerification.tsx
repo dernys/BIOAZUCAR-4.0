@@ -369,46 +369,46 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
             <button
               onClick={() => setIsIpcModalOpen(true)}
               className="px-3.5 py-2 bg-gradient-to-r from-cyan-950 to-slate-800 hover:from-cyan-900 hover:to-slate-700 text-cyan-300 text-xs font-mono rounded-xl border border-cyan-600/50 flex items-center gap-1.5 transition shadow-sm"
-              title="Panel de Hardening de Infraestructura IPC, Dual-NIC y Modo Offline (Ola 4)"
+              title="Panel de Hardening de Infraestructura IPC, Dual-NIC y Modo Offline (IEC 62443)"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Hardening IPC (Ola 4)</span>
+              <span>Hardening IPC & Red OT</span>
             </button>
 
             <button
               onClick={() => setIsFatSatModalOpen(true)}
               className="px-3.5 py-2 bg-gradient-to-r from-amber-950 to-slate-800 hover:from-amber-900 hover:to-slate-700 text-amber-300 text-xs font-mono rounded-xl border border-amber-500/50 flex items-center gap-1.5 transition shadow-sm"
-              title="Panel de Verificación Formal FAT/SAT, OPC UA CTT y Entrega Industrial IEC 62443 SL3 (Ola 5)"
+              title="Panel de Verificación Formal FAT/SAT, OPC UA CTT y Entrega Industrial IEC 62443 SL3"
             >
               <Award className="w-3.5 h-3.5 text-amber-400" />
-              <span>FAT/SAT & Entrega (Ola 5)</span>
+              <span>Comisionamiento FAT/SAT</span>
             </button>
 
             <button
               onClick={() => setIsDeploymentModalOpen(true)}
               className="px-3.5 py-2 bg-gradient-to-r from-emerald-950 to-slate-800 hover:from-emerald-900 hover:to-slate-700 text-emerald-300 text-xs font-mono rounded-xl border border-emerald-500/50 flex items-center gap-1.5 transition shadow-sm"
-              title="Despliegue Industrial, Health Gates, Migraciones y Recuperación ante Desastres (P0-26)"
+              title="Despliegue Industrial, Health Gates, Migraciones y Recuperación ante Desastres"
             >
               <Server className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Despliegue & Recuperación (P0-26)</span>
+              <span>Despliegue & Resiliencia SRE</span>
             </button>
 
             <button
               onClick={() => setIsIecCertModalOpen(true)}
               className="px-3.5 py-2 bg-gradient-to-r from-emerald-950 via-slate-800 to-cyan-950 hover:from-emerald-900 hover:to-cyan-900 text-emerald-300 text-xs font-mono rounded-xl border border-emerald-500/50 flex items-center gap-1.5 transition shadow-sm"
-              title="Compendio Formal de Certificación y Auditoría IEC 62443-4-2 / IEC 62443-3-3 (P0-10)"
+              title="Compendio Formal de Evaluación y Auditoría IEC 62443-4-2 / IEC 62443-3-3"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Auditoría IEC 62443 SL3 (P0-10)</span>
+              <span>Auditoría IEC 62443 SL3</span>
             </button>
 
             <button
               onClick={() => setIsSafModalOpen(true)}
               className="px-3.5 py-2 bg-gradient-to-r from-emerald-950 via-slate-800 to-teal-950 hover:from-emerald-900 hover:to-teal-900 text-teal-300 text-xs font-mono rounded-xl border border-teal-500/50 flex items-center gap-1.5 transition shadow-sm"
-              title="Store & Forward Compresión de Alta Densidad y Reconciliación de Conflictos de Proceso (P1-01 / P1-02)"
+              title="Store & Forward Compresión de Alta Densidad y Reconciliación de Conflictos de Proceso"
             >
               <Archive className="w-3.5 h-3.5 text-teal-400" />
-              <span>S&F Compresión & Reconciliación (P1-01/P1-02)</span>
+              <span>Store & Forward & Reconciliación</span>
             </button>
           </div>
         </div>
@@ -928,34 +928,34 @@ export const SystemConfigVerification: React.FC<SystemConfigVerificationProps> =
         </div>
       )}
 
-      {/* Ola 4: IPC Infrastructure Hardening, Dual-NIC & Offline Modal */}
+      {/* IPC Infrastructure Hardening, Dual-NIC & Offline Modal */}
       <IpcHardeningAndOfflineModal
         isOpen={isIpcModalOpen}
         onClose={() => setIsIpcModalOpen(false)}
         currentRole={currentRole}
       />
 
-      {/* Ola 5: Industrial FAT/SAT, OPC UA CTT & IEC 62443 SL3 Delivery Modal */}
+      {/* Industrial FAT/SAT, OPC UA CTT & IEC 62443 SL3 Delivery Modal */}
       <IndustrialFatSatDeliveryModal
         isOpen={isFatSatModalOpen}
         onClose={() => setIsFatSatModalOpen(false)}
         currentRole={currentRole}
       />
 
-      {/* P0-26: Production Deployment, Health Gates, Migrations & Disaster Recovery Modal */}
+      {/* Production Deployment, Health Gates, Migrations & Disaster Recovery Modal */}
       <ProductionDeploymentModal
         isOpen={isDeploymentModalOpen}
         onClose={() => setIsDeploymentModalOpen(false)}
       />
 
-      {/* P0-10: IEC 62443-4-2 / IEC 62443-3-3 Certification Pack Modal */}
+      {/* IEC 62443-4-2 / IEC 62443-3-3 Certification Pack Modal */}
       <Iec62443CertificationModal
         isOpen={isIecCertModalOpen}
         onClose={() => setIsIecCertModalOpen(false)}
         tenantId={activeTenant?.id}
       />
 
-      {/* P1-01 / P1-02: Store & Forward Compression & Process Reconciliation Modal */}
+      {/* Store & Forward Compression & Process Reconciliation Modal */}
       <IndustrialSafReconciliationModal
         isOpen={isSafModalOpen}
         onClose={() => setIsSafModalOpen(false)}

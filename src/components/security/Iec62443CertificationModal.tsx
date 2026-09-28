@@ -106,13 +106,13 @@ export const Iec62443CertificationModal: React.FC<Iec62443CertificationModalProp
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-lg font-bold text-slate-100 font-tech">
-                  Compendio de Certificación IEC 62443-4-2 / IEC 62443-3-3
+                  Compendio de Evaluación IEC 62443-4-2 / IEC 62443-3-3
                 </h2>
                 <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold rounded border border-emerald-500/40 uppercase">
-                  Nivel SL3 Acreditado
+                  Controles SL3 Validados
                 </span>
                 <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-300 text-[10px] font-mono font-bold rounded border border-cyan-500/40">
-                  [P0-10] Verificado
+                  Evidencia Verificada
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-mono mt-0.5">

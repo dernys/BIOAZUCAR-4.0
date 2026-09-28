@@ -164,7 +164,7 @@ export const MassEnergyTwinView: React.FC<MassEnergyTwinViewProps> = ({
           }`}
         >
           <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
-            <span className="text-[10px] font-mono font-bold text-emerald-400">FASE 1: MOLIENDA</span>
+            <span className="text-[10px] font-mono font-bold text-emerald-400">ETAPA 1: MOLIENDA & EXTRACCIÓN</span>
             <span className="text-xs font-mono text-slate-400">Extr: {extractionEff}%</span>
           </div>
 
@@ -215,7 +215,7 @@ export const MassEnergyTwinView: React.FC<MassEnergyTwinViewProps> = ({
           }`}
         >
           <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
-            <span className="text-[10px] font-mono font-bold text-amber-400">FASE 2: CALDERAS ASME</span>
+            <span className="text-[10px] font-mono font-bold text-amber-400">ETAPA 2: GENERACIÓN DE VAPOR ASME</span>
             <span className="text-xs font-mono text-slate-400">Eficiencia: {boilerEfficiency}%</span>
           </div>
 
@@ -266,7 +266,7 @@ export const MassEnergyTwinView: React.FC<MassEnergyTwinViewProps> = ({
           }`}
         >
           <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
-            <span className="text-[10px] font-mono font-bold text-cyan-400">FASE 3: COGENERACIÓN</span>
+            <span className="text-[10px] font-mono font-bold text-cyan-400">ETAPA 3: COGENERACIÓN & POTENCIA</span>
             <span className="text-xs font-mono text-slate-400">Isentrópico: {isentropicEfficiency}%</span>
           </div>
 

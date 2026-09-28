@@ -17,6 +17,7 @@ import { IndustrialSimulationRuntime } from "./IndustrialSimulationRuntime";
 import { createDefaultTenantConfig } from "./defaultTenantConfig";
 
 import { AlarmShelvingService, ShelvingReasonCode } from "../alarms/AlarmShelvingService";
+import { getRuntimeProfile } from "../edge/config/runtimeProfile";
 
 export class TenantRuntime {
   public readonly tenantId: string;
@@ -95,11 +96,18 @@ export class TenantRuntime {
   }
 
   public setMode(newMode: RuntimeMode): void {
+    const profile = getRuntimeProfile();
+    if (profile === "PRODUCTION" && newMode === "SIMULATION") {
+      throw new Error(
+        "[INDUSTRIAL RUNTIME FATAL] Switching to SIMULATION runtime mode is strictly prohibited under PRODUCTION profile. Fail-Closed enforced."
+      );
+    }
+
     this.mode = newMode;
     if (newMode === "SIMULATION") {
       this.simulationConfig.enabled = true;
       this.simulationRuntime.setRunning(true);
-    } else if (newMode === "LIVE_OT") {
+    } else if (newMode === "LIVE_OT" || newMode === "WAITING_FOR_COMMISSIONING") {
       this.simulationConfig.enabled = false;
       this.simulationRuntime.setRunning(false);
       if (!this.otConfig.isLiveConnection) {
@@ -341,10 +349,66 @@ export class TenantRuntime {
       };
     }
 
+    if (this.mode === "WAITING_FOR_COMMISSIONING") {
+      return {
+        timestamp: new Date().toISOString(),
+        tch: 0,
+        caneAccumToday: 0,
+        caneBrix: 0,
+        canePol: 0,
+        canePurity: 0,
+        millingExtraction: 0,
+        imbibitionWaterFlow: 0,
+        bagasseProductionRate: 0,
+        bagasseBoilerConsumption: 0,
+        bagasseYardStorageRate: 0,
+        bagasseMoisture: 0,
+        bagasseStockTotal: 0,
+        boilerPressureHP: 0,
+        boilerTempHP: 0,
+        steamFlowHP: 0,
+        steamPressureLP: 0,
+        steamTempLP: 0,
+        boilerEfficiency: 0,
+        flueGasO2: 0,
+        powerGeneratedMW: 0,
+        powerInternalMW: 0,
+        powerExportGridMW: 0,
+        gridFrequencyHz: 0,
+        powerFactor: 0,
+        gridVoltageKV: 0,
+        clarifiedJuiceFlow: 0,
+        evaporatorSyrupBrix: 0,
+        sugarProductionTonsToday: 0,
+        sugarBagsToday: 0,
+        factoryRecoveryYield: 0,
+        molassesProductionTons: 0,
+        oeeOverall: 0,
+        oeeAvailability: 0,
+        oeePerformance: 0,
+        oeeQuality: 0,
+        mill3Vibration: 0,
+        simulationScenario: "NORMAL",
+        isSimulated: false,
+        provenance: "OBSERVED_OT",
+        source: "WAITING_FOR_COMMISSIONING: Enlace OT en espera de comisionamiento físico en campo",
+        quality: "BAD",
+      };
+    }
+
+    if (getRuntimeProfile() === "PRODUCTION") {
+      throw new Error(
+        "[INDUSTRIAL RUNTIME FATAL] Simulation data fallback is strictly forbidden in PRODUCTION profile. Fail-Closed enforced."
+      );
+    }
+
     return this.simulationRuntime.toTelemetry();
   }
 
   public getTagValue(tagAddress: string): IndustrialDataPoint | null {
+    if (this.mode === "WAITING_FOR_COMMISSIONING") {
+      return null;
+    }
     const cleanTag = tagAddress.trim().toUpperCase();
     const dataPoints = this.simulationRuntime.toDataPoints();
 
@@ -371,6 +435,12 @@ export class TenantRuntime {
 
   public getAllTags(): IndustrialDataPoint[] {
     if (this.mode === "LIVE_OT" && !this.otConfig.isLiveConnection) {
+      return [];
+    }
+    if (this.mode === "WAITING_FOR_COMMISSIONING") {
+      return [];
+    }
+    if (getRuntimeProfile() === "PRODUCTION") {
       return [];
     }
     return this.simulationRuntime.toDataPoints();

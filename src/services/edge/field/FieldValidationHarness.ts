@@ -8,7 +8,7 @@
 
 import { FieldTandemValidationService, TandemFieldCommissioningAct } from "./FieldTandemValidationService";
 import { FieldBoilerValidationService, BoilerFieldCommissioningAct } from "./FieldBoilerValidationService";
-import crypto from "crypto";
+import { createHash } from "../../../utils/cryptoUtils";
 
 export interface UnifiedFieldCommissioningPackage {
   packageId: string;
@@ -81,8 +81,7 @@ export class FieldValidationHarness {
       timestamp,
     });
 
-    const masterVerificationSealSha256 = crypto
-      .createHash("sha256")
+    const masterVerificationSealSha256 = createHash("sha256")
       .update(payload)
       .digest("hex");
 

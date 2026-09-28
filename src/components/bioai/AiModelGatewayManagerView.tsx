@@ -18,6 +18,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { UserRole, TenantEnterprise } from "../../types";
+import { getFirebaseIdToken } from "../../services/authService";
 
 interface AiModelGatewayManagerViewProps {
   currentRole: UserRole;
@@ -89,7 +90,8 @@ export const AiModelGatewayManagerView: React.FC<AiModelGatewayManagerViewProps>
 
   const fetchStatusAndRecords = async () => {
     try {
-      const token = localStorage.getItem("bioazucar_jwt") || "";
+      const fbToken = await getFirebaseIdToken();
+      const token = fbToken || (typeof window !== "undefined" ? window.sessionStorage.getItem("bioazucar_jwt") || "" : "");
       const authHeaders = {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -126,7 +128,8 @@ export const AiModelGatewayManagerView: React.FC<AiModelGatewayManagerViewProps>
     setSwitching(providerName);
     setFeedback(null);
     try {
-      const token = localStorage.getItem("bioazucar_jwt") || "";
+      const fbToken = await getFirebaseIdToken();
+      const token = fbToken || (typeof window !== "undefined" ? window.sessionStorage.getItem("bioazucar_jwt") || "" : "");
       const res = await fetch("/api/ai/gateway/config", {
         method: "POST",
         headers: {
@@ -171,7 +174,7 @@ export const AiModelGatewayManagerView: React.FC<AiModelGatewayManagerViewProps>
                   AI Model Gateway Multi-Proveedor & Observabilidad
                 </h2>
                 <span className="px-2 py-0.5 text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-700/50 rounded">
-                  P0-08 COMPLIANT
+                  MULTI-GATEWAY COMPLIANT
                 </span>
                 <span className="px-2 py-0.5 text-xs font-semibold bg-blue-950 text-blue-300 border border-blue-700/50 rounded">
                   IEC 62443 SL3

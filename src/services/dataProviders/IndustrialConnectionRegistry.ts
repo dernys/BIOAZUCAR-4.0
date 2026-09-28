@@ -20,6 +20,7 @@ import {
 import { validateConnectionRegistryEntry } from "./IndustrialRegistryValidator";
 import { logAuditEventToDb } from "../dbService";
 import { sha256Hex } from "../../utils/cryptoUtils";
+import { IndustrialIndexedDbVault } from "../storage/IndustrialIndexedDbVault";
 
 export interface EdgeProvisioningBundle {
   version: string;
@@ -50,43 +51,37 @@ export class IndustrialConnectionRegistry {
   }
 
   /**
-   * Persists canonical connections to local persistent storage (offline-first).
+   * Persists canonical connections to local persistent storage (offline-first IndexedDB).
    */
   private persistToLocalStorage(): void {
     try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const serialized = JSON.stringify(Array.from(this.connections.values()));
-        window.localStorage.setItem(this.STORAGE_KEY, serialized);
-      }
+      const records = Array.from(this.connections.values());
+      IndustrialIndexedDbVault.getInstance()
+        .setItem("ot_connections", this.STORAGE_KEY, records, "OT_CONFIG")
+        .catch((err) => {
+          console.warn("[IndustrialConnectionRegistry] Could not persist to vault:", err);
+        });
     } catch (err) {
-      console.warn("[IndustrialConnectionRegistry] Could not persist to localStorage:", err);
+      console.warn("[IndustrialConnectionRegistry] Could not persist to vault:", err);
     }
   }
 
   /**
-   * Initializes canonical registry from localStorage if available, or populates with demo fixtures.
+   * Initializes canonical registry from vault if available, or populates with demo fixtures.
    */
   private initializeFromStorageOrFixtures(): void {
-    let loadedFromStorage = false;
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const saved = window.localStorage.getItem(this.STORAGE_KEY);
-        if (saved) {
-          const parsed: ConnectionRegistryEntry[] = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed.forEach((c) => this.connections.set(c.id, c));
-            loadedFromStorage = true;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("[IndustrialConnectionRegistry] Failed to hydrate from storage:", err);
-    }
+    this.initializeDefaultFixtures();
 
-    if (!loadedFromStorage || this.connections.size === 0) {
-      this.initializeDefaultFixtures();
-      this.persistToLocalStorage();
-    }
+    IndustrialIndexedDbVault.getInstance()
+      .getItem<ConnectionRegistryEntry[]>("ot_connections", this.STORAGE_KEY)
+      .then((parsed) => {
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          parsed.forEach((c) => this.connections.set(c.id, c));
+        }
+      })
+      .catch((err) => {
+        console.warn("[IndustrialConnectionRegistry] Failed to hydrate from vault:", err);
+      });
   }
 
   /**

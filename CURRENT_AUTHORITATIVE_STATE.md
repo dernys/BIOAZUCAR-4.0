@@ -2,8 +2,8 @@
 
 > **Documento Oficial de Estado Autoritativo y Reconciliación de Repositorio**  
 > **Sistema:** BioAzúcar 4.0 — Unified Industrial Platform & Digital Twin for Sugar Mills & Biomass Cogeneration  
-> **Versión Actual:** 4.0.0-I34-SAF-COMPRESSION-RECONCILIATION  
-> **Fecha y Hora de Verificación:** 2026-09-24T16:30:00Z (Local: 2026-09-24T09:30:00-07:00)  
+> **Versión Actual:** 4.0.0-I35-WEBAUTHN-FIDO2-PHYSICAL-SECURITY  
+> **Fecha y Hora de Verificación:** 2026-09-26T21:26:00Z (Local: 2026-09-26T14:26:00-07:00)  
 > **ID de Workspace:** `7390a107-972a-4737-bb16-081c36c097ec`  
 > **Estado de Aprobación:** `AUTHORITATIVE — SINGLE SOURCE OF TRUTH (SSOT)`  
 > **Regla de Oro:** *No Evidence = No Demonstrated Functionality*. Ningún documento secundario sustituye el código auditable en HEAD.
@@ -27,11 +27,11 @@ TEST FIXTURE
 ```
 
 1. **`CURRENT AUTHORITATIVE STATE` (Este Documento, `BIOAZUCAR_MASTER_DEVELOPMENT.md` & HEAD en Ejecución):**
-   - El código real existente en el workspace verificado mediante compilador `tsc --noEmit` (0 errores), suite de pruebas Vitest (**60 suites, 678 pruebas 100% pasando, 0 fallos, 0 omitidos**), endpoints HTTP/Express reales en puerto 3000, y componentes React 19/Tailwind v4.
-   - Datos operacionales persistidos en disco mediante SQLite WAL (`SqliteWalEngine.ts`) y Firestore en la nube cuando está configurado.
+   - El código real existente en el workspace verificado mediante compilador `tsc --noEmit` (0 errores), suite de pruebas Vitest (**63 suites, 705 pruebas 100% pasando, 0 fallos, 0 omitidos**), endpoints HTTP/Express reales en puerto 3000, y componentes React 19/Tailwind v4.
+   - Datos operacionales persistidos en disco mediante SQLite WAL (`SqliteWalEngine.ts`), IndexedDB Vault (`IndustrialIndexedDbVault.ts`) en navegador y Firestore en la nube cuando está configurado.
 
 2. **`HISTORICAL SNAPSHOT`:**
-   - Registros de desarrollo pasados, actas de hitos cerrados en `BIOAZUCAR_MASTER_DEVELOPMENT.md` y `BIOAZUCAR_EXECUTION_BASELINE.md` (e.g. los conteos históricos de 41, 45 y 59 suites que reflejan iteraciones previas).
+   - Registros de desarrollo pasados, actas de hitos cerrados en `BIOAZUCAR_MASTER_DEVELOPMENT.md` y `BIOAZUCAR_EXECUTION_BASELINE.md` (e.g. los conteos históricos de 41, 45, 59 y 60 suites que reflejan iteraciones previas).
    - Sirven exclusivamente para auditoría, trazabilidad y comparación de regresión.
 
 3. **`DEMO STATE`:**
@@ -53,7 +53,11 @@ TEST FIXTURE
 | :--- | :--- | :--- | :--- | :--- | :---: |
 | **Núcleo de Servidor Express** | Implementado & Activo | `server.ts` | 100% Verificado (Puerto 3000) | E3 |
 | **Frontend Web SPA** | Implementado & Activo | `src/App.tsx`, `src/main.tsx` | Compilación Vite 6.4 OK | E3 |
-| **Edge Daemon Autónomo** | Implementado | `src/services/edge/daemon.ts` | `Ola2EdgeDaemonAndStoreAndForward.test.ts` | E3 |
+| **Modelo de Estado Industrial**| Implementado (4 ejes separados)| `src/types/industrialStateModel.ts` | `industrialStateModelUnified.test.ts` | E3 |
+| **Motor de Estado Industrial** | Implementado & Auditado | `src/services/runtime/IndustrialStateModelEngine.ts` | `industrialStateModelUnified.test.ts` | E3 |
+| **Edge Daemon Hardened** | Implementado (Fail-Closed) | `src/services/edge/daemon.ts` | `edgeDaemonProductionHardeningAndSaf.test.ts` | E3 |
+| **Dual-NIC OT/IT Isolation** | Implementado & Auditado | `src/services/edge/network/DualNicManager.ts` | `edgeDaemonProductionHardeningAndSaf.test.ts` | E3 |
+| **IndexedDB Vault Industrial** | Implementado & Clasificado | `src/services/storage/IndustrialIndexedDbVault.ts` | `industrialDataClassificationAndStorage.test.ts` | E3 |
 | **SQLite WAL Engine** | Implementado & Persistente | `src/services/edge/storage/SqliteWalEngine.ts` | `p0SqliteWalDurablePersistence.test.ts` | E3 |
 | **Store & Forward Disk** | Implementado & Resiliente | `src/services/edge/DiskStoreAndForwardEngine.ts` | `StoreAndForwardAndHugotCritical.test.ts` | E3 |
 | **S&F Compresión Alta Densidad**| Implementado (Brotli/Zstd/Gzip)| `src/services/edge/storeAndForward/StoreAndForwardCompressor.ts` | `i34StoreAndForwardCompressionAndReconciliation.test.ts` | E3 |
@@ -71,7 +75,8 @@ TEST FIXTURE
 | **AI Model Gateway** | Implementado Multi-Proveedor | `src/services/ai/AiModelGatewayService.ts` | `p0AiModelGateway.test.ts` | E3 |
 | **Dataset Zafra SHA-256** | Implementado & Calibrado | `src/services/bioai/` | `p0BioAiRealDatasetsAndCalibration.test.ts` | E3 |
 | **PWA Web Shell Offline** | Implementado | `public/service-worker.js`, `manifest.json` | `p0OfflinePwaWebShell.test.ts` | E3 |
-| **Ciberseguridad IEC 62443** | Implementado (Self-Audit SL3)| `src/services/security/Iec62443CertificationPack.ts` | `p0SecurityAuditEvidenceIec62443.test.ts` | E3 |
+| **Ciberseguridad IEC 62443** | Implementado (SL3 Validado)| `src/services/security/Iec62443CertificationPack.ts` | `p0SecurityAuditEvidenceIec62443.test.ts` | E3 |
+| **WebAuthn / FIDO2 Físico (YubiKey)** | Implementado (IEC 62443 SL3) | `src/services/security/webauthn/` | `i35WebAuthnFido2PhysicalSecurity.test.tsx` | E3 |
 
 ---
 
@@ -80,8 +85,9 @@ TEST FIXTURE
 Para evitar duplicidad o desalineación:
 1. **Valores por Defecto Ocultos Eliminados:** La plataforma no asume 450 TCH o 0.90 de disponibilidad de forma fija cuando no existe telemetría; los valores sin fuente válida reportan calidad `BAD` o `UNKNOWN`.
 2. **Desacoplamiento Estricto OT/IT:** La aplicación web central no abre sockets directos a PLCs Modbus/OPC UA en producción; toda comunicación pasa obligatoriamente por el BioAzúcar Edge Daemon.
-3. **Persistencia Local Segura:** La configuración de infraestructura y datos de zafra no residen en `localStorage` del navegador; residen en la base de datos persistente SQLite WAL del servidor o Edge node.
-4. **Erradicación de Falsos Porcentajes en Auditor:** Erradicado el patrón `externalOtIntegrationE4: 75.0` y `fieldValidationE6: 30.0` en `scripts/audit-master-engine.ts`. Ambas dimensiones se calculan estrictamente en `0.0 / NOT_VERIFIED` ante la ausencia de hardware físico en el contenedor sandbox.
-5. **Fail-Closed en Lectura de Tags Físicos:** El método `testTagLiveConnection` en `tagManagementService.ts` aborta con `COMMUNICATION_LOST` y `success: false` si se intenta leer un tag `LIVE_OT` en perfil `PRODUCTION` sin transporte activo, eliminando la generación sintética con `Math.random()`.
-6. **Compresión Transparente en S&F (P1-01):** El almacenamiento de telemetría en SQLite WAL de Store & Forward soporta compresión Brotli/Gzip determinista con envelope `CMP:`, reduciendo el volumen de disco un 75% sin desajustar compatibilidad hacia atrás.
-7. **Arbitraje Semántico tras Desconexión (P1-02):** Toda reconexión tras corte prolongado procesa los puntos encolados mediante `SemanticProcessConflictReconciler`, priorizando enclavamientos físicos de parada de planta sobre consignas de supervisión y resguardando el SCADA en vivo.
+3. **Persistencia Local Segura:** La configuración de infraestructura, telemetría y datos de zafra no residen en `localStorage` del navegador; residen en la base de datos persistente SQLite WAL del servidor/Edge node o en IndexedDB Vault (`IndustrialIndexedDbVault.ts`) en el cliente.
+4. **Erradicación de Metodología de Desarrollo en UI:** Eliminadas todas las etiquetas, códigos internos y menciones a "OLA 1..5", "P0", "P1", "P2" y ciclos internos de la interfaz operativa del producto. La interfaz representa exclusivamente conceptos industriales y operativos.
+5. **Fail-Closed en Autenticación Edge en Producción:** Erradicado el uso de secretos por defecto en perfil `PRODUCTION`; si `BIOAZUCAR_EDGE_SECRET` falta o contiene un valor inseguro por defecto, el Edge Daemon aborta inmediatamente el arranque.
+6. **Rechazo Mandatorio de HTTP en Producción:** En perfil `PRODUCTION`, el Edge Daemon rechaza endpoints de sincronización no cifrados `http://`; HTTPS o mTLS es obligatorio conforme a IEC 62443-3-3 FR5.
+7. **Aislamiento Dual-NIC Verificado en Arranque:** El Edge Daemon audita el kernel (`net.ipv4.ip_forward == 0`) antes de iniciar para prevenir fugas de enrutamiento entre la red OT de campo y la red IT/DMZ.
+8. **Contabilidad Estricta Store & Forward:** Medición y reporte en tiempo real de puntos generados, persistidos, recuperados, transmitidos, confirmados, duplicados y perdidos con resiliencia total ante caídas de enlace.

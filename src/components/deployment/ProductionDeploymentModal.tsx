@@ -171,7 +171,7 @@ export const ProductionDeploymentModal: React.FC<ProductionDeploymentModalProps>
                   BioAzúcar 4.0 — Master Deployment & Recovery Engine
                 </h2>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-700/50">
-                  P0-26 PRODUCTION
+                  PRODUCCIÓN INDUSTRIAL
                 </span>
               </div>
               <p className="text-xs text-slate-400">

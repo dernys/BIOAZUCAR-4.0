@@ -6,7 +6,7 @@
  * ============================================================================
  */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "../../../utils/cryptoUtils";
 import {
   AiProviderType,
   AiModelConfig,
