@@ -1,5 +1,6 @@
 // Clean tsx injected relative __dirname so ESM modules (like vite-plugin-pwa) work seamlessly on Node 22
 delete (globalThis as any).__dirname;
+process.env.DISABLE_HMR = "true";
 
 import express from "express";
 import http from "http";
@@ -22,7 +23,14 @@ import {
   fetchDurableAuditTrail,
 } from "./src/server/authMiddleware";
 import { bootstrapDatabaseWithAdminSdk } from "./src/server/bootstrapService";
-import { getAdminFirestore } from "./src/server/firebaseAdmin";
+import {
+  getAdminFirestore,
+  getAdminSdkStatus,
+  getAdminSdkDiagnostics,
+  verifyAdminSdkAvailability,
+  assertAdminSdkReady,
+  AdminSdkMissingError,
+} from "./src/server/firebaseAdmin";
 import { getMetrics, getMetricsContentType, trackHttpRequest } from "./src/services/metrics";
 import { AiModelGatewayService } from "./src/services/ai/gateway/AiModelGatewayService";
 import { IndustrialDiscoveryEngine } from "./src/services/discovery/IndustrialDiscoveryEngine";
@@ -99,13 +107,32 @@ function getGenAI(): GoogleGenAI | null {
 
 // Health check endpoint (Public status check)
 app.get("/api/health", (_req, res) => {
+  const adminStatus = getAdminSdkStatus();
+  const isProduction =
+    process.env.INDUSTRIAL_RUNTIME_PROFILE === "PRODUCTION" ||
+    process.env.NODE_ENV === "production";
+
+  // IEC 62443 SL3: Do NOT declare SERVER-AUTHORITATIVE in production if Admin SDK is missing
+  const securityModel =
+    adminStatus === "ADMIN_SDK_READY"
+      ? "IEC-62443-SL3-SERVER-AUTHORITATIVE"
+      : isProduction
+      ? "IEC-62443-SL3-DEGRADED-FAIL-CLOSED"
+      : "IEC-62443-SL3-SANDBOX-CLIENT-AUTHENTICATED";
+
   res.json({
-    status: "ok",
+    status: adminStatus === "ADMIN_SDK_READY" ? "ok" : isProduction ? "degraded" : "ok",
     mill: "BioAzúcar 4.0 Industrial Node",
     timestamp: new Date().toISOString(),
     aiReady: Boolean(process.env.GEMINI_API_KEY),
-    securityModel: "IEC-62443-SL3-SERVER-AUTHORITATIVE",
+    adminSdkStatus: adminStatus,
+    securityModel,
   });
+});
+
+// Explicit Admin SDK diagnostics endpoint
+app.get("/api/admin/sdk-status", (_req, res) => {
+  res.json(getAdminSdkDiagnostics());
 });
 
 // Comprehensive Multi-Subsystem Deep Health & Resilience Audit (IEC 62443 / ISA-95)
@@ -134,7 +161,11 @@ app.get("/metrics", async (_req, res) => {
 // Privileged Backend Database Bootstrap (SEC-6: Server Admin SDK only)
 app.post("/api/admin/bootstrap", async (_req, res) => {
   const result = await bootstrapDatabaseWithAdminSdk();
-  res.json(result);
+  const isProduction =
+    process.env.INDUSTRIAL_RUNTIME_PROFILE === "PRODUCTION" ||
+    process.env.NODE_ENV === "production";
+  const statusCode = result.success ? 200 : isProduction && result.status === "ADMIN_SDK_MISSING" ? 503 : 200;
+  res.status(statusCode).json(result);
 });
 
 // ==============================================================================
@@ -2916,8 +2947,71 @@ async function startServer() {
       appType: "spa",
     });
 
-    // Custom HTML interceptor ensuring browser extensions and [vite] HMR logs are suppressed
-    // BEFORE /@vite/client executes in sandboxed cloud iFrames (conforming to AI Studio constraints).
+    // BioAzúcar 4.0: Serve pure WebSocket-free client runtime directly
+    app.get("/@vite/client", (_req, res) => {
+      res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Cache-Control", "no-cache");
+      return res.send(`// BioAzúcar 4.0 Industrial HMR-Free Client Runtime
+// Completely eradicates WebSocket connections and HMR polling in sandbox/container.
+
+const sheetsMap = new Map();
+if (typeof document !== 'undefined') {
+  document.querySelectorAll('style[data-vite-dev-id]').forEach((el) => {
+    sheetsMap.set(el.getAttribute('data-vite-dev-id'), el);
+  });
+}
+
+export function updateStyle(id, content) {
+  if (typeof document === 'undefined') return;
+  let style = sheetsMap.get(id);
+  if (!style) {
+    style = document.createElement('style');
+    style.setAttribute('type', 'text/css');
+    style.setAttribute('data-vite-dev-id', id);
+    document.head.appendChild(style);
+    sheetsMap.set(id, style);
+  }
+  style.textContent = content;
+}
+
+export function removeStyle(id) {
+  if (typeof document === 'undefined') return;
+  const style = sheetsMap.get(id);
+  if (style && style.parentNode) {
+    style.parentNode.removeChild(style);
+    sheetsMap.delete(id);
+  }
+}
+
+export function createHotContext() {
+  return {
+    accept() {},
+    acceptExports() {},
+    dispose() {},
+    decline() {},
+    invalidate() {},
+    on() {},
+    off() {},
+    send() {},
+    data: {}
+  };
+}
+
+export function injectQuery(url, queryToInject) {
+  if (url[0] !== '.' && url[0] !== '/') return url;
+  const pathname = url.replace(/[?#].*$/, '');
+  const search = url.slice(pathname.length);
+  return pathname + '?' + queryToInject + (search ? '&' + search.slice(1) : '');
+}
+
+export class ErrorOverlay extends HTMLElement {}
+if (typeof customElements !== 'undefined' && !customElements.get('vite-error-overlay')) {
+  customElements.define('vite-error-overlay', ErrorOverlay);
+}
+`);
+    });
+
+    // Clean index.html serving using Vite transform with zero console monkey-patching
     app.use(async (req, res, next) => {
       if (req.method !== "GET" && req.method !== "HEAD") return next();
       if (
@@ -2933,48 +3027,7 @@ async function startServer() {
       if (req.path === "/" || req.path === "/index.html" || accept.includes("text/html")) {
         try {
           const rawHtml = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf-8");
-          let html = await vite.transformIndexHtml(req.originalUrl || "/", rawHtml);
-          html = html.replace(
-            '<script type="module" src="/@vite/client"></script>',
-            `<script>
-(function() {
-  var isViteNoise = function(args) {
-    if (!args) return false;
-    for (var i = 0; i < args.length; i++) {
-      var a = args[i];
-      if (!a) continue;
-      var s = (typeof a === 'string') ? a : ((a && (a.message || a.stack)) ? (a.message + ' ' + (a.stack || '')) : String(a));
-      var l = s.toLowerCase();
-      if (l.indexOf('[vite]') !== -1 || l.indexOf('vite-hmr') !== -1 || l.indexOf('failed to connect to websocket') !== -1 || l.indexOf('websocket') !== -1 || s.indexOf('[vite]') !== -1) return true;
-    }
-    return false;
-  };
-  ['error', 'warn', 'debug', 'info', 'log'].forEach(function(fn) {
-    var orig = console[fn];
-    console[fn] = function() {
-      if (isViteNoise(arguments)) return;
-      if (orig) return orig.apply(console, arguments);
-    };
-  });
-  window.addEventListener('error', function(e) {
-    var msg = (e && (e.message || (e.error && e.error.message))) || '';
-    if (typeof msg === 'string' && (msg.indexOf('[vite]') !== -1 || msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite') !== -1)) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      return true;
-    }
-  }, true);
-  window.addEventListener('unhandledrejection', function(e) {
-    var r = (e && (e.reason && (e.reason.message || e.reason.stack))) || String(e ? e.reason : '');
-    if (typeof r === 'string' && (r.indexOf('[vite]') !== -1 || r.indexOf('WebSocket') !== -1 || r.indexOf('vite') !== -1)) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      return true;
-    }
-  }, true);
-})();
-</script><script type="module" src="/@vite/client"></script>`
-          );
+          const html = await vite.transformIndexHtml(req.originalUrl || "/", rawHtml);
           return res.status(200).set({ "Content-Type": "text/html" }).send(html);
         } catch (err) {
           return next(err);

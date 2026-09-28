@@ -3,6 +3,18 @@ import { getAuth, Auth } from "firebase-admin/auth";
 import { getFirestore, Firestore } from "firebase-admin/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
+export type {
+  AdminSdkStatus,
+  AdminSdkDiagnostics,
+} from "./adminSdkStatus";
+export {
+  AdminSdkMissingError,
+  getAdminSdkStatus,
+  getAdminSdkDiagnostics,
+  verifyAdminSdkAvailability,
+  assertAdminSdkReady,
+} from "./adminSdkStatus";
+
 let adminApp: App | null = null;
 
 export function getFirebaseAdminApp(): App {

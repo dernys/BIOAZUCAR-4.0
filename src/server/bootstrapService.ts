@@ -1,4 +1,10 @@
-import { getAdminFirestore } from "./firebaseAdmin";
+import {
+  getAdminFirestore,
+  verifyAdminSdkAvailability,
+  getAdminSdkStatus,
+  AdminSdkStatus,
+  AdminSdkMissingError,
+} from "./firebaseAdmin";
 import { INITIAL_TENANTS } from "../services/dbService";
 import { PREDEFINED_USERS, INITIAL_SYSTEM_CONFIGS } from "../services/authService";
 import { DEFAULT_ROLES } from "../services/rbacService";
@@ -12,24 +18,59 @@ import {
 } from "../data/mockIndustrialData";
 import { MembershipService } from "./membershipService";
 
-export async function bootstrapDatabaseWithAdminSdk(): Promise<{ success: boolean; message: string }> {
+export interface BootstrapResult {
+  success: boolean;
+  status: AdminSdkStatus;
+  message: string;
+}
+
+export async function bootstrapDatabaseWithAdminSdk(): Promise<BootstrapResult> {
+  const isProduction =
+    process.env.INDUSTRIAL_RUNTIME_PROFILE === "PRODUCTION" ||
+    process.env.NODE_ENV === "production";
+
+  // Step 1: Explicit Admin SDK credential verification
+  const adminStatus = await verifyAdminSdkAvailability();
+
+  if (adminStatus === "ADMIN_SDK_MISSING") {
+    if (isProduction) {
+      console.error(
+        "❌ [SERVER BOOTSTRAP] PRODUCTION FAIL-CLOSED: Server-side Admin SDK credentials not provisioned in container (ADMIN_SDK_MISSING). Privileged database bootstrap aborted."
+      );
+      return {
+        success: false,
+        status: "ADMIN_SDK_MISSING",
+        message: "Server-side Admin SDK credentials not provisioned in container; production fail-closed enforced.",
+      };
+    } else {
+      console.info(
+        "ℹ️ [SERVER BOOTSTRAP] Server-side Admin SDK credentials not provisioned in container; utilizing client-side authenticated Firestore persistence."
+      );
+      return {
+        success: false,
+        status: "ADMIN_SDK_MISSING",
+        message: "Server-side Admin SDK credentials not provisioned in container; utilizing client-side authenticated Firestore persistence in sandbox.",
+      };
+    }
+  }
+
   try {
-    const timeoutPromise = new Promise<{ success: boolean; message: string }>((_, reject) =>
+    const timeoutPromise = new Promise<BootstrapResult>((_, reject) =>
       setTimeout(() => reject(new Error("Admin SDK bootstrap check timed out")), 3500)
     );
 
-    const runBootstrap = async (): Promise<{ success: boolean; message: string }> => {
+    const runBootstrap = async (): Promise<BootstrapResult> => {
       const firestore = getAdminFirestore();
 
       // Check if tenants exist
       const tenantsSnap = await firestore.collection("tenants").limit(1).get();
       if (!tenantsSnap.empty) {
-        return { success: true, message: "Database already initialized." };
+        return { success: true, status: "ADMIN_SDK_READY", message: "Database already initialized." };
       }
 
       console.log("⚡ [SERVER BOOTSTRAP] Privileged Admin SDK initialization starting...");
 
-    const batch = firestore.batch();
+      const batch = firestore.batch();
 
     // 1. Initial Tenants
     INITIAL_TENANTS.forEach((t) => {
@@ -136,7 +177,7 @@ export async function bootstrapDatabaseWithAdminSdk(): Promise<{ success: boolea
 
       await batch.commit();
       console.log("✅ [SERVER BOOTSTRAP] Privileged Firestore seed completed successfully.");
-      return { success: true, message: "Bootstrap completed successfully." };
+      return { success: true, status: "ADMIN_SDK_READY", message: "Bootstrap completed successfully." };
     };
 
     return await Promise.race([runBootstrap(), timeoutPromise]);
@@ -146,6 +187,6 @@ export async function bootstrapDatabaseWithAdminSdk(): Promise<{ success: boolea
     } else {
       console.warn("⚠️ [SERVER BOOTSTRAP] Skipped or offline:", err?.message || err);
     }
-    return { success: false, message: err?.message || String(err) };
+    return { success: false, status: "ADMIN_SDK_MISSING", message: err?.message || String(err) };
   }
 }

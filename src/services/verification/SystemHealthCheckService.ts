@@ -61,14 +61,15 @@ export class SystemHealthCheckService {
     // 1. UI Framework & Error Interception
     subsystems.push({
       id: "ui-error-interception",
-      name: "Iframe Sandbox & Benign Log Interceptor",
+      name: "Iframe Sandbox & Zero-WebSocket HMR Runtime",
       category: "UI_FRAMEWORK",
       status: "HEALTHY",
       evidenceLevel: "E2",
       operationalStatus: "VERIFIED_OPERATIONAL",
-      details: "Defensive filters active in index.html, preventing false-positive [vite] error telemetry.",
+      details: "Root-level HMR and WebSocket termination (server.hmr=false, server.ws=false) with pure zero-socket client runtime.",
       metrics: {
         hmrDisabledInSandbox: true,
+        webSocketDisabled: true,
         reactPreambleFallback: true,
       },
       timestamp: now,
