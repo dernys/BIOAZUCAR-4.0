@@ -45,6 +45,8 @@ export type DataOrigin =
   | "FIELD_MEASUREMENT"
   | "ERP"
   | "SCADA"
+  | "LIMS"
+  | "LAB_ANALYSIS"
   | "IMPORT"
   | "SYSTEM_DEFAULT";
 
@@ -1408,6 +1410,88 @@ export {
   type GovernedValueType,
   type FormatGovernedValueOptions,
 } from "../utils/governedValueFormatter";
+
+/**
+ * ============================================================================
+ * ITERATION 37 — CANE LABORATORY & AGRONOMIC GOVERNANCE DATA CONTRACTS
+ * ============================================================================
+ */
+
+/**
+ * CaneLaboratorySample (Iteration 37 — Agronomic Data Governance)
+ * Mandatory governed laboratory analysis record (LIMS/Batey) under IEC 62443 / ISA-95 L3/L4.
+ * Enforces physiological boundaries of Saccharum officinarum:
+ * - brixDegrees: 8.0 - 28.0 °Bx
+ * - polPercent: 5.0 - 24.0 % (MUST be <= brixDegrees)
+ * - apparentPurity: (pol / brix) * 100 (50.0% - 100.0%)
+ * - fiberPercent: 8.0% - 22.0%
+ * - reducingSugarsPercent: 0.1% - 5.0%
+ * - trashPercent: 0.0% - 25.0%
+ * - dextranPpm: 0 - 2000 ppm
+ */
+export interface CaneLaboratorySample {
+  sampleId: string;
+  sampleCode: string; // e.g. LAB-CANESAMPLE-20260928-001
+  tenantId: string;
+  campaignId: string;
+  plotId: string;
+  varietyCode?: string;
+  growthStage?: CaneGrowthStage;
+  weighingTicketNumber?: string;
+  receptionId?: string;
+  dispatchId?: string;
+  caneBatchId?: string;
+  samplingStage: "PRE_HARVEST_MATURITY" | "CORE_SAMPLER_BATEY" | "FEED_TABLE" | "FIRST_CRUSH_JUICE";
+  samplingDateTime: string;
+  analystId: string;
+  analystName: string;
+  laboratoryId: string;
+  // Polarimetric & Physicochemical Parameters
+  brixDegrees: number;
+  polPercent: number;
+  apparentPurity: number; // (pol / brix) * 100
+  fiberPercent: number;
+  reducingSugarsPercent?: number;
+  trashPercent: number;
+  dextranPpm?: number;
+  hoursCutToMilling?: number;
+  // Estimated Recovery (Spencer-Meade / SJM / Hugot)
+  commercialSugarYieldEstimated?: number;
+  // Governance & Cryptographic Integrity
+  cryptographicHash: string; // SHA-256 of canonical payload
+  lineageHash?: string;
+  analystSignature: string; // HMAC or Digital Signature
+  validationStatus: "APPROVED" | "REJECTED" | "QUARANTINE";
+  rejectionReason?: string;
+  dataClassification: DataClassification;
+  dataOrigin: DataOrigin;
+  dataQuality: DataQuality;
+  createdAt: string;
+  updatedAt: string;
+  version: string;
+}
+
+export interface CaneLabValidationOptions {
+  strictPhysiologicalLimits?: boolean;
+  maxDiscrepancyPercent?: number;
+  requireAnalystSignature?: boolean;
+}
+
+export interface BateyWeighbridgeReconciliation {
+  ticketNumber: string;
+  plotCode: string;
+  varietyCode: string;
+  tenantId: string;
+  estimatedFieldTons: number;
+  grossWeightTons: number;
+  tareWeightTons: number;
+  netWeightTons: number;
+  varianceTons: number;
+  variancePercent: number;
+  toleranceExceeded: boolean;
+  status: "NORMAL" | "WARNING_DESVIACION" | "RECHAZO_BASCULA";
+  reconciliationTimestamp: string;
+}
 
 
 

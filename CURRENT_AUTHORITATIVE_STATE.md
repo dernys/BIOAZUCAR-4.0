@@ -2,8 +2,8 @@
 
 > **Documento Oficial de Estado Autoritativo y Reconciliación de Repositorio**  
 > **Sistema:** BioAzúcar 4.0 — Unified Industrial Platform & Digital Twin for Sugar Mills & Biomass Cogeneration  
-> **Versión Actual:** 4.0.0-I35-WEBAUTHN-FIDO2-PHYSICAL-SECURITY  
-> **Fecha y Hora de Verificación:** 2026-09-26T21:26:00Z (Local: 2026-09-26T14:26:00-07:00)  
+> **Versión Actual:** 4.0.0-I37-AGRONOMIC-DATA-GOVERNANCE  
+> **Fecha y Hora de Verificación:** 2026-09-28T17:10:00Z (Local: 2026-09-28T10:10:00-07:00)  
 > **ID de Workspace:** `7390a107-972a-4737-bb16-081c36c097ec`  
 > **Estado de Aprobación:** `AUTHORITATIVE — SINGLE SOURCE OF TRUTH (SSOT)`  
 > **Regla de Oro:** *No Evidence = No Demonstrated Functionality*. Ningún documento secundario sustituye el código auditable en HEAD.
@@ -77,6 +77,8 @@ TEST FIXTURE
 | **PWA Web Shell Offline** | Implementado | `public/service-worker.js`, `manifest.json` | `p0OfflinePwaWebShell.test.ts` | E3 |
 | **Ciberseguridad IEC 62443** | Implementado (SL3 Validado)| `src/services/security/Iec62443CertificationPack.ts` | `p0SecurityAuditEvidenceIec62443.test.ts` | E3 |
 | **WebAuthn / FIDO2 Físico (YubiKey)** | Implementado (IEC 62443 SL3) | `src/services/security/webauthn/` | `i35WebAuthnFido2PhysicalSecurity.test.tsx` | E3 |
+| **Blindaje Multi-Tenant & Anti-Spoofing** | Implementado (IEC 62443 SL3) | `src/server/authMiddleware.ts` | `i36MultiTenantAuthorizationHardening.test.ts` | E3 |
+| **Gobernanza Agronómica & Calidad LIMS (I37)** | Implementado (IEC 62443 SL3) | `src/services/agriculture/AgronomicGovernancePipeline.ts` | `i37AgronomicDataGovernance.test.ts` | E3 |
 
 ---
 
@@ -91,3 +93,5 @@ Para evitar duplicidad o desalineación:
 6. **Rechazo Mandatorio de HTTP en Producción:** En perfil `PRODUCTION`, el Edge Daemon rechaza endpoints de sincronización no cifrados `http://`; HTTPS o mTLS es obligatorio conforme a IEC 62443-3-3 FR5.
 7. **Aislamiento Dual-NIC Verificado en Arranque:** El Edge Daemon audita el kernel (`net.ipv4.ip_forward == 0`) antes de iniciar para prevenir fugas de enrutamiento entre la red OT de campo y la red IT/DMZ.
 8. **Contabilidad Estricta Store & Forward:** Medición y reporte en tiempo real de puntos generados, persistidos, recuperados, transmitidos, confirmados, duplicados y perdidos con resiliencia total ante caídas de enlace.
+9. **Aislamiento Multi-Tenant Estricto (I36):** La inyección de cabecera `X-Tenant-Id` no autorizada es rechazada determinísticamente (código `TENANT_HEADER_SPOOFING_REJECTED`); particionado de auditoría y telemetría por tenant obligatorio con auditoría de intrusión transfronteriza `CROSS_TENANT_ACCESS_ATTEMPT`.
+10. **Gobernanza Agronómica Estricta & Inmutabilidad LIMS (I37):** Validación fisiológica obligatoria de Saccharum officinarum (8.0°Bx - 28.0°Bx, 5.0% - 24.0% Pol, Pol <= Brix, Pureza <= 100%, Fibra 8% - 22%, Trash <= 25%). Sellado criptográfico SHA-256 inmutable de cada muestra de laboratorio con detección en tiempo real de manipulaciones maliciosas retroactivas y reconciliación de desvíos en báscula de batey.

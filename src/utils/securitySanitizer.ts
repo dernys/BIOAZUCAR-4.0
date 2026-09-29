@@ -24,7 +24,9 @@ export function sanitizeAuditMetadata(meta?: Record<string, any>): Record<string
   ];
   const clean: Record<string, any> = {};
   for (const [k, v] of Object.entries(meta)) {
-    if (sensitiveKeys.some((s) => k.toLowerCase().includes(s))) {
+    if (v === undefined) {
+      continue;
+    } else if (sensitiveKeys.some((s) => k.toLowerCase().includes(s))) {
       clean[k] = "[REDACTED]";
     } else if (v && typeof v === "object" && !Array.isArray(v)) {
       clean[k] = sanitizeAuditMetadata(v);

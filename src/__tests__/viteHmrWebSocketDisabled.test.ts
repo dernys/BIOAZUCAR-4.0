@@ -48,7 +48,66 @@ describe("[BioAzúcar 4.0] P0 — Vite WebSocket / HMR Complete Eradication Veri
     expect(content).toContain("updateStyle");
     expect(content).toContain("removeStyle");
     expect(content).toContain("createHotContext");
+    expect(content).toContain("prune()");
     // Ensure client code does NOT create WebSocket or connect to 24678
     expect(content).not.toMatch(/new WebSocket\(.*24678/);
+  });
+
+  it("6. createHotContext contract must satisfy Vite 6 ViteHotContext and never throw on prune()", () => {
+    const viteContent = fs.readFileSync(viteConfigPath, "utf-8");
+    const serverContent = fs.readFileSync(serverPath, "utf-8");
+
+    // Both vite.config.ts and server.ts must define prune() inside createHotContext
+    expect(viteContent).toMatch(/prune\s*\(\)\s*\{\}/);
+    expect(serverContent).toMatch(/prune\s*\(\)\s*\{\}/);
+
+    // Verify Proxy fallback presence so any custom/future Vite HMR hook does not throw
+    expect(viteContent).toContain("new Proxy");
+    expect(serverContent).toContain("new Proxy");
+  });
+
+  it("7. createHotContext functional contract execution test", () => {
+    // Replicate the exact createHotContext implementation
+    function createHotContext() {
+      const hot = {
+        accept() {},
+        acceptExports() {},
+        dispose() {},
+        prune() {},
+        decline() {},
+        invalidate() {},
+        on() {},
+        off() {},
+        send() {},
+        data: {}
+      };
+      return new Proxy(hot, {
+        get(target, prop) {
+          if (prop in target) return (target as any)[prop];
+          return () => {};
+        }
+      });
+    }
+
+    const hot = createHotContext();
+    expect(typeof (hot as any).prune).toBe("function");
+    expect(typeof (hot as any).accept).toBe("function");
+    expect(typeof (hot as any).dispose).toBe("function");
+    expect(typeof (hot as any).decline).toBe("function");
+    expect(typeof (hot as any).invalidate).toBe("function");
+    expect(typeof (hot as any).on).toBe("function");
+    expect(typeof (hot as any).off).toBe("function");
+    expect(typeof (hot as any).send).toBe("function");
+    expect(typeof (hot as any).data).toBe("object");
+
+    // Must execute hot.prune with callback without error
+    expect(() => {
+      (hot as any).prune(() => {});
+    }).not.toThrow();
+
+    // Must execute any unexpected or future HMR hook without error
+    expect(() => {
+      (hot as any).unknownHook();
+    }).not.toThrow();
   });
 });

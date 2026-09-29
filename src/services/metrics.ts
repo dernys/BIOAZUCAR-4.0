@@ -144,6 +144,15 @@ export const auditEventsTotal = new client.Counter({
   labelNames: ["tenant_id", "action", "result", "severity"],
 });
 
+/**
+ * Cross-Tenant Security Access Denials Counter (IEC 62443-4-2 SL3 / Multi-Tenant Isolation)
+ */
+export const crossTenantViolationsTotal = new client.Counter({
+  name: "bioazucar_cross_tenant_violations_total",
+  help: "Total de intentos de acceso cruzado entre tenants no autorizados detectados y bloqueados",
+  labelNames: ["source_tenant", "target_tenant", "endpoint"],
+});
+
 // ============================================================================
 // EXPORT HELPERS FOR EXPRESS & SCRAPING
 // ============================================================================

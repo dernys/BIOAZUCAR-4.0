@@ -6,7 +6,7 @@ import { UserRole } from "../types";
 import { getAdminAuth, getAdminFirestore } from "./firebaseAdmin";
 import { MembershipService } from "./membershipService";
 import { systemLogger } from "../services/logger/IndustrialLogger";
-import { auditEventsTotal } from "../services/metrics";
+import { auditEventsTotal, crossTenantViolationsTotal } from "../services/metrics";
 
 export interface AuthenticatedUser {
   id?: string;
@@ -247,9 +247,13 @@ export async function fetchDurableAuditTrail(tenantId?: string, limitCount: numb
   return getServerAuditTrail();
 }
 
-export function getServerAuditTrail(): ServerAuditRecord[] {
+export function getServerAuditTrail(tenantId?: string): ServerAuditRecord[] {
   // Returns deep copy of audit records to prevent client-side mutation
-  return JSON.parse(JSON.stringify(serverAuditTrail));
+  const records: ServerAuditRecord[] = JSON.parse(JSON.stringify(serverAuditTrail));
+  if (tenantId && tenantId !== "GLOBAL") {
+    return records.filter((r) => r.tenantId === tenantId);
+  }
+  return records;
 }
 
 export function clearServerAuditTrail(): void {
@@ -503,7 +507,42 @@ export function requireRole(allowedRoles: string[]) {
 }
 
 /**
- * Express Middleware: Enforces Strict Multi-Tenant Isolation (SEC-4 & SEC-5)
+ * Error thrown when an unauthorized cross-tenant data access attempt is made (IEC 62443 SL3)
+ */
+export class CrossTenantViolationError extends Error {
+  public readonly code = "CROSS_TENANT_DENIED";
+  public readonly statusCode = 403;
+  constructor(
+    public readonly userTenant: string,
+    public readonly attemptedTenant: string,
+    public readonly resource?: string
+  ) {
+    super(
+      `Violación de aislamiento multi-tenant: La cuenta ('${userTenant}') no tiene autorización para acceder o mutar datos de '${attemptedTenant}'.`
+    );
+    this.name = "CrossTenantViolationError";
+  }
+}
+
+/**
+ * Asserts that the authenticated user has clearance for target tenant. Throws CrossTenantViolationError if unauthorized.
+ */
+export function assertTenantAuthorization(
+  user: AuthenticatedUser,
+  targetTenantId?: string,
+  resource?: string
+): void {
+  if (!targetTenantId || user.isSuperAdmin || user.tenantId === "GLOBAL") {
+    return;
+  }
+  const cleanTarget = targetTenantId.trim();
+  if (cleanTarget && cleanTarget !== user.tenantId && cleanTarget !== "GLOBAL") {
+    throw new CrossTenantViolationError(user.tenantId, cleanTarget, resource);
+  }
+}
+
+/**
+ * Express Middleware: Enforces Strict Multi-Tenant Isolation (SEC-4 & SEC-5 / IEC 62443 SL3)
  */
 export function requireTenantIsolation(
   targetTenantGetter?: (req: Request) => string | undefined
@@ -518,36 +557,102 @@ export function requireTenantIsolation(
       return next();
     }
 
-    // Derive target tenant from request or custom resolver
-    const targetTenant = targetTenantGetter
-      ? targetTenantGetter(req)
-      : (req.body?.targetTenantId || req.body?.tenantId || req.query?.tenantId || req.headers["x-tenant-id"]);
+    // Extract target tenant candidates across all request locations
+    const candidateTenants: (string | undefined)[] = [
+      targetTenantGetter ? targetTenantGetter(req) : undefined,
+      req.params?.tenantId,
+      req.query?.tenantId as string,
+      req.query?.targetTenantId as string,
+      req.body?.tenantId,
+      req.body?.targetTenantId,
+      req.body?.millId,
+      req.headers["x-tenant-id"] as string,
+    ];
 
-    if (targetTenant && typeof targetTenant === "string") {
-      if (targetTenant !== req.user.tenantId) {
+    for (const rawTenant of candidateTenants) {
+      if (rawTenant && typeof rawTenant === "string" && rawTenant.trim() !== "") {
+        const targetTenant = rawTenant.trim();
+        if (targetTenant !== req.user.tenantId && targetTenant !== "GLOBAL") {
+          try {
+            crossTenantViolationsTotal.inc({
+              source_tenant: req.user.tenantId,
+              target_tenant: targetTenant,
+              endpoint: req.baseUrl + (req.route?.path || req.path),
+            });
+          } catch {
+            // Metrics increment non-blocking
+          }
+
+          logServerAuditEvent({
+            actorUid: req.user.uid,
+            actorEmail: req.user.email,
+            actorRole: req.user.role,
+            tenantId: req.user.tenantId,
+            action: "CROSS_TENANT_ACCESS_ATTEMPT",
+            resource: req.originalUrl || req.path,
+            result: "DENIED",
+            severity: "CRITICAL",
+            ip: req.ip,
+            metadata: {
+              userTenant: req.user.tenantId,
+              attemptedTenant: targetTenant,
+              method: req.method,
+              endpoint: req.originalUrl || req.path,
+            },
+          });
+
+          return res.status(403).json({
+            error: `Violación de aislamiento multi-tenant: Su cuenta (${req.user.tenantId}) no tiene autorización para acceder a los datos de '${targetTenant}'.`,
+            code: "CROSS_TENANT_DENIED",
+            userTenant: req.user.tenantId,
+            targetTenant,
+          });
+        }
+      }
+    }
+
+    next();
+  };
+}
+
+/**
+ * Strict Multi-Tenant Isolation with anti-spoofing and Header Injection rejection
+ */
+export function requireStrictTenantIsolation() {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Usuario no autenticado", code: "UNAUTHENTICATED" });
+    }
+
+    // Verify X-Tenant-Id header cannot spoof a different tenant
+    const headerTenant = req.headers["x-tenant-id"];
+    if (headerTenant && typeof headerTenant === "string" && headerTenant.trim() !== "") {
+      const sanitizedHeader = headerTenant.trim();
+      if (!req.user.isSuperAdmin && req.user.tenantId !== "GLOBAL" && sanitizedHeader !== req.user.tenantId) {
         logServerAuditEvent({
           actorUid: req.user.uid,
           actorEmail: req.user.email,
           actorRole: req.user.role,
           tenantId: req.user.tenantId,
-          action: "CROSS_TENANT_ACCESS_ATTEMPT",
-          resource: req.path,
+          action: "HEADER_TENANT_INJECTION_REJECTED",
+          resource: req.originalUrl || req.path,
           result: "DENIED",
+          severity: "CRITICAL",
           ip: req.ip,
           metadata: {
             userTenant: req.user.tenantId,
-            attemptedTenant: targetTenant,
+            injectedHeaderTenant: sanitizedHeader,
           },
         });
 
         return res.status(403).json({
-          error: `Violación de aislamiento multi-tenant: Su cuenta (${req.user.tenantId}) no tiene autorización para acceder a los datos de '${targetTenant}'.`,
-          code: "CROSS_TENANT_DENIED",
+          error: "Inyección de cabecera detectada: La cabecera X-Tenant-Id no coincide con el tenant autenticado.",
+          code: "TENANT_HEADER_SPOOFING_REJECTED",
         });
       }
     }
 
-    next();
+    return requireTenantIsolation()(req, res, next);
   };
 }
 

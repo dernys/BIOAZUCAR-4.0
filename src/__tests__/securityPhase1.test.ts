@@ -57,7 +57,11 @@ describe("BIOAZÚCAR 4.0 — FASE 1 SECURITY FOUNDATION TEST SUITE", () => {
       });
 
       const trail = getServerAuditTrail();
-      expect(trail.length).toBeGreaterThan(initialCount);
+      if (initialCount >= 500) {
+        expect(trail.length).toBe(500);
+      } else {
+        expect(trail.length).toBeGreaterThan(initialCount);
+      }
       const lastEvent = trail[trail.length - 1];
       expect(lastEvent.eventType).toBe("RBAC_VIOLATION");
       expect(lastEvent.result).toBe("DENIED");

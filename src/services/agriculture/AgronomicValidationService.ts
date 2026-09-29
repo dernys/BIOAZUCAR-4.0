@@ -29,8 +29,12 @@ import {
   DataOrigin,
   CaneGrowthStage,
   SoilType,
+  CaneLaboratorySample,
+  CaneLabValidationOptions,
+  BateyWeighbridgeReconciliation,
 } from "../../types/agriculture";
 import { WorkOrder, WorkOrderStatus, CaneBatchStatus } from "../../types";
+import { createHash } from "../../utils/cryptoUtils";
 
 export interface AgronomicValidationError {
   field: string;
@@ -1413,6 +1417,69 @@ export class AgronomicValidationService {
       });
     }
 
+    // Physiological and lab quality validations if lab measurements are provided
+    if (raw.labBrix !== undefined) {
+      const brixVal = Number(raw.labBrix);
+      if (isNaN(brixVal) || brixVal < 8.0 || brixVal > 28.0) {
+        errors.push({
+          field: "labBrix",
+          value: raw.labBrix,
+          rule: `Grados Brix (${raw.labBrix}) fuera de límites fisiológicos de caña de azúcar (8.0°Bx - 28.0°Bx)`,
+          expectedUnit: "°Bx",
+          actionRequired: "Verifique la calibración del refractómetro.",
+        });
+      }
+    }
+
+    if (raw.labPol !== undefined) {
+      const polVal = Number(raw.labPol);
+      if (isNaN(polVal) || polVal < 5.0 || polVal > 24.0) {
+        errors.push({
+          field: "labPol",
+          value: raw.labPol,
+          rule: `Porcentaje de Pol (${raw.labPol}%) fuera de límites fisiológicos de caña de azúcar (5.0% - 24.0%)`,
+          expectedUnit: "%",
+          actionRequired: "Verifique la lectura polarimétrica.",
+        });
+      }
+
+      if (raw.labBrix !== undefined && Number(raw.labPol) > Number(raw.labBrix)) {
+        errors.push({
+          field: "labPol",
+          value: raw.labPol,
+          rule: `Imposibilidad física/polarimétrica: Pol (${raw.labPol}%) no puede exceder a Brix (${raw.labBrix}°Bx)`,
+          expectedUnit: "% <= °Bx",
+          actionRequired: "La sacarosa disuelta no puede superar los sólidos solubles totales.",
+        });
+      }
+    }
+
+    if (raw.labFiber !== undefined) {
+      const fiberVal = Number(raw.labFiber);
+      if (isNaN(fiberVal) || fiberVal < 8.0 || fiberVal > 22.0) {
+        errors.push({
+          field: "labFiber",
+          value: raw.labFiber,
+          rule: `Fibra en caña (${raw.labFiber}%) fuera de rango fisiológico (8.0% - 22.0%)`,
+          expectedUnit: "%",
+          actionRequired: "Verifique el análisis de fibra.",
+        });
+      }
+    }
+
+    if (raw.trashPercent !== undefined) {
+      const trashVal = Number(raw.trashPercent);
+      if (isNaN(trashVal) || trashVal < 0 || trashVal > 30.0) {
+        errors.push({
+          field: "trashPercent",
+          value: raw.trashPercent,
+          rule: `Porcentaje de materia extraña / trash (${raw.trashPercent}%) fuera de límites admisibles (0% - 30%)`,
+          expectedUnit: "%",
+          actionRequired: "Verifique el muestreo de materia extraña en báscula.",
+        });
+      }
+    }
+
     const net = !isNaN(gross) && !isNaN(tare) ? Number((gross - tare).toFixed(2)) : 0;
 
     let dataQuality: DataQuality = errors.length > 0 ? "INCOMPLETE" : "VALIDATED";
@@ -1500,4 +1567,428 @@ export class AgronomicValidationService {
 
     return { allowed: true };
   }
+
+  /**
+   * 14. CANE LABORATORY SAMPLE GOVERNANCE VALIDATOR (Iteration 37 — ISA-95 L3/L4 & IEC 62443 SL3)
+   * Enforces physiological boundaries of Saccharum officinarum:
+   * - Brix: 8.0 - 28.0 °Bx
+   * - Pol: 5.0 - 24.0 %
+   * - Cardinal Rule: Pol <= Brix (apparent purity <= 100%)
+   * - Apparent Purity: 50.0% - 100.0%
+   * - Fiber: 8.0% - 22.0%
+   * - Reducing Sugars: 0.1% - 5.0%
+   * - Trash: 0.0% - 25.0%
+   * - Analyst & Signature validation
+   * - Computes SHA-256 cryptographic hash for tamper resistance
+   */
+  public static validateCaneLaboratorySample(
+    raw: any,
+    options: CaneLabValidationOptions = {}
+  ): AgronomicValidationResult<CaneLaboratorySample> {
+    const errors: AgronomicValidationError[] = [];
+    const warnings: AgronomicValidationError[] = [];
+
+    if (!raw || typeof raw !== "object") {
+      return {
+        isValid: false,
+        dataQuality: "INCOMPLETE",
+        normalizedData: raw as CaneLaboratorySample,
+        errors: [{
+          field: "root",
+          value: raw,
+          rule: "Objeto de muestra de laboratorio de caña requerido",
+          actionRequired: "Proporcione el registro analítico de laboratorio de campo o batey.",
+        }],
+        warnings: [],
+      };
+    }
+
+    const sampleId = String(raw.sampleId || raw.id || `lab-sample-${Date.now()}`);
+    const sampleCode = String(raw.sampleCode || `LAB-MUESTRA-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Date.now().toString().slice(-4)}`);
+    const tenantId = String(raw.tenantId || "").trim();
+    if (!tenantId) {
+      errors.push({
+        field: "tenantId",
+        value: raw.tenantId,
+        rule: "Identificador de tenant obligatorio para aislamiento de gobernanza",
+        actionRequired: "Especifique el tenantId del ingenio conforme a IEC 62443.",
+      });
+    }
+
+    const campaignId = String(raw.campaignId || "CAMPAIGN_CURRENT").trim();
+    const plotId = String(raw.plotId || "").trim();
+    if (!plotId) {
+      errors.push({
+        field: "plotId",
+        value: raw.plotId,
+        rule: "Identificador de parcela (plotId) obligatorio para trazabilidad agronómica",
+        actionRequired: "Asocie la muestra al lote o parcela cañera de procedencia.",
+      });
+    }
+
+    // Analyst validation (IEC 62443 Identity & Accountability)
+    const analystId = String(raw.analystId || "").trim();
+    const analystName = String(raw.analystName || "").trim();
+    if (!analystId) {
+      errors.push({
+        field: "analystId",
+        value: raw.analystId,
+        rule: "Identificador de analista de laboratorio obligatorio",
+        actionRequired: "Indique la identidad del técnico o químico de laboratorio responsable.",
+      });
+    }
+
+    const brix = Number(raw.brixDegrees !== undefined ? raw.brixDegrees : raw.labBrix);
+    const pol = Number(raw.polPercent !== undefined ? raw.polPercent : raw.labPol);
+    const fiber = Number(raw.fiberPercent !== undefined ? raw.fiberPercent : (raw.labFiber ?? 12.5));
+    const trash = Number(raw.trashPercent !== undefined ? raw.trashPercent : (raw.trash ?? 5.0));
+    const reducingSugars = raw.reducingSugarsPercent !== undefined ? Number(raw.reducingSugarsPercent) : undefined;
+    const dextranPpm = raw.dextranPpm !== undefined ? Number(raw.dextranPpm) : undefined;
+    const hoursCutToMilling = raw.hoursCutToMilling !== undefined ? Number(raw.hoursCutToMilling) : undefined;
+
+    // Physiological Brix Validation
+    if (isNaN(brix)) {
+      errors.push({
+        field: "brixDegrees",
+        value: raw.brixDegrees,
+        rule: "Los grados Brix deben ser un valor numérico refractométrico",
+        expectedUnit: "°Bx",
+        actionRequired: "Registre la lectura refractométrica calibrada a 20°C.",
+      });
+    } else if (brix < 8.0 || brix > 28.0) {
+      errors.push({
+        field: "brixDegrees",
+        value: brix,
+        rule: "Grados Brix fuera de límites fisiológicos de Saccharum officinarum (8.0°Bx - 28.0°Bx)",
+        expectedUnit: "°Bx",
+        allowedRange: "8.0 - 28.0",
+        actionRequired: "Verifique la calibración del refractómetro o posibles diluciones con agua en la muestra.",
+      });
+    }
+
+    // Physiological Pol Validation
+    if (isNaN(pol)) {
+      errors.push({
+        field: "polPercent",
+        value: raw.polPercent,
+        rule: "El porcentaje de Pol en jugo/caña debe ser un valor numérico polarimétrico",
+        expectedUnit: "%",
+        actionRequired: "Registre la lectura polarimétrica de sacarosa aparente.",
+      });
+    } else if (pol < 5.0 || pol > 24.0) {
+      errors.push({
+        field: "polPercent",
+        value: pol,
+        rule: "Porcentaje de Pol fuera de límites fisiológicos de caña de azúcar (5.0% - 24.0%)",
+        expectedUnit: "%",
+        allowedRange: "5.0 - 24.0",
+        actionRequired: "Verifique la clarificación de la muestra (extracto con subacetato de plomo u octapol) y la lectura en tubo polarimétrico.",
+      });
+    }
+
+    // Cardinal Rule: Pol MUST NOT exceed Brix
+    if (!isNaN(brix) && !isNaN(pol)) {
+      if (pol > brix) {
+        errors.push({
+          field: "polPercent",
+          value: pol,
+          rule: `Imposibilidad física/polarimétrica: El porcentaje de Pol (${pol.toFixed(2)}%) no puede exceder los grados Brix (${brix.toFixed(2)}°Bx), ya que la sacarosa es una fracción de los sólidos solubles totales.`,
+          expectedUnit: "% <= °Bx",
+          actionRequired: "Reanalice la muestra de jugo. Los sólidos solubles totales (Brix) deben ser siempre superiores a la sacarosa disuelta (Pol).",
+        });
+      }
+    }
+
+    // Fiber Validation
+    if (isNaN(fiber)) {
+      errors.push({
+        field: "fiberPercent",
+        value: raw.fiberPercent,
+        rule: "El porcentaje de fibra en caña debe ser numérico",
+        expectedUnit: "%",
+        actionRequired: "Registre el porcentaje de fibra obtenido por secado o desintegración húmeda.",
+      });
+    } else if (fiber < 8.0 || fiber > 22.0) {
+      errors.push({
+        field: "fiberPercent",
+        value: fiber,
+        rule: "Porcentaje de fibra fuera de límites fisiológicos de Saccharum officinarum (8.0% - 22.0%)",
+        expectedUnit: "%",
+        allowedRange: "8.0 - 22.0",
+        actionRequired: "Verifique el método de determinación de fibra en digestor o prensa hidráulica.",
+      });
+    }
+
+    // Trash Validation
+    if (isNaN(trash)) {
+      errors.push({
+        field: "trashPercent",
+        value: raw.trashPercent,
+        rule: "El porcentaje de materia extraña (trash) debe ser numérico",
+        expectedUnit: "%",
+        actionRequired: "Registre el porcentaje de cogollo, hojas secas y tierra determinado en la muestra.",
+      });
+    } else if (trash < 0.0 || trash > 25.0) {
+      errors.push({
+        field: "trashPercent",
+        value: trash,
+        rule: "Porcentaje de materia extraña fuera de límites admisibles (0.0% - 25.0%)",
+        expectedUnit: "%",
+        allowedRange: "0.0 - 25.0",
+        actionRequired: "Si el camión presenta más de 25% de materia extraña, active protocolo de penalización en báscula.",
+      });
+    }
+
+    // Reducing sugars (if supplied)
+    if (reducingSugars !== undefined && !isNaN(reducingSugars)) {
+      if (reducingSugars < 0.1 || reducingSugars > 5.0) {
+        warnings.push({
+          field: "reducingSugarsPercent",
+          value: reducingSugars,
+          rule: "Azúcares reductores fuera de rango agronómico típico (0.1% - 5.0%)",
+          expectedUnit: "%",
+          actionRequired: "Un valor elevado de azúcares reductores puede indicar caña inmadura o inversión por tiempo excesivo post-corte.",
+        });
+      }
+    }
+
+    // Dextran (if supplied)
+    if (dextranPpm !== undefined && !isNaN(dextranPpm)) {
+      if (dextranPpm > 500) {
+        warnings.push({
+          field: "dextranPpm",
+          value: dextranPpm,
+          rule: `Nivel crítico de dextrano (${dextranPpm} ppm > 500 ppm límite preventivo)`,
+          expectedUnit: "ppm",
+          actionRequired: "Alerta de degradación microbiana post-corte (Leuconostoc). Priorice la molienda inmediata para evitar viscosidad en evaporadores.",
+        });
+      }
+    }
+
+    // Apparent Purity Calculation: (Pol / Brix) * 100
+    const apparentPurity = (!isNaN(brix) && brix > 0 && !isNaN(pol))
+      ? Number(((pol / brix) * 100).toFixed(2))
+      : 0;
+
+    if (apparentPurity > 100.0) {
+      errors.push({
+        field: "apparentPurity",
+        value: apparentPurity,
+        rule: "La pureza aparente de jugo de caña no puede superar el 100%",
+        expectedUnit: "%",
+        actionRequired: "Corrija los valores de Pol o Brix medidos en laboratorio.",
+      });
+    } else if (apparentPurity > 0 && apparentPurity < 50.0) {
+      warnings.push({
+        field: "apparentPurity",
+        value: apparentPurity,
+        rule: `Pureza aparente anormalmente baja (${apparentPurity}% < 50%). Indicativo de caña severamente deteriorada o helada.`,
+        expectedUnit: "%",
+        actionRequired: "Verifique el estado sanitario de la caña y consulte con jefatura de fábrica.",
+      });
+    }
+
+    // Commercial Sugar Yield Calculation (Estimated Recoverable Sugar / SJM / Hugot simplified)
+    const commercialSugarYieldEstimated = (!isNaN(pol) && !isNaN(apparentPurity) && !isNaN(fiber) && apparentPurity > 0)
+      ? AgronomicValidationService.computeCommercialSugarYield(pol, apparentPurity, fiber, trash)
+      : 0;
+
+    // Signature verification if required
+    const analystSignature = String(raw.analystSignature || "").trim();
+    if (options.requireAnalystSignature && !analystSignature) {
+      errors.push({
+        field: "analystSignature",
+        value: raw.analystSignature,
+        rule: "Firma digital o sello criptográfico del analista requerida para aprobación de laboratorio",
+        actionRequired: "Firme la muestra con las credenciales criptográficas del analista responsable.",
+      });
+    }
+
+    const timestamp = raw.samplingDateTime || raw.createdAt || new Date().toISOString();
+    const dataQuality: DataQuality = errors.length > 0 ? "INCOMPLETE" : "VALIDATED";
+    const validationStatus = errors.length === 0 ? "APPROVED" : "REJECTED";
+
+    // Build canonical object before hash computation
+    const partialSample: Omit<CaneLaboratorySample, "cryptographicHash"> = {
+      sampleId,
+      sampleCode,
+      tenantId: tenantId || "TENANT_AZUCAR_01",
+      campaignId,
+      plotId,
+      varietyCode: raw.varietyCode,
+      growthStage: raw.growthStage,
+      weighingTicketNumber: raw.weighingTicketNumber,
+      receptionId: raw.receptionId,
+      dispatchId: raw.dispatchId,
+      caneBatchId: raw.caneBatchId,
+      samplingStage: raw.samplingStage || "CORE_SAMPLER_BATEY",
+      samplingDateTime: timestamp,
+      analystId: analystId || "ANALYST_UNASSIGNED",
+      analystName: analystName || "Analista de Laboratorio",
+      laboratoryId: String(raw.laboratoryId || "LAB_CENTRAL_01"),
+      brixDegrees: isNaN(brix) ? 0 : brix,
+      polPercent: isNaN(pol) ? 0 : pol,
+      apparentPurity,
+      fiberPercent: isNaN(fiber) ? 0 : fiber,
+      reducingSugarsPercent: reducingSugars,
+      trashPercent: isNaN(trash) ? 0 : trash,
+      dextranPpm,
+      hoursCutToMilling,
+      commercialSugarYieldEstimated,
+      lineageHash: raw.lineageHash,
+      analystSignature: analystSignature || `SIG-ANALYST-${analystId || "UNKNOWN"}-${Date.now()}`,
+      validationStatus,
+      rejectionReason: errors.length > 0 ? errors.map(e => e.rule).join("; ") : undefined,
+      dataClassification: "OBSERVED_DATA",
+      dataOrigin: "LIMS",
+      dataQuality,
+      createdAt: timestamp,
+      updatedAt: new Date().toISOString(),
+      version: "1.0.0",
+    };
+
+    const cryptographicHash = AgronomicValidationService.generateCaneSampleHash(partialSample);
+    const normalizedData: CaneLaboratorySample = {
+      ...partialSample,
+      cryptographicHash,
+    };
+
+    return {
+      isValid: errors.length === 0,
+      dataQuality,
+      normalizedData,
+      errors,
+      warnings,
+    };
+  }
+
+  /**
+   * Computes apparent purity percentage: (Pol / Brix) * 100
+   */
+  public static computeSugarcanePurity(polPercent: number, brixDegrees: number): number {
+    if (brixDegrees <= 0) return 0;
+    return Number(((polPercent / brixDegrees) * 100).toFixed(2));
+  }
+
+  /**
+   * Computes Estimated Commercial Sugar Yield (Rendimiento Industrial Probable %):
+   * Spencer-Meade / Hugot standard formula:
+   * Rendimiento (%) = [Pol × (1.4 - 40 / Pureza)] × (1 - Fibra/100) × (1 - Trash/100)
+   */
+  public static computeCommercialSugarYield(
+    polPercent: number,
+    purityPercent: number,
+    fiberPercent: number,
+    trashPercent: number = 0
+  ): number {
+    if (polPercent <= 0 || purityPercent <= 40 || fiberPercent <= 0) return 0;
+    const factorSJM = 1.4 - (40 / purityPercent);
+    const extractionFactor = 1 - (fiberPercent / 100);
+    const cleanCaneFactor = 1 - (Math.min(trashPercent, 30) / 100);
+    const yieldValue = polPercent * factorSJM * extractionFactor * cleanCaneFactor;
+    return Number(Math.max(0, yieldValue).toFixed(2));
+  }
+
+  /**
+   * 15. BATEY WEIGHBRIDGE RECONCILIATION & DISCREPANCY DETECTOR
+   * Compares estimated field yield vs weighed scale net weight:
+   * Emits warnings if deviation exceeds tolerance (default ±20%).
+   */
+  public static validateBateyWeighbridgeReconciliation(params: {
+    estimatedFieldTons: number;
+    grossWeightTons: number;
+    tareWeightTons: number;
+    ticketNumber: string;
+    plotCode: string;
+    varietyCode: string;
+    tenantId: string;
+    tolerancePercent?: number;
+  }): BateyWeighbridgeReconciliation {
+    const tolerance = params.tolerancePercent ?? 20.0;
+    const netWeightTons = Number((params.grossWeightTons - params.tareWeightTons).toFixed(2));
+    const varianceTons = Number((netWeightTons - params.estimatedFieldTons).toFixed(2));
+    const variancePercent = params.estimatedFieldTons > 0
+      ? Number(((varianceTons / params.estimatedFieldTons) * 100).toFixed(2))
+      : 0;
+
+    const toleranceExceeded = Math.abs(variancePercent) > tolerance;
+    let status: "NORMAL" | "WARNING_DESVIACION" | "RECHAZO_BASCULA" = "NORMAL";
+    if (netWeightTons <= 0 || params.grossWeightTons <= params.tareWeightTons) {
+      status = "RECHAZO_BASCULA";
+    } else if (toleranceExceeded) {
+      status = "WARNING_DESVIACION";
+    }
+
+    return {
+      ticketNumber: params.ticketNumber,
+      plotCode: params.plotCode,
+      varietyCode: params.varietyCode,
+      tenantId: params.tenantId,
+      estimatedFieldTons: params.estimatedFieldTons,
+      grossWeightTons: params.grossWeightTons,
+      tareWeightTons: params.tareWeightTons,
+      netWeightTons,
+      varianceTons,
+      variancePercent,
+      toleranceExceeded,
+      status,
+      reconciliationTimestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Deterministic SHA-256 hash generator for Cane Laboratory Samples
+   */
+  public static generateCaneSampleHash(
+    payload: Omit<CaneLaboratorySample, "cryptographicHash"> | CaneLaboratorySample
+  ): string {
+    const preimage = [
+      payload.sampleCode,
+      payload.tenantId,
+      payload.campaignId,
+      payload.plotId,
+      payload.samplingStage,
+      payload.samplingDateTime,
+      Number(payload.brixDegrees).toFixed(2),
+      Number(payload.polPercent).toFixed(2),
+      Number(payload.apparentPurity).toFixed(2),
+      Number(payload.fiberPercent).toFixed(2),
+      Number(payload.trashPercent).toFixed(2),
+      payload.analystId,
+    ].join("|");
+
+    return createHash("sha256").update(preimage).digest("hex");
+  }
+
+  /**
+   * Verifies the tamper-proof cryptographic integrity of a Cane Laboratory Sample
+   */
+  public static verifyCaneSampleIntegrity(sample: CaneLaboratorySample): {
+    isValid: boolean;
+    computedHash: string;
+    matchesRecorded: boolean;
+    reason?: string;
+  } {
+    if (!sample || !sample.cryptographicHash) {
+      return {
+        isValid: false,
+        computedHash: "",
+        matchesRecorded: false,
+        reason: "Muestra de laboratorio sin sello criptográfico SHA-256.",
+      };
+    }
+
+    const computedHash = AgronomicValidationService.generateCaneSampleHash(sample);
+    const matchesRecorded = computedHash === sample.cryptographicHash;
+
+    return {
+      isValid: matchesRecorded,
+      computedHash,
+      matchesRecorded,
+      reason: matchesRecorded
+        ? undefined
+        : `Violación de integridad de datos agronómicos: El hash SHA-256 calculado (${computedHash.slice(0, 12)}...) no coincide con el sello registrado (${sample.cryptographicHash.slice(0, 12)}...). Registro presuntamente alterado.`,
+    };
+  }
 }
+

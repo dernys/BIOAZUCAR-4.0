@@ -45,10 +45,11 @@ export function removeStyle(id) {
 }
 
 export function createHotContext() {
-  return {
+  const hot = {
     accept() {},
     acceptExports() {},
     dispose() {},
+    prune() {},
     decline() {},
     invalidate() {},
     on() {},
@@ -56,6 +57,12 @@ export function createHotContext() {
     send() {},
     data: {}
   };
+  return new Proxy(hot, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      return () => {};
+    }
+  });
 }
 
 export function injectQuery(url, queryToInject) {

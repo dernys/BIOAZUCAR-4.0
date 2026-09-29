@@ -15,12 +15,16 @@ import {
   requireAuth,
   requireRole,
   requireTenantIsolation,
+  requireStrictTenantIsolation,
+  assertTenantAuthorization,
+  CrossTenantViolationError,
   rateLimiter,
   securityHeadersMiddleware,
   logServerAuditEvent,
   logServerAuditEventAsync,
   getServerAuditTrail,
   fetchDurableAuditTrail,
+  parseAndVerifyToken,
 } from "./src/server/authMiddleware";
 import { bootstrapDatabaseWithAdminSdk } from "./src/server/bootstrapService";
 import {
@@ -242,12 +246,15 @@ app.get(
   "/api/security/audit-trail",
   requireAuth,
   requireRole(["administrador", "superadmin"]),
+  requireStrictTenantIsolation(),
   async (req, res) => {
-    const tenantId = (req as any).user?.tenantId;
-    const trail = await fetchDurableAuditTrail(tenantId, 100);
+    const requestedTenant = req.query.tenantId as string;
+    const effectiveTenant = req.user?.isSuperAdmin && requestedTenant ? requestedTenant : req.user?.tenantId;
+    const trail = await fetchDurableAuditTrail(effectiveTenant, 100);
     res.json({
       auditTrail: trail,
       timestamp: new Date().toISOString(),
+      tenantId: effectiveTenant,
     });
   }
 );
@@ -1368,11 +1375,49 @@ app.post("/api/discovery/tags/:id/approval", (req, res) => {
   return res.json({ success: true, tag: engine.getDiscoveredTag(req.params.id) });
 });
 
-// 6c. Hardened Industrial Tag Registry API (P0-02)
-app.get("/api/tags", (req, res) => {
+// 6c. Hardened Industrial Tag Registry API (P0-02 & I36 Multi-Tenant Isolation)
+app.get("/api/tags", async (req, res) => {
   const registry = IndustrialTagRegistryService.getInstance();
+  const authHeader = req.headers.authorization;
+  let callerTenant: string | undefined;
+  let isSuperAdmin = false;
+
+  if (authHeader) {
+    const user = await parseAndVerifyToken(authHeader);
+    if (user) {
+      callerTenant = user.tenantId;
+      isSuperAdmin = user.isSuperAdmin || callerTenant === "GLOBAL";
+    }
+  }
+
+  // Cross-tenant protection: If user is authenticated and not superadmin,
+  // query tenantId cannot conflict with caller tenant
+  const requestedTenant = req.query.tenantId as string;
+  if (callerTenant && !isSuperAdmin && requestedTenant && requestedTenant !== callerTenant) {
+    logServerAuditEvent({
+      actorUid: (req as any).user?.uid || "api-caller",
+      actorRole: (req as any).user?.role || "operador",
+      tenantId: callerTenant,
+      action: "CROSS_TENANT_TAG_QUERY_DENIED",
+      resource: "/api/tags",
+      result: "DENIED",
+      severity: "CRITICAL",
+      ip: req.ip,
+      metadata: {
+        callerTenant,
+        requestedTenant,
+      },
+    });
+    return res.status(403).json({
+      error: `Violación de aislamiento multi-tenant: Su cuenta (${callerTenant}) no puede consultar tags de '${requestedTenant}'.`,
+      code: "CROSS_TENANT_DENIED",
+    });
+  }
+
+  const effectiveTenant = !isSuperAdmin && callerTenant ? callerTenant : requestedTenant;
+
   const filter = {
-    tenantId: req.query.tenantId as string,
+    tenantId: effectiveTenant,
     siteId: req.query.siteId as string,
     areaId: req.query.areaId as string,
     processId: req.query.processId as string,
@@ -1385,7 +1430,7 @@ app.get("/api/tags", (req, res) => {
     searchQuery: req.query.q as string,
   };
   const tags = registry.findTags(filter);
-  return res.json({ tags, total: tags.length });
+  return res.json({ tags, total: tags.length, tenantId: effectiveTenant });
 });
 
 app.get("/api/tags/:id", (req, res) => {
@@ -1403,9 +1448,37 @@ app.get("/api/tags/:id/history", (req, res) => {
   return res.json({ tagId: req.params.id, history, count: history.length });
 });
 
-app.post("/api/tags", (req, res) => {
+app.post("/api/tags", async (req, res) => {
   try {
     const input = req.body;
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const user = await parseAndVerifyToken(authHeader);
+      if (user && !user.isSuperAdmin && user.tenantId !== "GLOBAL") {
+        if (input.tenantId && input.tenantId !== user.tenantId) {
+          logServerAuditEvent({
+            actorUid: user.uid,
+            actorEmail: user.email,
+            actorRole: user.role,
+            tenantId: user.tenantId,
+            action: "CROSS_TENANT_TAG_CREATION_DENIED",
+            resource: "/api/tags",
+            result: "DENIED",
+            severity: "CRITICAL",
+            ip: req.ip,
+            metadata: {
+              callerTenant: user.tenantId,
+              attemptedTagTenant: input.tenantId,
+            },
+          });
+          return res.status(403).json({
+            error: `Violación de aislamiento multi-tenant: Su cuenta (${user.tenantId}) no puede crear tags para '${input.tenantId}'.`,
+            code: "CROSS_TENANT_DENIED",
+          });
+        }
+        input.tenantId = user.tenantId;
+      }
+    }
     const registry = IndustrialTagRegistryService.getInstance();
     const tag = registry.registerTag(input);
     return res.status(201).json({ success: true, tag });
@@ -2984,10 +3057,11 @@ export function removeStyle(id) {
 }
 
 export function createHotContext() {
-  return {
+  const hot = {
     accept() {},
     acceptExports() {},
     dispose() {},
+    prune() {},
     decline() {},
     invalidate() {},
     on() {},
@@ -2995,6 +3069,12 @@ export function createHotContext() {
     send() {},
     data: {}
   };
+  return new Proxy(hot, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      return () => {};
+    }
+  });
 }
 
 export function injectQuery(url, queryToInject) {
