@@ -234,5 +234,24 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isNewResourceTenantMatch();
       allow update, delete: if false; // Inviolable append-only audit trail
     }
+
+    // 24. User Sessions & Live SCADA Terminals
+    match /user_sessions/{sessionId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create, update: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (isNewResourceTenantMatch() && request.auth.token.role == 'administrador') ||
+        request.auth.uid == request.resource.data.userId
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // 25. Access Scope Assignments (Granular IEC 62443 Scopes)
+    match /access_assignments/{asgId} {
+      allow read: if isAuthenticated() && (resource == null || isResourceTenantMatch(resource));
+      allow create, update, delete: if isSuperAdmin() || (
+        isAuthenticated() && (request.auth.token.role == 'administrador' || request.auth.token.role == 'superadmin')
+      );
+    }
   }
 }

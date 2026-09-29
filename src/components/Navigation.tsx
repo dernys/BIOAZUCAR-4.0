@@ -200,12 +200,13 @@ export const Navigation: React.FC<NavigationProps> = ({
     },
     {
       id: "users_roles",
-      label: "Usuarios & Roles",
+      label: "Seguridad & IAM",
       icon: Users,
-      desc: "RBAC & Permisos CRUD",
+      desc: "Usuarios, Roles, Scope, Sesiones & Auditoría",
       category: "ADMIN_CONFIG",
       adminOnly: true,
-      tag: "RBAC",
+      tag: "IEC 62443",
+      highlight: true,
     },
     {
       id: "system_config",

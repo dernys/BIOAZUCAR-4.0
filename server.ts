@@ -71,6 +71,7 @@ import { BioAiSafetyBoundaryEngine } from "./src/services/bioai/safety/BioAiSafe
 import { MembershipService } from "./src/server/membershipService";
 import { DEFAULT_ROLES } from "./src/services/rbacService";
 import { ROLE_ATOMIC_PERMISSIONS } from "./src/types/securityPrincipal";
+import { SecurityAdminBackendService } from "./src/server/securityAdminBackendService";
 
 dotenv.config();
 
@@ -321,6 +322,400 @@ app.post("/api/security/audit-event", async (req, res) => {
     res.status(500).json({ error: "Failed recording audit event" });
   }
 });
+
+// ============================================================================
+// CANONICAL SECURITY & IAM CONSOLE REST API (IEC 62443 / NIST SP 800-63B)
+// ============================================================================
+
+// 1. Users Management
+app.get(
+  "/api/security/users",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const isSuperAdmin =
+        Boolean(req.user?.isSuperAdmin) &&
+        req.user?.role === "superadmin" &&
+        (req.user?.scope === "GLOBAL" || req.user?.tenantId === "GLOBAL");
+      const tenantId = (req.query.tenantId as string) || req.user?.tenantId || "GLOBAL";
+      const users = await SecurityAdminBackendService.getUsers(tenantId, isSuperAdmin);
+      res.json({ users, count: users.length, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed retrieving users" });
+    }
+  }
+);
+
+app.post(
+  "/api/security/users",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const created = await SecurityAdminBackendService.createUser(req.body, actor);
+      res.status(201).json({ user: created, success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed creating user" });
+    }
+  }
+);
+
+app.put(
+  "/api/security/users/:id",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const updated = await SecurityAdminBackendService.updateUser(req.params.id, req.body, actor);
+      res.json({ user: updated, success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed updating user" });
+    }
+  }
+);
+
+app.patch(
+  "/api/security/users/:id/status",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const { status } = req.body;
+      if (!["ACTIVE", "INACTIVE", "LOCKED"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status value" });
+      }
+      const updated = await SecurityAdminBackendService.toggleUserStatus(req.params.id, status, actor);
+      res.json({ user: updated, success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed updating user status" });
+    }
+  }
+);
+
+app.post(
+  "/api/security/users/:id/reset-access",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const result = await SecurityAdminBackendService.resetUserAccess(req.params.id, actor);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed resetting access" });
+    }
+  }
+);
+
+app.delete(
+  "/api/security/users/:id",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      await SecurityAdminBackendService.deleteUser(req.params.id, actor);
+      res.json({ success: true, message: `Usuario ${req.params.id} eliminado correctamente.` });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed deleting user" });
+    }
+  }
+);
+
+// 2. Roles Management
+app.get(
+  "/api/security/roles",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const isSuperAdmin =
+        Boolean(req.user?.isSuperAdmin) &&
+        req.user?.role === "superadmin" &&
+        (req.user?.scope === "GLOBAL" || req.user?.tenantId === "GLOBAL");
+      const tenantId = (req.query.tenantId as string) || req.user?.tenantId || "GLOBAL";
+      const roles = await SecurityAdminBackendService.getRoles(tenantId, isSuperAdmin);
+      res.json({ roles, count: roles.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed retrieving roles" });
+    }
+  }
+);
+
+app.post(
+  "/api/security/roles",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const created = await SecurityAdminBackendService.createRole(req.body, actor);
+      res.status(201).json({ role: created, success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed creating role" });
+    }
+  }
+);
+
+app.put(
+  "/api/security/roles/:id",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const updated = await SecurityAdminBackendService.updateRole(req.params.id, req.body, actor);
+      res.json({ role: updated, success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed updating role" });
+    }
+  }
+);
+
+app.post(
+  "/api/security/roles/:id/duplicate",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const { newTitle } = req.body;
+      const duplicated = await SecurityAdminBackendService.duplicateRole(req.params.id, newTitle, actor);
+      res.status(201).json({ role: duplicated, success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed duplicating role" });
+    }
+  }
+);
+
+app.delete(
+  "/api/security/roles/:id",
+  requireAuth,
+  requireRole(["superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      await SecurityAdminBackendService.deleteRole(req.params.id, actor);
+      res.json({ success: true, message: `Rol ${req.params.id} eliminado correctamente.` });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed deleting role" });
+    }
+  }
+);
+
+// 3. Permissions Catalog & Effective Permissions
+app.get(
+  "/api/security/permissions",
+  requireAuth,
+  async (_req, res) => {
+    try {
+      const catalog = SecurityAdminBackendService.getPermissionCatalog();
+      res.json({ catalog, count: catalog.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed retrieving permissions catalog" });
+    }
+  }
+);
+
+app.get(
+  "/api/security/effective-permissions/:userId",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const effective = await SecurityAdminBackendService.getEffectivePermissionsForUser(req.params.userId);
+      res.json({ effectivePermissions: effective, userId: req.params.userId, count: effective.length });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed computing effective permissions" });
+    }
+  }
+);
+
+// 4. Access Scope Assignments
+app.get(
+  "/api/security/assignments",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const isSuperAdmin =
+        Boolean(req.user?.isSuperAdmin) &&
+        req.user?.role === "superadmin" &&
+        (req.user?.scope === "GLOBAL" || req.user?.tenantId === "GLOBAL");
+      const tenantId = (req.query.tenantId as string) || req.user?.tenantId || "GLOBAL";
+      const assignments = await SecurityAdminBackendService.getAssignments(tenantId, isSuperAdmin);
+      res.json({ assignments, count: assignments.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed retrieving assignments" });
+    }
+  }
+);
+
+app.post(
+  "/api/security/assignments",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const created = await SecurityAdminBackendService.createAssignment(req.body, actor);
+      res.status(201).json({ assignment: created, success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed creating assignment" });
+    }
+  }
+);
+
+app.delete(
+  "/api/security/assignments/:id",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      await SecurityAdminBackendService.deleteAssignment(req.params.id, actor);
+      res.json({ success: true, message: `Asignación ${req.params.id} eliminada.` });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed deleting assignment" });
+    }
+  }
+);
+
+// 5. Active Sessions Management
+app.get(
+  "/api/security/sessions",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const isSuperAdmin =
+        Boolean(req.user?.isSuperAdmin) &&
+        req.user?.role === "superadmin" &&
+        (req.user?.scope === "GLOBAL" || req.user?.tenantId === "GLOBAL");
+      const tenantId = (req.query.tenantId as string) || req.user?.tenantId || "GLOBAL";
+      const sessions = await SecurityAdminBackendService.getSessions(tenantId, isSuperAdmin);
+      res.json({ sessions, count: sessions.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed retrieving sessions" });
+    }
+  }
+);
+
+app.post(
+  "/api/security/sessions/revoke",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const { sessionId } = req.body;
+      if (!sessionId) return res.status(400).json({ error: "sessionId is required" });
+      await SecurityAdminBackendService.revokeSession(sessionId, actor);
+      res.json({ success: true, message: `Sesión ${sessionId} revocada exitosamente.` });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed revoking session" });
+    }
+  }
+);
+
+app.post(
+  "/api/security/sessions/revoke-all",
+  requireAuth,
+  requireRole(["administrador", "superadmin"]),
+  async (req, res) => {
+    try {
+      const actor = {
+        uid: req.user?.uid,
+        email: req.user?.email,
+        role: req.user?.role,
+        isSuperAdmin: req.user?.isSuperAdmin,
+        tenantId: req.user?.tenantId,
+      };
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: "userId is required" });
+      const count = await SecurityAdminBackendService.revokeAllSessionsForUser(userId, actor);
+      res.json({ success: true, revokedCount: count, message: `Todas las sesiones de ${userId} fueron revocadas (${count}).` });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed revoking user sessions" });
+    }
+  }
+);
 
 // API: Anomaly Diagnosis with Gemini (Requires Auth & Tenant Isolation)
 app.post(

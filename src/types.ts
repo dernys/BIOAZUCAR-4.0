@@ -465,6 +465,7 @@ export interface UserAccount {
   id: string;
   email: string;
   name: string;
+  lastName?: string;
   role: UserRole;
   tenantId: string; // Tenant ID or "GLOBAL" / "ALL" for Superadmin
   department: string;
@@ -475,7 +476,16 @@ export interface UserAccount {
   securityLevel: number;
   phone?: string;
   isActive?: boolean;
+  status?: "ACTIVE" | "INACTIVE" | "LOCKED";
   passwordHash?: string;
+  plantId?: string;
+  areaId?: string;
+  scope?: "GLOBAL" | "TENANT" | "PLANT" | "AREA";
+  assignedRoles?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  failedLoginAttempts?: number;
+  lockedUntil?: string;
 }
 
 export interface TenantMembership {
@@ -828,6 +838,11 @@ export interface RbacRoleDefinition {
   securityClearanceLevel: number;
   tenantId?: string;
   isSystem?: boolean;
+  permissions?: string[];
+  scope?: "GLOBAL" | "TENANT" | "PLANT" | "AREA";
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AuditLogEntry {
@@ -843,6 +858,16 @@ export interface AuditLogEntry {
   newValue?: string;
   status: "AUTHORIZED" | "DENIED" | "EXECUTED";
   ipAddress: string;
+  actorId?: string;
+  actorEmail?: string;
+  resource?: string;
+  resourceId?: string;
+  result?: "SUCCESS" | "DENIED" | "FAILED";
+  reason?: string;
+  correlationId?: string;
+  source?: string;
+  metadata?: Record<string, any>;
+  sha256Hash?: string;
 }
 
 // ---------------------------------------------------------
