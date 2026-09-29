@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { SecurityAdminBackendService } from "../server/securityAdminBackendService";
 import {
+  AtomicPermission,
   CANONICAL_PERMISSION_CATALOG,
   ROLE_ATOMIC_PERMISSIONS,
   hasAtomicPermission,
@@ -56,7 +57,7 @@ describe("BioAzúcar 4.0 — Consola de Seguridad IAM & Gobierno de Autorizació
         membershipId: "mem-01",
         roleId: "role-operador",
         role: "operador",
-        permissions: ["user.read", "alarm.ack"],
+        permissions: ["user.read", "alarm.ack"] as AtomicPermission[],
         isSuperAdmin: false,
         securityLevel: 2,
         authenticationAssurance: "AAL2" as const,
