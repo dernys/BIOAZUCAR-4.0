@@ -20,6 +20,9 @@ import {
   CrossTenantViolationError,
   rateLimiter,
   securityHeadersMiddleware,
+  correlationIdMiddleware,
+  requireAtomicPermission,
+  requireAssuranceLevel,
   logServerAuditEvent,
   logServerAuditEventAsync,
   getServerAuditTrail,
@@ -62,12 +65,12 @@ import {
 import { CommissioningCoverageEngine } from "./src/services/edge/verification/CommissioningCoverageEngine";
 import { StoreAndForwardCompressor } from "./src/services/edge/storeAndForward/StoreAndForwardCompressor";
 import { SemanticProcessConflictReconciler } from "./src/services/semantic/SemanticProcessConflictReconciler";
-import {
-  webAuthnServerService,
-  WebAuthnSecurityError,
-} from "./src/services/security/webauthn/WebAuthnServerService";
+import { webAuthnServerService, WebAuthnSecurityError } from "./src/services/security/webauthn/WebAuthnServerService";
 import { SuperAdminCredentialsService } from "./src/services/security/SuperAdminCredentialsService";
 import { BioAiSafetyBoundaryEngine } from "./src/services/bioai/safety/BioAiSafetyBoundaryEngine";
+import { MembershipService } from "./src/server/membershipService";
+import { DEFAULT_ROLES } from "./src/services/rbacService";
+import { ROLE_ATOMIC_PERMISSIONS } from "./src/types/securityPrincipal";
 
 dotenv.config();
 
@@ -81,6 +84,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Apply IEC 62443 / OWASP Security Headers
 app.use(securityHeadersMiddleware);
+app.use(correlationIdMiddleware);
 app.use(express.json({ limit: "1mb" }));
 
 // Prometheus HTTP Request Duration & Count Tracking Middleware
@@ -251,7 +255,37 @@ app.get(
   requireStrictTenantIsolation(),
   async (req, res) => {
     const requestedTenant = req.query.tenantId as string;
-    const effectiveTenant = req.user?.isSuperAdmin && requestedTenant ? requestedTenant : req.user?.tenantId;
+    const isSuperAdmin =
+      Boolean(req.user?.isSuperAdmin) &&
+      req.user?.role === "superadmin" &&
+      (req.user?.scope === "GLOBAL" || req.user?.tenantId === "GLOBAL");
+
+    // Strict Audit Isolation (SEC-P0 §18): Non-superadmins can ONLY query their own tenant.
+    if (requestedTenant && requestedTenant !== req.user?.tenantId && !isSuperAdmin) {
+      logServerAuditEvent({
+        actorUid: req.user?.uid,
+        actorEmail: req.user?.email,
+        actorRole: req.user?.role,
+        tenantId: req.user?.tenantId,
+        action: "CROSS_TENANT_ACCESS_ATTEMPT",
+        resource: req.originalUrl || req.path,
+        result: "DENIED",
+        severity: "CRITICAL",
+        correlationId: req.correlationId,
+        ip: req.ip,
+        metadata: {
+          reason: "Non-superadmin user attempted to query audit logs of a different tenant or GLOBAL.",
+          requestedTenant,
+          userTenant: req.user?.tenantId,
+        },
+      });
+      return res.status(403).json({
+        error: "Acceso denegado: Solo el SuperAdministrador Global puede consultar auditorías de otros tenants o GLOBAL.",
+        code: "CROSS_TENANT_DENIED",
+      });
+    }
+
+    const effectiveTenant = isSuperAdmin && requestedTenant ? requestedTenant : req.user?.tenantId;
     const trail = await fetchDurableAuditTrail(effectiveTenant, 100);
     res.json({
       auditTrail: trail,
@@ -267,12 +301,13 @@ app.post("/api/security/audit-event", async (req, res) => {
     const entry = req.body;
     if (entry && entry.action) {
       await logServerAuditEventAsync({
-        actorUid: entry.userName || "op-terminal",
-        actorRole: entry.userRole || "operador",
-        tenantId: entry.tenantId || "BIOAZUCAR-DEMO",
+        actorUid: entry.userName || entry.actorUid || "op-terminal",
+        actorRole: entry.userRole || entry.actorRole || "ANONYMOUS",
+        tenantId: entry.tenantId || req.user?.tenantId || "GLOBAL",
         action: entry.action,
-        resource: entry.module || "SYSTEM",
+        resource: entry.module || entry.resource || "SYSTEM",
         result: entry.status === "DENIED" ? "DENIED" : "SUCCESS",
+        correlationId: req.correlationId || entry.correlationId,
         ip: entry.ipAddress || req.ip || "127.0.0.1",
         metadata: {
           targetId: entry.targetId,
@@ -1388,7 +1423,7 @@ app.get("/api/tags", async (req, res) => {
     const user = await parseAndVerifyToken(authHeader);
     if (user) {
       callerTenant = user.tenantId;
-      isSuperAdmin = user.isSuperAdmin || callerTenant === "GLOBAL";
+      isSuperAdmin = Boolean(user.isSuperAdmin) && user.role === "superadmin" && user.tenantId === "GLOBAL";
     }
   }
 
@@ -1398,7 +1433,7 @@ app.get("/api/tags", async (req, res) => {
   if (callerTenant && !isSuperAdmin && requestedTenant && requestedTenant !== callerTenant) {
     logServerAuditEvent({
       actorUid: (req as any).user?.uid || "api-caller",
-      actorRole: (req as any).user?.role || "operador",
+      actorRole: (req as any).user?.role || "ANONYMOUS",
       tenantId: callerTenant,
       action: "CROSS_TENANT_TAG_QUERY_DENIED",
       resource: "/api/tags",
@@ -2338,9 +2373,9 @@ Devuelve SIEMPRE un JSON válido con esta estructura:
 
     // Server-side audit event for AI completion (IEC 62443 SL3 audit requirement)
     logServerAuditEvent({
-      actorUid: req.user?.uid || "anonymous",
-      actorRole: req.user?.role || "operador",
-      tenantId: req.user?.tenantId || "tenant-bioazucar-01",
+      actorUid: req.user?.uid || "ANONYMOUS",
+      actorRole: req.user?.role || "NONE",
+      tenantId: req.user?.tenantId || "UNKNOWN",
       action: "AI_COPILOT_INVOCATION",
       eventType: "CONFIGURATION_CHANGE",
       resource: "/api/copilot",
@@ -2410,9 +2445,9 @@ app.post(
     }
 
     logServerAuditEvent({
-      actorUid: req.user?.uid || "system",
-      actorRole: req.user?.role || "admin",
-      tenantId: req.user?.tenantId || "tenant-bioazucar-01",
+      actorUid: req.user?.uid || "ANONYMOUS",
+      actorRole: req.user?.role || "NONE",
+      tenantId: req.user?.tenantId || "UNKNOWN",
       action: "AI_GATEWAY_CONFIG_UPDATE",
       eventType: "CONFIGURATION_CHANGE",
       resource: "/api/ai/gateway/config",
@@ -2641,6 +2676,408 @@ app.post("/api/admin/superadmin-credentials/verify", (req, res) => {
 
   res.json({ success: true, email: credService.getSuperAdminEmail() });
 });
+
+// ============================================================================
+// SuperAdmin & Management Plane Endpoints (SEC-P0 §7, §16, §19, §20)
+// ============================================================================
+
+// Tenants Management
+app.get("/api/admin/tenants", requireAuth, requireRole(["superadmin"]), async (_req, res) => {
+  try {
+    const db = getAdminFirestore();
+    const snap = await db.collection("tenants").get();
+    const tenants: any[] = [];
+    snap.forEach((d: any) => tenants.push({ id: d.id, ...d.data() }));
+    if (tenants.length === 0) {
+      tenants.push({
+        id: "BIOAZUCAR-DEMO",
+        name: "BioAzúcar 4.0 Smart Mill (Site Central)",
+        code: "BIOAZUCAR-DEMO",
+        country: "Venezuela",
+        status: "ACTIVE",
+      });
+    }
+    res.json({ tenants });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed retrieving tenants" });
+  }
+});
+
+app.post(
+  "/api/admin/tenants",
+  requireAuth,
+  requireRole(["superadmin"]),
+  requireAssuranceLevel("AAL2"),
+  async (req, res) => {
+    try {
+      const { tenantId, name, code, country, industrySector } = req.body || {};
+      if (!tenantId || !name) {
+        return res.status(400).json({ error: "tenantId and name are required." });
+      }
+      const db = getAdminFirestore();
+      const newTenant = {
+        id: tenantId,
+        name,
+        code: code || tenantId,
+        country: country || "Venezuela",
+        industrySector: industrySector || "Agroindustrial",
+        status: "ACTIVE",
+        createdAt: new Date().toISOString(),
+        createdBy: req.user?.uid,
+      };
+      await db.collection("tenants").doc(tenantId).set(newTenant, { merge: true });
+
+      await logServerAuditEventAsync({
+        actorUid: req.user?.uid,
+        actorEmail: req.user?.email,
+        actorRole: req.user?.role,
+        tenantId: "GLOBAL",
+        action: "TENANT_CREATED",
+        resource: `/api/admin/tenants/${tenantId}`,
+        result: "SUCCESS",
+        severity: "INFO",
+        correlationId: req.correlationId,
+        metadata: { tenantId, name },
+      });
+
+      res.status(201).json({ success: true, tenant: newTenant });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed creating tenant" });
+    }
+  }
+);
+
+app.put(
+  "/api/admin/tenants/:id",
+  requireAuth,
+  requireRole(["superadmin"]),
+  async (req, res) => {
+    try {
+      const tenantId = req.params.id;
+      const updates = req.body || {};
+      delete updates.id;
+      delete updates.tenantId;
+
+      const db = getAdminFirestore();
+      await db.collection("tenants").doc(tenantId).set(updates, { merge: true });
+
+      await logServerAuditEventAsync({
+        actorUid: req.user?.uid,
+        actorEmail: req.user?.email,
+        actorRole: req.user?.role,
+        tenantId: "GLOBAL",
+        action: "TENANT_UPDATED",
+        resource: `/api/admin/tenants/${tenantId}`,
+        result: "SUCCESS",
+        severity: "INFO",
+        correlationId: req.correlationId,
+        metadata: { tenantId, updatedFields: Object.keys(updates) },
+      });
+
+      res.json({ success: true, tenantId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed updating tenant" });
+    }
+  }
+);
+
+app.delete(
+  "/api/admin/tenants/:id",
+  requireAuth,
+  requireRole(["superadmin"]),
+  requireAssuranceLevel("AAL2"),
+  async (req, res) => {
+    try {
+      const tenantId = req.params.id;
+      if (tenantId === "GLOBAL" || tenantId === "BIOAZUCAR-DEMO") {
+        return res.status(400).json({ error: "Cannot delete root system tenants." });
+      }
+
+      const db = getAdminFirestore();
+      await db.collection("tenants").doc(tenantId).delete();
+
+      await logServerAuditEventAsync({
+        actorUid: req.user?.uid,
+        actorEmail: req.user?.email,
+        actorRole: req.user?.role,
+        tenantId: "GLOBAL",
+        action: "TENANT_DELETED",
+        resource: `/api/admin/tenants/${tenantId}`,
+        result: "SUCCESS",
+        severity: "CRITICAL",
+        correlationId: req.correlationId,
+        metadata: { tenantId },
+      });
+
+      res.json({ success: true, deletedTenantId: tenantId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed deleting tenant" });
+    }
+  }
+);
+
+// Users & Memberships Management
+app.get("/api/admin/users", requireAuth, requireRole(["administrador", "superadmin"]), async (req, res) => {
+  try {
+    const isSuper =
+      Boolean(req.user?.isSuperAdmin) &&
+      req.user?.role === "superadmin" &&
+      (req.user?.scope === "GLOBAL" || req.user?.tenantId === "GLOBAL");
+    const targetTenant = isSuper ? (req.query.tenantId as string) || "GLOBAL" : req.user?.tenantId;
+    const memberships = MembershipService.getMembershipsByTenant(targetTenant || "GLOBAL");
+    res.json({ memberships, tenantId: targetTenant });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed listing users" });
+  }
+});
+
+app.post("/api/admin/users", requireAuth, requireRole(["administrador", "superadmin"]), async (req, res) => {
+  try {
+    const { userId, email, role, tenantId, permissions } = req.body || {};
+    if (!userId || !email || !role) {
+      return res.status(400).json({ error: "userId, email, and role are required." });
+    }
+
+    const isSuper = Boolean(req.user?.isSuperAdmin) && req.user?.role === "superadmin";
+    // Non-superadmin cannot assign superadmin role
+    if (role === "superadmin" && !isSuper) {
+      return res.status(403).json({
+        error: "Only global superadmins can assign superadmin role.",
+        code: "FORBIDDEN_PRIVILEGE_ESCALATION",
+      });
+    }
+
+    const effectiveTenant = isSuper && tenantId ? tenantId : req.user?.tenantId;
+    const membership: any = {
+      id: `mem-${userId}-${Date.now().toString(36)}`,
+      userId,
+      email,
+      tenantId: effectiveTenant,
+      role,
+      permissions: permissions || (ROLE_ATOMIC_PERMISSIONS[role] || []),
+      securityLevel: role === "superadmin" ? 5 : role === "administrador" ? 4 : role === "supervisor" ? 3 : 2,
+      status: "ACTIVE",
+      createdAt: new Date().toISOString(),
+      assignedBy: req.user?.uid,
+    };
+
+    await MembershipService.registerMembership(membership);
+
+    await logServerAuditEventAsync({
+      actorUid: req.user?.uid,
+      actorEmail: req.user?.email,
+      actorRole: req.user?.role,
+      tenantId: effectiveTenant,
+      action: "USER_CREATED",
+      resource: `/api/admin/users/${userId}`,
+      result: "SUCCESS",
+      severity: "INFO",
+      correlationId: req.correlationId,
+      metadata: { userId, email, role, tenantId: effectiveTenant },
+    });
+
+    await logServerAuditEventAsync({
+      actorUid: req.user?.uid,
+      actorEmail: req.user?.email,
+      actorRole: req.user?.role,
+      tenantId: effectiveTenant,
+      action: "MEMBERSHIP_CHANGED",
+      resource: `/api/admin/memberships/${membership.id}`,
+      result: "SUCCESS",
+      severity: "INFO",
+      correlationId: req.correlationId,
+      metadata: { userId, role, tenantId: effectiveTenant },
+    });
+
+    res.status(201).json({ success: true, membership });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed creating user" });
+  }
+});
+
+app.put("/api/admin/users/:id/disable", requireAuth, requireRole(["administrador", "superadmin"]), async (req, res) => {
+  try {
+    const targetUserId = req.params.id;
+    MembershipService.disableMembership(targetUserId);
+
+    await logServerAuditEventAsync({
+      actorUid: req.user?.uid,
+      actorEmail: req.user?.email,
+      actorRole: req.user?.role,
+      tenantId: req.user?.tenantId,
+      action: "USER_DISABLED",
+      resource: `/api/admin/users/${targetUserId}/disable`,
+      result: "SUCCESS",
+      severity: "WARNING",
+      correlationId: req.correlationId,
+      metadata: { targetUserId },
+    });
+
+    res.json({ success: true, targetUserId, status: "DISABLED" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed disabling user" });
+  }
+});
+
+app.delete(
+  "/api/admin/users/:id",
+  requireAuth,
+  requireRole(["superadmin"]),
+  requireAssuranceLevel("AAL2"),
+  async (req, res) => {
+    try {
+      const targetUserId = req.params.id;
+      MembershipService.deleteMembership(targetUserId);
+
+      await logServerAuditEventAsync({
+        actorUid: req.user?.uid,
+        actorEmail: req.user?.email,
+        actorRole: req.user?.role,
+        tenantId: req.user?.tenantId,
+        action: "USER_DELETED",
+        resource: `/api/admin/users/${targetUserId}`,
+        result: "SUCCESS",
+        severity: "CRITICAL",
+        correlationId: req.correlationId,
+        metadata: { targetUserId },
+      });
+
+      res.json({ success: true, deletedUserId: targetUserId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed deleting user" });
+    }
+  }
+);
+
+app.post("/api/admin/users/:id/role", requireAuth, requireRole(["administrador", "superadmin"]), async (req, res) => {
+  try {
+    const targetUserId = req.params.id;
+    const { newRole, permissions } = req.body || {};
+    if (!newRole) {
+      return res.status(400).json({ error: "newRole is required." });
+    }
+
+    const isSuper = Boolean(req.user?.isSuperAdmin) && req.user?.role === "superadmin";
+    if (newRole === "superadmin" && !isSuper) {
+      return res.status(403).json({
+        error: "Only global superadmins can promote to superadmin.",
+        code: "FORBIDDEN_PRIVILEGE_ESCALATION",
+      });
+    }
+
+    // Role changes to superadmin require AAL2 MFA assurance (SEC-P0 §19)
+    if (newRole === "superadmin") {
+      const currentAssurance = req.principal?.authenticationAssurance || req.user?.authenticationAssurance || "AAL1";
+      if (currentAssurance === "AAL1") {
+        return res.status(403).json({
+          error: "Superadmin role assignment requires AAL2 / MFA verification.",
+          code: "FORBIDDEN_MFA_REQUIRED",
+        });
+      }
+    }
+
+    const updated = MembershipService.updateMembershipRole(targetUserId, newRole, permissions);
+    // Invalidate cached session immediately (SEC-P0 §20)
+    MembershipService.invalidateMembership(targetUserId);
+
+    await logServerAuditEventAsync({
+      actorUid: req.user?.uid,
+      actorEmail: req.user?.email,
+      actorRole: req.user?.role,
+      tenantId: req.user?.tenantId,
+      action: "ROLE_CHANGED",
+      resource: `/api/admin/users/${targetUserId}/role`,
+      result: "SUCCESS",
+      severity: "WARNING",
+      correlationId: req.correlationId,
+      metadata: { targetUserId, newRole, updated },
+    });
+
+    res.json({ success: true, targetUserId, newRole });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed changing role" });
+  }
+});
+
+// Roles Registry & Policies
+app.get("/api/admin/roles", requireAuth, (_req, res) => {
+  res.json({
+    roles: DEFAULT_ROLES,
+    atomicPermissions: ROLE_ATOMIC_PERMISSIONS,
+  });
+});
+
+app.post(
+  "/api/admin/roles",
+  requireAuth,
+  requireRole(["superadmin"]),
+  requireAssuranceLevel("AAL2"),
+  async (req, res) => {
+    try {
+      const { role, title, permissions } = req.body || {};
+      if (!role) {
+        return res.status(400).json({ error: "role name is required." });
+      }
+
+      await logServerAuditEventAsync({
+        actorUid: req.user?.uid,
+        actorEmail: req.user?.email,
+        actorRole: req.user?.role,
+        tenantId: "GLOBAL",
+        action: "ROLE_CHANGED",
+        resource: `/api/admin/roles/${role}`,
+        result: "SUCCESS",
+        severity: "INFO",
+        correlationId: req.correlationId,
+        metadata: { role, title, permissions },
+      });
+
+      res.json({ success: true, role, title, permissions });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed creating role" });
+    }
+  }
+);
+
+app.get("/api/admin/policies", requireAuth, (_req, res) => {
+  res.json({
+    policies: {
+      passwordMinLength: 12,
+      mfaRequiredForSuperadmin: true,
+      sessionTimeoutSec: 1800,
+      failClosedTenancy: true,
+      strictAuditChain: true,
+    },
+  });
+});
+
+app.put(
+  "/api/admin/policies",
+  requireAuth,
+  requireRole(["superadmin"]),
+  requireAssuranceLevel("AAL2"),
+  async (req, res) => {
+    try {
+      const updates = req.body || {};
+      await logServerAuditEventAsync({
+        actorUid: req.user?.uid,
+        actorEmail: req.user?.email,
+        actorRole: req.user?.role,
+        tenantId: "GLOBAL",
+        action: "SECURITY_POLICY_CHANGED",
+        resource: "/api/admin/policies",
+        result: "SUCCESS",
+        severity: "CRITICAL",
+        correlationId: req.correlationId,
+        metadata: { updates },
+      });
+
+      res.json({ success: true, policies: updates });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed updating security policies" });
+    }
+  }
+);
 
 // ============================================================================
 // Zero-Touch Remote Provisioning (ZTP) & X.509 mTLS Endpoints (PRV-02 / P0-05)

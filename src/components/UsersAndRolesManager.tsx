@@ -114,7 +114,7 @@ export const UsersAndRolesManager: React.FC<UsersAndRolesManagerProps> = ({
     tenantId: "GLOBAL",
   });
 
-  const isSuperAdmin = currentUser.isSuperAdmin || currentUser.role === "superadmin";
+  const isSuperAdmin = Boolean(currentUser.isSuperAdmin) && currentUser.role === "superadmin";
 
   // ----------------------------------------------------
   // USER HANDLERS
@@ -133,7 +133,7 @@ export const UsersAndRolesManager: React.FC<UsersAndRolesManagerProps> = ({
       phone: "+58 255 " + Math.floor(100 + Math.random() * 900) + "-" + Math.floor(1000 + Math.random() * 9000),
       isSuperAdmin: false,
       isActive: true,
-      tenantId: currentUser.tenantId || "tenant-bioazucar-01",
+      tenantId: currentUser.tenantId || (isSuperAdmin ? "GLOBAL" : "BIOAZUCAR-DEMO"),
     });
     setIsUserModalOpen(true);
   };
@@ -151,7 +151,7 @@ export const UsersAndRolesManager: React.FC<UsersAndRolesManagerProps> = ({
       phone: u.phone,
       isSuperAdmin: !!u.isSuperAdmin,
       isActive: u.isActive !== undefined ? u.isActive : true,
-      tenantId: u.tenantId || "tenant-bioazucar-01",
+      tenantId: u.tenantId || currentUser.tenantId || "BIOAZUCAR-DEMO",
     });
     setIsUserModalOpen(true);
   };

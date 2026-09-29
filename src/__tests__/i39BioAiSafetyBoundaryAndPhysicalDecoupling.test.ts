@@ -392,6 +392,20 @@ describe("BioAzúcar 4.0 — Iteration 39: BioAI Safety Boundary & Physical Deco
   // SUITE 5: SUPERADMIN CREDENTIALS & PRODUCTION DEPLOYMENT LIFECYCLE
   // ============================================================================
   describe("Suite 5: SuperAdmin Credentials & Production Deployment Lifecycle", () => {
+    const originalEnvPass = process.env.SUPERADMIN_PASSWORD;
+
+    beforeEach(() => {
+      process.env.SUPERADMIN_PASSWORD = "BioAzucarSuperAdmin2026!#Dev";
+    });
+
+    afterEach(() => {
+      if (originalEnvPass !== undefined) {
+        process.env.SUPERADMIN_PASSWORD = originalEnvPass;
+      } else {
+        delete process.env.SUPERADMIN_PASSWORD;
+      }
+    });
+
     it("retrieves configured superadmin email from environment variable", () => {
       const email = credService.getSuperAdminEmail();
       expect(email).toBe("ing.dernys@gmail.com");

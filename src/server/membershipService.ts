@@ -148,14 +148,28 @@ export class MembershipService {
     // 1. Check local authorized cache
     const cached = membershipCache.get(uid);
     if (cached) {
+      if (cached.status && cached.status !== "ACTIVE") {
+        return null; // Disabled membership fail-closed
+      }
       return { ...cached };
     }
 
-    // 2. Check if email maps to standard pre-seeded user identity
+    // 2. Check if email maps to standard authorized pre-seeded enterprise identity
     if (email) {
-      for (const m of membershipCache.values()) {
-        if (email.toLowerCase().startsWith(m.role) || email.toLowerCase().includes(m.userId)) {
-          return { ...m, userId: uid };
+      const normalized = email.toLowerCase().trim();
+      const isPreseededDomain =
+        normalized.endsWith("@bioazucar.com") ||
+        normalized.endsWith("@ingenio-a.com") ||
+        normalized.endsWith("@ingenio-b.com");
+
+      if (isPreseededDomain) {
+        for (const m of membershipCache.values()) {
+          const expectedRoleEmail = `${m.role}@bioazucar.com`;
+          const expectedUserEmail = `${m.userId}@bioazucar.com`;
+          if (normalized === expectedRoleEmail || normalized === expectedUserEmail || normalized.includes(m.userId)) {
+            if (m.status && m.status !== "ACTIVE") return null;
+            return { ...m, userId: uid };
+          }
         }
       }
     }
@@ -232,9 +246,20 @@ export class MembershipService {
     }
 
     if (email) {
-      for (const m of membershipCache.values()) {
-        if (email.toLowerCase().startsWith(m.role) || email.toLowerCase().includes(m.userId)) {
-          return { ...m, userId: uid };
+      const normalized = email.toLowerCase().trim();
+      const isPreseededDomain =
+        normalized.endsWith("@bioazucar.com") ||
+        normalized.endsWith("@ingenio-a.com") ||
+        normalized.endsWith("@ingenio-b.com");
+
+      if (isPreseededDomain) {
+        for (const m of membershipCache.values()) {
+          const expectedRoleEmail = `${m.role}@bioazucar.com`;
+          const expectedUserEmail = `${m.userId}@bioazucar.com`;
+          if (normalized === expectedRoleEmail || normalized === expectedUserEmail || normalized.includes(m.userId)) {
+            if (m.status && m.status !== "ACTIVE") return null;
+            return { ...m, userId: uid };
+          }
         }
       }
     }
@@ -263,5 +288,53 @@ export class MembershipService {
 
   public static getAllCachedMemberships(): TenantMembership[] {
     return Array.from(membershipCache.values());
+  }
+
+  public static getMembershipsByTenant(tenantId: string): TenantMembership[] {
+    if (tenantId === "GLOBAL") {
+      return Array.from(membershipCache.values());
+    }
+    return Array.from(membershipCache.values()).filter((m) => m.tenantId === tenantId);
+  }
+
+  public static invalidateMembership(userId: string): void {
+    membershipCache.delete(userId);
+  }
+
+  public static disableMembership(userId: string): void {
+    const existing = membershipCache.get(userId);
+    if (existing) {
+      existing.status = "DISABLED" as any;
+      membershipCache.set(userId, existing);
+    }
+  }
+
+  public static updateMembershipRole(userId: string, newRole: UserRole, permissions?: string[]): boolean {
+    const existing = membershipCache.get(userId);
+    if (existing) {
+      existing.role = newRole;
+      if (permissions) {
+        existing.permissions = permissions;
+      }
+      existing.securityLevel =
+        newRole === "superadmin" ? 5 : newRole === "administrador" ? 4 : newRole === "supervisor" ? 3 : 2;
+      membershipCache.set(userId, existing);
+      return true;
+    }
+    return false;
+  }
+
+  public static updateMembershipStatus(userId: string, status: "ACTIVE" | "SUSPENDED" | "INVITED" | "DISABLED"): boolean {
+    const existing = membershipCache.get(userId);
+    if (existing) {
+      existing.status = status as any;
+      membershipCache.set(userId, existing);
+      return true;
+    }
+    return false;
+  }
+
+  public static deleteMembership(userId: string): boolean {
+    return membershipCache.delete(userId);
   }
 }

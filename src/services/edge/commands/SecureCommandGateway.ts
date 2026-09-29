@@ -16,6 +16,7 @@ import crypto from "crypto";
 import { industrialDriverManager } from "../drivers/IndustrialDriverManager";
 import { IndustrialDataPoint } from "../../../types";
 import { logAuditEventToDb } from "../../dbService";
+import { AuditChainService } from "../../security/AuditChainService";
 
 export type CommandGatewayResultStatus =
   | "EXECUTED"
@@ -36,6 +37,8 @@ export interface FourEyesApproval {
   approverRole: string;
   approverName?: string;
   approvedAt: string;
+  tenantId?: string;
+  reason?: string;
 }
 
 export interface SecureWriteCommandRequest {
@@ -48,12 +51,15 @@ export interface SecureWriteCommandRequest {
     userName?: string;
     role: string;
     twoFactorVerified: boolean;
+    tenantId?: string;
   };
   reason: string;
   timestamp: string;
   nonce: string;
   signature?: string;
   fourEyesApproval?: FourEyesApproval;
+  tenantId?: string;
+  correlationId?: string;
 }
 
 export interface InterlockRule {
@@ -272,6 +278,7 @@ export class SecureCommandGateway {
     const userRole = request.requester.role.toLowerCase();
     const authorizedRoles = [
       "supervisor",
+      "superadmin",
       "super_admin",
       "administrador",
       "ingeniero_planta",
@@ -351,7 +358,10 @@ export class SecureCommandGateway {
     }
 
     // ------------------------------------------------------------------------
-    // STEP 4: Physical Interlocks, Range Limits & Four-Eyes Check
+    // STEP 4: Physical Interlocks, Range Limits & Four-Eyes Check (SEC-P0 §13 & §14)
+    // Absolute Safety Hierarchy:
+    // Physical Safety -> Process Interlock -> Operational Safety -> Authorization Policy -> RBAC -> User.
+    // RULE: SuperAdmin role CANNOT bypass physical interlocks, range bounds, or four-eyes rules.
     // ------------------------------------------------------------------------
     const matchingRule = this.interlockRules.find((rule) => rule.tagPattern.test(request.tag));
 
@@ -506,12 +516,14 @@ export class SecureCommandGateway {
     request: SecureWriteCommandRequest,
     result: CommandExecutionResult
   ): Promise<void> {
+    const effectiveTenantId = request.tenantId || request.requester.tenantId || "BIOAZUCAR-DEMO";
+    const correlationId = request.correlationId || `corr-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
     try {
       await logAuditEventToDb({
         timestamp: result.executedAt,
         userRole: request.requester.role as any,
         userName: request.requester.userName || request.requester.userId,
-        action: "TAG_WRITE_COMMAND",
+        action: result.success ? "CRITICAL_COMMAND_EXECUTED" : "CRITICAL_COMMAND_REJECTED",
         module: "COMMAND_GATEWAY_IEC62443",
         targetId: request.tag,
         previousValue: "N/A",
@@ -523,11 +535,34 @@ export class SecureCommandGateway {
           actualEchoValue: result.actualEchoValue,
           driverId: request.targetDriverId,
           reason: request.reason,
+          correlationId,
           fourEyesApprover: request.fourEyesApproval?.approvedByUserId,
         }),
         status: result.success ? "EXECUTED" : "DENIED",
         ipAddress: "127.0.0.1",
-        tenantId: "tenant-bioazucar-01",
+        tenantId: effectiveTenantId,
+      });
+
+      // Cryptographic Audit Chaining (IEC 62443 SL3)
+      AuditChainService.getInstance().recordChainedEvent({
+        actorUid: request.requester.userId,
+        actorRole: request.requester.role,
+        tenantId: effectiveTenantId,
+        action: result.success ? "CRITICAL_COMMAND_EXECUTED" : "CRITICAL_COMMAND_REJECTED",
+        resource: request.tag,
+        result: result.success ? "SUCCESS" : "DENIED",
+        severity: result.success ? "INFO" : "CRITICAL",
+        correlationId,
+        metadata: {
+          commandId: request.commandId,
+          status: result.status,
+          requestedValue: request.value,
+          echoValue: result.actualEchoValue,
+          driverId: request.targetDriverId,
+          reason: request.reason,
+          approverUid: request.fourEyesApproval?.approvedByUserId,
+          approverRole: request.fourEyesApproval?.approverRole,
+        },
       });
     } catch {
       // Non-blocking in isolated unit tests

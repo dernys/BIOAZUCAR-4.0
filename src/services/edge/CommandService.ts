@@ -318,8 +318,11 @@ export class CommandService {
       }
     }
 
-    const role: UserRole = params.role || "operador";
-    const plantId = params.tenantId || "tenant-bioazucar-01";
+    if (!params.role || !params.tenantId) {
+      throw new Error("SEC-P0 Fail-Closed: Command submission requires explicit authenticated role and tenantId.");
+    }
+    const role: UserRole = params.role;
+    const plantId = params.tenantId;
 
     const submitRes = await this.submitCommand({
       userId: params.operatorId || "OP-SYS",

@@ -1732,7 +1732,7 @@ export async function logAuditEventToDb(
   const fullEntry: AuditLogEntry = {
     ...entry,
     id: newId,
-    tenantId: tenantId || entry.tenantId || "tenant-bioazucar-01",
+    tenantId: tenantId || entry.tenantId || (auth.currentUser as any)?.tenantId || "GLOBAL",
     timestamp: entry.timestamp || new Date().toISOString().replace("T", " ").substring(0, 19),
   };
 
