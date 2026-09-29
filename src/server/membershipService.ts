@@ -113,6 +113,38 @@ export class MembershipService {
   ): Promise<TenantMembership | null> {
     if (!uid) return null;
 
+    // 0. Environment-configured Superadmin check (IEC 62443 Root)
+    const configuredSuperAdminEmail = (
+      process.env.SUPERADMIN_EMAIL ||
+      process.env.VITE_SUPERADMIN_EMAIL ||
+      "ing.dernys@gmail.com"
+    ).toLowerCase().trim();
+    if (email && email.toLowerCase().trim() === configuredSuperAdminEmail) {
+      return {
+        id: "mem-superadmin-env",
+        userId: uid,
+        tenantId: "GLOBAL",
+        role: "superadmin",
+        permissions: [
+          "ROOT_ACCESS",
+          "MANAGE_TENANTS",
+          "MANAGE_USERS",
+          "VIEW_ALL_TENANTS",
+          "MODIFY_SETPOINTS",
+          "MODIFY_PLANT_PARAMS",
+          "ACKNOWLEDGE_ALARM",
+          "SHELVE_ALARM",
+          "CLEAR_ALARM",
+          "RESET_DATABASE",
+          "EXPORT_HISTORIAN",
+        ],
+        securityLevel: 5,
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00Z",
+        assignedBy: "ENV_VARIABLE_ROOT",
+      };
+    }
+
     // 1. Check local authorized cache
     const cached = membershipCache.get(uid);
     if (cached) {
@@ -166,6 +198,37 @@ export class MembershipService {
 
     if (membershipCache.has(uid)) {
       return { ...membershipCache.get(uid)! };
+    }
+
+    const configuredSuperAdminEmail = (
+      process.env.SUPERADMIN_EMAIL ||
+      process.env.VITE_SUPERADMIN_EMAIL ||
+      "ing.dernys@gmail.com"
+    ).toLowerCase().trim();
+    if (email && email.toLowerCase().trim() === configuredSuperAdminEmail) {
+      return {
+        id: "mem-superadmin-env",
+        userId: uid,
+        tenantId: "GLOBAL",
+        role: "superadmin",
+        permissions: [
+          "ROOT_ACCESS",
+          "MANAGE_TENANTS",
+          "MANAGE_USERS",
+          "VIEW_ALL_TENANTS",
+          "MODIFY_SETPOINTS",
+          "MODIFY_PLANT_PARAMS",
+          "ACKNOWLEDGE_ALARM",
+          "SHELVE_ALARM",
+          "CLEAR_ALARM",
+          "RESET_DATABASE",
+          "EXPORT_HISTORIAN",
+        ],
+        securityLevel: 5,
+        status: "ACTIVE",
+        createdAt: "2026-01-01T00:00:00Z",
+        assignedBy: "ENV_VARIABLE_ROOT",
+      };
     }
 
     if (email) {

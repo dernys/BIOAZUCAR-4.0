@@ -260,7 +260,12 @@ export interface IndustrialRecommendation {
   createdAt: string;
   isSimulated?: boolean;
   provenance?: string;
+  modelTier?: "FIRST_PRINCIPLES_PHYSICS" | "STATISTICAL_EMPIRICAL" | "MACHINE_LEARNING" | "EXPERT_HEURISTICS" | "GENERATIVE_LLM";
+  safetyBoundaryEvaluated?: boolean;
+  safetyBoundaryHash?: string;
 }
+
+export * from "./bioaiSafety";
 
 /**
  * MODULE 6: Industrial Data Gateway Models

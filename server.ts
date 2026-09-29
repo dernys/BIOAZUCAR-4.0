@@ -66,6 +66,8 @@ import {
   webAuthnServerService,
   WebAuthnSecurityError,
 } from "./src/services/security/webauthn/WebAuthnServerService";
+import { SuperAdminCredentialsService } from "./src/services/security/SuperAdminCredentialsService";
+import { BioAiSafetyBoundaryEngine } from "./src/services/bioai/safety/BioAiSafetyBoundaryEngine";
 
 dotenv.config();
 
@@ -2444,6 +2446,200 @@ app.get("/api/ai/gateway/records", requireAuth, (req, res) => {
 app.get("/api/ai/gateway/metrics", (_req, res) => {
   res.setHeader("Content-Type", "text/plain; version=0.0.4");
   res.send(AiModelGatewayService.getInstance().exportPrometheusMetrics());
+});
+
+// ============================================================================
+// BioAI Safety Boundary & Physical Decoupling Endpoints (Iteration 39 / IEC 62443 SL3)
+// ============================================================================
+app.post("/api/bioai/safety/evaluate", (req, res) => {
+  try {
+    const safetyEngine = BioAiSafetyBoundaryEngine.getInstance();
+    const evaluation = safetyEngine.evaluateRecommendation(req.body);
+
+    if (!evaluation.allowed) {
+      logServerAuditEvent({
+        actorUid: (req as any).user?.uid || "bioai-engine",
+        actorRole: (req as any).user?.role || "system",
+        tenantId: req.body?.tenantId || "GLOBAL",
+        action: evaluation.auditCode,
+        eventType: "SECURITY_VIOLATION_BLOCKED",
+        resource: "/api/bioai/safety/evaluate",
+        result: "DENIED",
+        severity: "CRITICAL",
+        metadata: {
+          recommendationId: req.body?.recommendationId,
+          modelTier: req.body?.modelTier,
+          blockedReason: evaluation.blockedReason,
+          safetyHash: evaluation.safetyHash,
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      evaluation,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to evaluate safety boundary" });
+  }
+});
+
+app.post(
+  "/api/bioai/safety/signoff",
+  requireAuth,
+  requireRole(["supervisor", "administrador", "superadmin"]),
+  (req, res) => {
+    try {
+      const safetyEngine = BioAiSafetyBoundaryEngine.getInstance();
+      const signoff = {
+        recommendationId: req.body.recommendationId,
+        authorizedByUid: (req as any).user?.uid || "operator-01",
+        authorizedByEmail: (req as any).user?.email || "supervisor@bioazucar.com",
+        authorizedByRole: (req as any).user?.role || "supervisor",
+        tenantId: (req as any).user?.tenantId || req.body.tenantId || "BIOAZUCAR-DEMO",
+        signatureTimestamp: new Date().toISOString(),
+        decision: req.body.decision || "APPROVED",
+        operatorNote: req.body.operatorNote,
+        verificationHash: crypto.randomBytes(16).toString("hex"),
+      };
+
+      const result = safetyEngine.processHumanSignoff(signoff as any);
+
+      logServerAuditEvent({
+        actorUid: signoff.authorizedByUid,
+        actorEmail: signoff.authorizedByEmail,
+        actorRole: signoff.authorizedByRole,
+        tenantId: signoff.tenantId,
+        action: result.auditCode,
+        eventType: "COMMAND_AUTHORIZATION",
+        resource: "/api/bioai/safety/signoff",
+        result: result.success ? "SUCCESS" : "DENIED",
+        severity: result.success ? "INFO" : "WARNING",
+        metadata: {
+          recommendationId: signoff.recommendationId,
+          decision: signoff.decision,
+          reason: result.reason,
+        },
+      });
+
+      if (!result.success) {
+        return res.status(403).json(result);
+      }
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to process human signoff" });
+    }
+  }
+);
+
+app.get("/api/bioai/safety/envelope", (_req, res) => {
+  const safetyEngine = BioAiSafetyBoundaryEngine.getInstance();
+  res.json({
+    envelope: safetyEngine.getPhysicalEnvelope(),
+    standard: "ASME PTC 4 & E. Hugot Cane Sugar Engineering",
+  });
+});
+
+app.get("/api/bioai/safety/audit-trail", requireAuth, (_req, res) => {
+  const safetyEngine = BioAiSafetyBoundaryEngine.getInstance();
+  res.json({
+    evaluations: safetyEngine.getEvaluationHistory(),
+    signoffs: safetyEngine.getSignoffHistory(),
+  });
+});
+
+// ============================================================================
+// SuperAdmin Credentials & Production Deployment Lifecycle API (IEC 62443 SL3)
+// ============================================================================
+app.get("/api/admin/superadmin-credentials/status", (_req, res) => {
+  const credService = SuperAdminCredentialsService.getInstance();
+  res.json(credService.getStatus());
+});
+
+app.post(
+  "/api/admin/superadmin-credentials/setup",
+  (req, res) => {
+    try {
+      const { password, confirmedPassword } = req.body || {};
+      if (!password || !confirmedPassword) {
+        return res.status(400).json({ error: "Debe suministrar la contraseña y su confirmación." });
+      }
+      if (password !== confirmedPassword) {
+        return res.status(400).json({ error: "La contraseña y la confirmación no coinciden." });
+      }
+
+      const credService = SuperAdminCredentialsService.getInstance();
+      const result = credService.setProductionPassword(password);
+
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+
+      logServerAuditEvent({
+        actorUid: (req as any).user?.uid || "superadmin-bootstrap",
+        actorRole: "superadmin",
+        tenantId: "GLOBAL",
+        action: "SUPERADMIN_PRODUCTION_PASSWORD_ESTABLISHED",
+        eventType: "SECURITY_CREDENTIAL_LIFECYCLE",
+        resource: "/api/admin/superadmin-credentials/setup",
+        result: "SUCCESS",
+        severity: "INFO",
+        metadata: {
+          email: credService.getSuperAdminEmail(),
+          environment: credService.getEnvironmentProfile(),
+        },
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to set production password" });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/superadmin-credentials/promote-from-env",
+  (req, res) => {
+    try {
+      const credService = SuperAdminCredentialsService.getInstance();
+      const result = credService.promoteDevPasswordToProduction();
+
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+
+      logServerAuditEvent({
+        actorUid: (req as any).user?.uid || "superadmin-deployment",
+        actorRole: "superadmin",
+        tenantId: "GLOBAL",
+        action: "SUPERADMIN_ENV_PASSWORD_PROMOTED_TO_PRODUCTION",
+        eventType: "SECURITY_CREDENTIAL_LIFECYCLE",
+        resource: "/api/admin/superadmin-credentials/promote-from-env",
+        result: "SUCCESS",
+        severity: "INFO",
+        metadata: {
+          email: credService.getSuperAdminEmail(),
+        },
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to promote dev password" });
+    }
+  }
+);
+
+app.post("/api/admin/superadmin-credentials/verify", (req, res) => {
+  const { email, password } = req.body || {};
+  const credService = SuperAdminCredentialsService.getInstance();
+  const result = credService.verifyCredentials(email, password);
+
+  if (!result.success) {
+    return res.status(401).json(result);
+  }
+
+  res.json({ success: true, email: credService.getSuperAdminEmail() });
 });
 
 // ============================================================================

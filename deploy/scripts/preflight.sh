@@ -66,6 +66,26 @@ else
   log_warn "PRE-04" "Docker Engine Available" "Docker CLI not detected in PATH (Native mode possible)"
 fi
 
+# 5. SuperAdmin Production Security & Credentials Check (IEC 62443 SL3)
+SUPERADMIN_EMAIL="${SUPERADMIN_EMAIL:-${VITE_SUPERADMIN_EMAIL:-}}"
+SUPERADMIN_PASSWORD="${SUPERADMIN_PASSWORD:-${VITE_SUPERADMIN_PASSWORD:-}}"
+
+if [ -n "$SUPERADMIN_EMAIL" ]; then
+  log_pass "PRE-05" "SuperAdmin Identity" "Configured root email: $SUPERADMIN_EMAIL"
+else
+  log_warn "PRE-05" "SuperAdmin Identity" "SUPERADMIN_EMAIL not set; will fallback to default root"
+fi
+
+if [ -n "$SUPERADMIN_PASSWORD" ]; then
+  if [ ${#SUPERADMIN_PASSWORD} -ge 12 ]; then
+    log_pass "PRE-06" "SuperAdmin Credential Complexity" "Environment password configured (>= 12 chars). Ready for production promotion."
+  else
+    log_warn "PRE-06" "SuperAdmin Credential Complexity" "Configured password has < 12 chars. Production deployment will require interactive password setup."
+  fi
+else
+  log_warn "PRE-06" "SuperAdmin Credential Complexity" "No SUPERADMIN_PASSWORD in env. Interactive setup will be required upon production deployment."
+fi
+
 echo ""
 echo "----------------------------------------------------------------------"
 echo " PREFLIGHT SUMMARY: $PASS_COUNT Passed, $WARN_COUNT Warnings, $FAIL_COUNT Failures"

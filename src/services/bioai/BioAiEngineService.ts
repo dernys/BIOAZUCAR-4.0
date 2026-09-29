@@ -18,6 +18,7 @@ import {
 } from "../../types/bioai";
 import { getAuthHeader } from "../authService";
 import { industrialDataQualityGate } from "../dataProviders/IndustrialDataQualityGate";
+import { BioAiSafetyBoundaryEngine } from "./safety/BioAiSafetyBoundaryEngine";
 
 // ============================================================================
 // BIOAI INTELLIGENCE ENGINE SERVICE
@@ -599,6 +600,7 @@ export class BioAiEngineService {
         currentSetpoint: 2.5,
         unit: "bar",
         createdAt: "Hoy, 14:30",
+        modelTier: "FIRST_PRINCIPLES_PHYSICS",
       },
       {
         id: "rec-mill-02",
@@ -632,6 +634,7 @@ export class BioAiEngineService {
             "Revisión boroscópica de bronce superior, chequeo de holgura radial y verificación de torque en pernos de bancada tras alarma de vibración 4.8 mm/s.",
         },
         createdAt: "Hoy, 14:15",
+        modelTier: "MACHINE_LEARNING",
       },
       {
         id: "rec-boiler-03",
@@ -656,6 +659,7 @@ export class BioAiEngineService {
         currentSetpoint: 68.5,
         unit: "%",
         createdAt: "Hoy, 13:50",
+        modelTier: "FIRST_PRINCIPLES_PHYSICS",
       },
       {
         id: "rec-cogen-04",
@@ -680,10 +684,36 @@ export class BioAiEngineService {
         currentSetpoint: 21.2,
         unit: "MW",
         createdAt: "Hoy, 12:10",
+        modelTier: "EXPERT_HEURISTICS",
       },
     ];
 
-    return recs;
+    // Evaluate each recommendation against the BioAI Safety Boundary & Envelope
+    const safetyEngine = BioAiSafetyBoundaryEngine.getInstance();
+    const validatedRecs = recs.map((r) => {
+      const evaluation = safetyEngine.evaluateRecommendation({
+        recommendationId: r.id,
+        modelTier: r.modelTier || "EXPERT_HEURISTICS",
+        modelName: `BioAI-Advisory-${r.area}`,
+        commandType: r.proposedSetpoint !== undefined ? "SETPOINT_CHANGE" : "TEXT_ADVISORY",
+        targetTag: r.targetTag,
+        proposedSetpoint: r.proposedSetpoint,
+        currentSetpoint: r.currentSetpoint,
+        unit: r.unit,
+        actionDescription: r.recommendedAction,
+        justification: r.problemDetected,
+        tenantId: activeTenant?.id || "BIOAZUCAR-GLOBAL",
+        originator: "BioAiEngineService",
+      });
+
+      return {
+        ...r,
+        safetyBoundaryEvaluated: true,
+        safetyBoundaryHash: evaluation.safetyHash,
+      };
+    });
+
+    return validatedRecs;
   }
 
   // --------------------------------------------------------------------------

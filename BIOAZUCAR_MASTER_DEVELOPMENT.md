@@ -1600,6 +1600,33 @@ Para que cualquier módulo o funcionalidad sea promovido a un estado superior en
 * **Saneamiento de Ciberseguridad IEC 62443:** Reemplazada la afirmación de "SL3 implementado" por terminología formal: Target SL3, Demostrado SL1/SL2 a nivel de controles de software, **Certificación formal: 0.0%**. Auditoría clasificada como `TAMPER_EVIDENT` y `APPEND_ONLY`, no como hardware `IMMUTABLE`.
 * **Subordinación de Documentos Históricos:** `docs/PRODUCTION_ROADMAP.md` y `docs/IMPLEMENTATION_STATE.md` marcados formalmente como históricos y no autoritativos.
 
+### Versión 4.0.0-I39-BIOAI-SAFETY-BOUNDARY (2026-09-29 12:30:00 UTC)
+* **Implementación [I39] Separación Rigurosa de Modelos BioAI & Desacoplo Físico (BioAI Safety Boundary):**
+  * Delimitación estricta de 5 niveles de modelos BioAI en `src/types/bioaiSafety.ts` y `src/services/bioai/safety/BioAiSafetyBoundaryEngine.ts`:
+    1. `FIRST_PRINCIPLES_PHYSICS`: Ecuaciones de Spencer-Meade, Hugot y balances ASME PTC 4 (Nivel 5 - Autoridad Absoluta).
+    2. `EXPERT_HEURISTICS`: Lógica difusa y árboles de decisión de maestros azucareros (Nivel 3 - Recomendación Supervisada).
+    3. `MACHINE_LEARNING`: Modelos predictivos entrenados offline como Random Forest y XGBoost (Nivel 2 - Diagnóstico Predictivo).
+    4. `STATISTICAL_EMPIRICAL`: Series temporales ARIMA/Holt-Winters y balances de bagazo (Nivel 1 - Apoyo a Planificación).
+    5. `GENERATIVE_LLM`: Modelos generativos Gemini para resúmenes en lenguaje natural y copiloto (Nivel 0 - Solo Asistencia Narrativa).
+  * **Regla Inviolable IEC 62443:** Bloqueo terminante e inmediato de cualquier intento de modelos LLM de emitir setpoints, ajustes de válvulas o comandos de control hacia PLCs o Secure Command Gateway (código de auditoría `LLM_DIRECT_CONTROL_PROHIBITED`).
+  * **Filtro de Envolvente Física Hugot & ASME PTC 4:** Validación estricta de límites de proceso (Presión de domo 15-67 bar, temperatura 280-520°C, agua de imbibición 10-40% sobre caña, presión hidráulica 120-250 bar, velocidad 2-8 RPM, nivel chute Donnelly 10-100%, humedad de bagazo 44-56%, molienda 50-600 TCH). Rechazo determinista con código `PHYSICAL_ENVELOPE_VIOLATION`.
+  * **Compuerta Obligatoria Human-In-The-Loop (HITL):** Toda recomendación de máquina que pase el filtro de envolvente física exige firma explícita de operador con rol supervisor, administrador o superadmin antes de ser despachada al Secure Command Gateway.
+  * **Sellado Criptográfico SHA-256:** Cada evaluación y signoff genera un hash criptográfico SHA-256 a prueba de manipulaciones retroactivas.
+  * **Endpoints API Expuestos en `server.ts`:**
+    * `POST /api/bioai/safety/evaluate`: Evaluación de recomendaciones BioAI.
+    * `POST /api/bioai/safety/signoff`: Aprobación HITL por supervisores/administradores.
+    * `GET /api/bioai/safety/envelope`: Consulta de envolvente física canónica.
+    * `GET /api/bioai/safety/audit-trail`: Registro de auditoría y firmas.
+* **Ciclo de Vida y Gestión Segura de Contraseña SuperAdmin:**
+  * Implementado `src/services/security/SuperAdminCredentialsService.ts`:
+    * En entornos de Desarrollo y Pruebas (`development`/`test`): La contraseña del superadmin se lee y valida desde variables de entorno (`SUPERADMIN_PASSWORD` / `VITE_SUPERADMIN_PASSWORD`).
+    * En entorno de Producción (`production` / `PRODUCTION`): La aplicación audita en arranque si la contraseña fue creada o requiere creación interactiva obligatoria (`isPasswordCreationRequired()`), impidiendo credenciales predeterminadas o débiles.
+    * Método `promoteDevPasswordToProduction()` para promover la contraseña del entorno de desarrollo a producción con validación estricta de complejidad IEC 62443-4-2 (mínimo 12 caracteres, mayúsculas, minúsculas, dígitos, símbolos, entropía >= 60 bits).
+    * Endpoints `/api/admin/superadmin-credentials/*` para verificación, setup y promoción.
+    * Script de preflight de despliegue en `deploy/scripts/preflight.sh` actualizado con verificación de credenciales de superadmin.
+  * Suite de pruebas `src/__tests__/i39BioAiSafetyBoundaryAndPhysicalDecoupling.test.ts` con **23/23 tests pasando al 100%**.
+  * Cómputo global de pruebas elevado a **11 suites y 186 pruebas de iteración pasando al 100% (64 suites y 728 pruebas globales)**.
+
 ---
 
 > **FIN DEL DOCUMENTO MAESTRO — BIOAZÚCAR 4.0**  

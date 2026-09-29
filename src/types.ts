@@ -29,6 +29,18 @@ export {
   CANONICAL_SCHEMA_VERSION,
 } from "./types/industrialDataPoint";
 
+export type {
+  SugarType,
+  SugarPackagingType,
+  SugarBatchStatus,
+  MillingExtractionBalance,
+  EvaporationAndCrystallizationBalance,
+  SugarQualityMetrics,
+  SugarBatch,
+  SugarLineageTrace,
+  ChainVerificationResult,
+} from "./types/dataLineage";
+
 export type UserRole = "superadmin" | "administrador" | "supervisor" | "operador" | "mantenimiento" | string;
 
 export type PlantStatus = "OPERACION_NORMAL" | "ALERTA_PARCIAL" | "MANTENIMIENTO" | "PARADA_EMERGENCIA";

@@ -810,7 +810,7 @@ A continuación se despliegan las 31 iteraciones obligatorias requeridas para tr
 - **Estrategia de Pruebas**: Simulación de una sugerencia generada por el LLM con un valor de presión fuera de norma; comprobación de que el filtro de envolvente física bloquea la recomendación y emite alerta de seguridad.
 - **Criterios de aceptación**: Aislamiento total del LLM de cualquier canal de control; todas las predicciones de proceso sustentadas en ecuaciones físicas auditables.
 - **Dependencias**: I27, I31.
-- **Estado**: `PLANNED`.
+- **Estado**: `IMPLEMENTED` / `TESTED` (Suite `src/__tests__/i39BioAiSafetyBoundaryAndPhysicalDecoupling.test.ts` — 23/23 tests pasando).
 
 ---
 

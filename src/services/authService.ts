@@ -7,11 +7,18 @@ import {
 } from "firebase/auth";
 import { auth } from "./firebase";
 
+// Environment-configured superadmin identity
+export const CONFIGURED_SUPERADMIN_EMAIL =
+  (typeof process !== "undefined" && process.env?.SUPERADMIN_EMAIL) ||
+  (typeof process !== "undefined" && process.env?.VITE_SUPERADMIN_EMAIL) ||
+  (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPERADMIN_EMAIL) ||
+  "ing.dernys@gmail.com";
+
 // Clean user profiles for seeding and role definitions - NO PASSWORDS IN CODE
 export const PREDEFINED_USERS: UserAccount[] = [
   {
     id: "usr-superadmin",
-    email: "ing.dernys@gmail.com",
+    email: CONFIGURED_SUPERADMIN_EMAIL,
     name: "Ing. Dernys (Super Administrador)",
     role: "superadmin",
     tenantId: "GLOBAL",

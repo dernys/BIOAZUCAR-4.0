@@ -2,8 +2,8 @@
 
 > **Documento Oficial de Estado Autoritativo y Reconciliación de Repositorio**  
 > **Sistema:** BioAzúcar 4.0 — Unified Industrial Platform & Digital Twin for Sugar Mills & Biomass Cogeneration  
-> **Versión Actual:** 4.0.0-I37-AGRONOMIC-DATA-GOVERNANCE  
-> **Fecha y Hora de Verificación:** 2026-09-28T17:10:00Z (Local: 2026-09-28T10:10:00-07:00)  
+> **Versión Actual:** 4.0.0-I39-BIOAI-SAFETY-BOUNDARY  
+> **Fecha y Hora de Verificación:** 2026-09-29T12:30:00Z (Local: 2026-09-29T05:30:00-07:00)  
 > **ID de Workspace:** `7390a107-972a-4737-bb16-081c36c097ec`  
 > **Estado de Aprobación:** `AUTHORITATIVE — SINGLE SOURCE OF TRUTH (SSOT)`  
 > **Regla de Oro:** *No Evidence = No Demonstrated Functionality*. Ningún documento secundario sustituye el código auditable en HEAD.
@@ -79,6 +79,9 @@ TEST FIXTURE
 | **WebAuthn / FIDO2 Físico (YubiKey)** | Implementado (IEC 62443 SL3) | `src/services/security/webauthn/` | `i35WebAuthnFido2PhysicalSecurity.test.tsx` | E3 |
 | **Blindaje Multi-Tenant & Anti-Spoofing** | Implementado (IEC 62443 SL3) | `src/server/authMiddleware.ts` | `i36MultiTenantAuthorizationHardening.test.ts` | E3 |
 | **Gobernanza Agronómica & Calidad LIMS (I37)** | Implementado (IEC 62443 SL3) | `src/services/agriculture/AgronomicGovernancePipeline.ts` | `i37AgronomicDataGovernance.test.ts` | E3 |
+| **Trazabilidad Criptográfica & Linaje de Extracción (I38)** | Implementado (IEC 62443 SL3) | `src/services/lineage/DataLineageEngine.ts` | `i38DataLineageAndCryptographicTraceability.test.ts` | E3 |
+| **Frontera de Seguridad BioAI & Desacoplo Físico LLM (I39)** | Implementado (IEC 62443 SL3) | `src/services/bioai/safety/BioAiSafetyBoundaryEngine.ts` | `i39BioAiSafetyBoundaryAndPhysicalDecoupling.test.ts` | E3 |
+| **Ciclo de Vida de Credenciales Superadmin & Despliegue** | Implementado (IEC 62443 SL3) | `src/services/security/SuperAdminCredentialsService.ts` | `i39BioAiSafetyBoundaryAndPhysicalDecoupling.test.ts` | E3 |
 
 ---
 
@@ -95,3 +98,5 @@ Para evitar duplicidad o desalineación:
 8. **Contabilidad Estricta Store & Forward:** Medición y reporte en tiempo real de puntos generados, persistidos, recuperados, transmitidos, confirmados, duplicados y perdidos con resiliencia total ante caídas de enlace.
 9. **Aislamiento Multi-Tenant Estricto (I36):** La inyección de cabecera `X-Tenant-Id` no autorizada es rechazada determinísticamente (código `TENANT_HEADER_SPOOFING_REJECTED`); particionado de auditoría y telemetría por tenant obligatorio con auditoría de intrusión transfronteriza `CROSS_TENANT_ACCESS_ATTEMPT`.
 10. **Gobernanza Agronómica Estricta & Inmutabilidad LIMS (I37):** Validación fisiológica obligatoria de Saccharum officinarum (8.0°Bx - 28.0°Bx, 5.0% - 24.0% Pol, Pol <= Brix, Pureza <= 100%, Fibra 8% - 22%, Trash <= 25%). Sellado criptográfico SHA-256 inmutable de cada muestra de laboratorio con detección en tiempo real de manipulaciones maliciosas retroactivas y reconciliación de desvíos en báscula de batey.
+11. **Linaje Criptográfico de Extracción & Encadenamiento de Bloques de Azúcar (I38):** Encadenamiento criptográfico por bloques inmutables (Merkle-style sequential ledger) desde el surco cañero (parcela/variedad) hasta el lote de azúcar terminado (SugarBatch), enlazando balances de extracción en tándem de molienda (Hugot), evaporación, cristalización y pureza de melaza, con verificación del Factor de Seguridad ICUMSA (humedad/(100-Pol) <= 0.25), detección inmediata de alteraciones retroactivas (tamper detection) y configuración explícita de usuario superadmin en variables de entorno (SUPERADMIN_EMAIL).
+12. **Frontera de Seguridad BioAI & Desacoplo Físico de LLM (I39):** Delimitación estricta de 5 niveles de modelos BioAI (Física de Primeros Principios [Nivel 5 - Absoluto Hugot/ASME], Heurísticas Expertas [Nivel 3], Machine Learning [Nivel 2], Estadístico Empírico [Nivel 1] y Generativo LLM [Nivel 0 - Solo Asistencia Narrativa]). Regla inviolable: los modelos LLM tienen terminantemente prohibido emitir setpoints, ajustes de válvulas o comandos de control hacia PLCs o Secure Command Gateway (código `LLM_DIRECT_CONTROL_PROHIBITED`). Toda recomendación de máquina pasa obligatoriamente por el filtro de envolvente física (ASME PTC 4 y Hugot) y exige autorización humana previa (HITL) con rol supervisor o superior y sellado criptográfico SHA-256. La contraseña del superadmin se almacena en variable de entorno (`SUPERADMIN_PASSWORD`) para entornos de desarrollo y pruebas, mientras que en producción se exige su creación interactiva explícita o su promoción auditada bajo criterios de complejidad IEC 62443-4-2 (12+ caracteres, entropía >= 60 bits).
