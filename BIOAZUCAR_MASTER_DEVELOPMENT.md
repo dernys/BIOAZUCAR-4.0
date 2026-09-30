@@ -1648,6 +1648,53 @@ Para que cualquier módulo o funcionalidad sea promovido a un estado superior en
   * Linter TypeScript (`tsc --noEmit`) con **0 errores y 0 advertencias**. Compilación Vite/Express para producción exitosa.
   * Veredicto de fase: El software base se encuentra formalmente listo y endurecido en **E3**. La transición a **E4/E5** requiere la integración de sockets de red físicos (`net.Socket`, TLS 802, RFC 1006) y el conexionado a hardware real o servidor de referencia externo en banco.
 
+### Versión 4.0.0-I41-HISTORIAN-UNIFICATION-AND-REMOTE-CONTROL-HARDENING (2026-09-30)
+* **Resolución del Bloqueador P0: Unificación del Historiador Industrial en Edge:**
+  * **Pipeline Canónico Estricto Implementado:**
+    $$\text{OT} \longrightarrow \text{Quality Gate} \longrightarrow \text{Canonical IndustrialDataPoint} \longrightarrow \text{EdgeHistorian} \longrightarrow \text{SQLite WAL} \longrightarrow \text{RAM Cache / Analytics}$$
+  * **Arquitectura de Persistencia Autorativa:** Se consolidó `src/services/edge/history/EdgeHistorian.ts` como orquestador único del historiador en el Edge. La base de datos SQLite WAL (`SqliteWalEngine.ts` y `LocalTimeSeriesDatabase.ts`) se establece como la **única autoridad histórica RAW** en disco duradero.
+  * **Rol de Memoria RAM:** `IndustrialTsdbEngine.ts` queda formal y estrictamente subordinado como **cache de alta velocidad para visualización y downsampling LTTB en UI**, erradicando cualquier dependencia de RAM como almacenamiento histórico primario.
+  * **Preservación Canónica:** Todo punto persistido conserva de forma inmutable: `sourceTimestamp`, `ingestionTimestamp`, `sequence`, `quality`, `tenantId`, `origin` y `provenance`.
+  * **Semántica Event-Time:** Indexación y consultas temporales basadas rigurosamente en event-time (`sourceTimestamp`), garantizando ordenamiento exacto ante llegadas asíncronas o desordenadas.
+  * **Enlace con Store & Forward:** `EdgeHistorian` coordina la persistencia transaccional en disco con `DiskStoreAndForwardEngine`, garantizando cero pérdida y cero duplicación sin incurrir en doble escritura en disco.
+  * **Suite E2E Verificada (`src/__tests__/edgeHistorianUnifiedE2E.test.ts`):** 8/8 pruebas pasando al 100% demostrando:
+    1. Ingestión → SQLite WAL con esquema canónico completo.
+    2. Recuperación íntegra tras reinicio de proceso.
+    3. Recuperación ACID tras simulación de corte repentino de energía (`simulateSuddenPowerLoss`).
+    4. Consulta fría directa desde SQLite con cache RAM vacía.
+    5. Coherencia exacta entre RAM cache y SQLite WAL.
+    6. Aislamiento multi-tenant estricto en consultas de series de tiempo.
+    7. Ordenamiento y ventana correctos basados en event-time.
+    8. Resiliencia y no duplicación durante drenado de Store & Forward.
+
+* **Resolución del Bloqueador P0: Control Remoto Seguro y Cola de Comandos Durable:**
+  * **Erradicación del Almacenamiento Volátil:** Eliminada la dependencia de `Map<string, CommandExecutionContract>` en memoria como mecanismo de producción. Implementada la cola durable transaccional `src/services/edge/commands/DurableCommandQueue.ts` respaldada por SQLite WAL (`durable_command_queue`).
+  * **Ciclo de Vida Formal de Comandos Industriales:**
+    $$\text{CREATED} \longrightarrow \text{VALIDATED} \longrightarrow \text{PENDING\_APPROVAL} \longrightarrow \text{APPROVED} \longrightarrow \text{DISPATCHED} \longrightarrow \text{ACKNOWLEDGED} \longrightarrow \text{EXECUTED}$$
+    $$\text{y terminales: } \text{REJECTED} \ / \ \text{EXPIRED} \ / \ \text{FAILED} \ / \ \text{CANCELLED}$$
+  * **Campos Canónicos de Contrato:** `commandId`, `idempotencyKey`, `tenantId`, `plantId`, `areaId`, `assetId`, `tag`, `requestedValue`, `oldValue`, `unit`, `reason`, `requester`, `approver`, `timestamp`, `expiration`, `status`, `edgeNodeId`, `correlationId`, `result`, `actualEchoValue`, `echoDelta`, `auditReference`.
+  * **Desacople Arquitectónico Inviolable:** Prohibida terminantemente cualquier conexión directa `Internet -> PLC`. Toda consigna viaja obligatoriamente:
+    $$\text{Web UI} \longrightarrow \text{Central API} \longrightarrow \text{Durable Command Queue} \longrightarrow \text{Canal Seguro Edge} \longrightarrow \text{SecureCommandGateway} \longrightarrow \text{Driver} \longrightarrow \text{PLC/DCS}$$
+    $$\text{y el retorno por eco físico: } \text{PLC/DCS} \longrightarrow \text{Echo Read} \longrightarrow \text{Edge} \longrightarrow \text{CommandResult} \longrightarrow \text{Central} \longrightarrow \text{UI}$$
+
+* **Endurecimiento de Seguridad Criptográfica en SecureCommandGateway:**
+  * **Fail-Closed en Perfil PRODUCTION:** Si la variable `EDGE_HMAC_SECRET` está ausente o utiliza secretos débiles por defecto, el gateway aborta de inmediato (`FatalRuntimeConfigError: FAIL_CLOSED_INSECURE_SECRET`).
+  * **Firma HMAC-SHA256 y Nonce Obligatorios:** En `PRODUCTION`, queda prohibida la firma opcional. Cualquier paquete sin firma, sin nonce o con marca de tiempo desfasada (> 30s) es rechazado determinísticamente.
+  * **Caché Anti-Replay con Expiración:** Nonces consumidos son retenidos para prevenir ataques de repetición.
+  * **Principio de Cuatro Ojos (Four-Eyes):** Obligatorio para tags críticos (presión de caldera, presión hidráulica de molinos, regulador de turbina). El aprobador dual debe poseer rol supervisor/ingeniero y ser un usuario distinto al solicitante.
+  * **Regla Inviolable de SuperAdmin:** El rol SuperAdmin **NO PUEDE** saltarse los enclavamientos físicos de proceso, los límites de ingeniería, el principio de cuatro ojos, la firma HMAC ni la protección anti-replay.
+  * **Verificación de Eco Físico (Read-After-Write):** Lectura inmediata tras escritura en el driver; si el valor real retornado difiere de la consigna consignada, se emite `FAILED_ECHO_VERIFICATION` y se registra en la cadena de auditoría SHA-256 (`AuditChainService`).
+  * **Suite E2E Verificada (`src/__tests__/secureCommandGatewayE2E.test.ts`):** 11/11 pruebas pasando al 100%.
+
+* **Historiador Central de Bajo Coste y Modelo Matemático de Compresión:**
+  * Arquitectura desacoplada: Edge SQLite WAL → Transporte seguro → PostgreSQL + TimescaleDB.
+  * Clases de almacenamiento de tags: `CRITICAL` (alta fidelidad, retención extensa), `PROCESS` (filtrado deadband/SDT), `KPI` (agregados horarios).
+  * `HistorianCostModel.ts`: Cálculo dinámico sin constantes inventadas de muestras/día, almacenamiento raw vs comprimido, escrituras centrales y ahorro frente a nubes transaccionales.
+
+* **Inventario Consolidado de Calidad y Pruebas en HEAD:**
+  * **81 suites de prueba ejecutadas y 922 pruebas aprobadas (100% PASS, 0 fallos, 0 omitidos)**.
+  * Linter `tsc --noEmit` verificado con **0 errores**. Compilación Vite/Express exitosa.
+
 ---
 
 > **FIN DEL DOCUMENTO MAESTRO — BIOAZÚCAR 4.0**  

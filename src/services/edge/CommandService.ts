@@ -2,6 +2,11 @@ import { CommandExecutionContract } from "./types";
 import { policyEngine } from "./PolicyEngine";
 import { UserRole } from "../../types";
 import { logAuditEventToDb } from "../dbService";
+import {
+  durableCommandQueue,
+  DurableCommandRecord,
+  IndustrialCommandStatus,
+} from "./commands/DurableCommandQueue";
 
 export interface SubmitCommandParams {
   idempotencyKey?: string;
@@ -9,6 +14,7 @@ export interface SubmitCommandParams {
   userName: string;
   role: UserRole;
   plantId: string;
+  areaId?: string;
   assetId: string;
   tag: string;
   oldValue: number | string | boolean;
@@ -19,6 +25,9 @@ export interface SubmitCommandParams {
   engMin?: number;
   engMax?: number;
   requireConfirmation?: boolean;
+  expirationMs?: number;
+  edgeNodeId?: string;
+  correlationId?: string;
 }
 
 export interface CommandDispatcher {
@@ -95,6 +104,40 @@ export class CommandService {
       executionStatus: "QUEUED",
     };
 
+    const expirationIso = new Date(Date.now() + (params.expirationMs || 60000)).toISOString();
+    const correlationId = params.correlationId || `corr-${commandId}`;
+    const edgeNodeId = params.edgeNodeId || "EDGE-NODE-01";
+    const areaId = params.areaId || "AREA-PROCESS";
+
+    const durableRecord: DurableCommandRecord = {
+      commandId,
+      idempotencyKey,
+      tenantId: params.plantId,
+      plantId: params.plantId,
+      areaId,
+      assetId: params.assetId,
+      tag: params.tag,
+      requestedValue: params.requestedValue,
+      oldValue: params.oldValue,
+      unit: params.unit,
+      reason: params.reason,
+      requester: {
+        userId: params.userId,
+        userName: params.userName,
+        role: params.role,
+        twoFactorVerified: true,
+        tenantId: params.plantId,
+      },
+      timestamp: contract.timestamp,
+      expiration: expirationIso,
+      status: "CREATED",
+      edgeNodeId,
+      correlationId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    durableCommandQueue.enqueue(durableRecord);
+
     this.commandHistory.set(commandId, contract);
     this.idempotencyCache.set(idempotencyKey, commandId);
 
@@ -135,20 +178,31 @@ export class CommandService {
         protocol: "SIMULATOR",
       };
 
+      durableCommandQueue.updateStatus(commandId, "REJECTED", {
+        result: {
+          success: false,
+          message: policyResult.reason || "Rechazado por política de seguridad operacional.",
+          executedAt: new Date().toISOString(),
+        },
+      });
+
       await this.logAudit(contract, "REJECTED_BY_POLICY");
       return contract;
     }
 
     contract.validationStatus = "VALID";
+    durableCommandQueue.updateStatus(commandId, "VALIDATED");
 
     // 3. Check if human supervisor confirmation is required
     if (contract.approval.required) {
       contract.executionStatus = "PENDING_CONFIRMATION";
+      durableCommandQueue.updateStatus(commandId, "PENDING_APPROVAL");
       await this.logAudit(contract, "AWAITING_CONFIRMATION");
       return contract;
     }
 
     // 4. Auto-execute if pre-approved or confirmation bypassed by policy
+    durableCommandQueue.updateStatus(commandId, "APPROVED");
     return await this.executeCommandInternal(contract);
   }
 
@@ -180,6 +234,20 @@ export class CommandService {
         source: "EDGE",
         protocol: "SIMULATOR",
       };
+      durableCommandQueue.updateStatus(commandId, "REJECTED", {
+        approver: {
+          userId: approver.userId,
+          userName: approver.name,
+          role: approver.role,
+          approvedAt: new Date().toISOString(),
+          comment: "Permiso operacional insuficiente",
+        },
+        result: {
+          success: false,
+          message: `Aprobador ${approver.name} carece de permiso operacional para confirmar este comando.`,
+          executedAt: new Date().toISOString(),
+        },
+      });
       await this.logAudit(contract, "CONFIRMATION_DENIED");
       return contract;
     }
@@ -188,6 +256,15 @@ export class CommandService {
     contract.approval.approverUserId = approver.userId;
     contract.approval.approverRole = approver.role;
     contract.approval.approvedAt = new Date().toISOString();
+
+    durableCommandQueue.updateStatus(commandId, "APPROVED", {
+      approver: {
+        userId: approver.userId,
+        userName: approver.name,
+        role: approver.role,
+        approvedAt: contract.approval.approvedAt,
+      },
+    });
 
     return await this.executeCommandInternal(contract);
   }
@@ -207,16 +284,29 @@ export class CommandService {
       source: "EDGE",
       protocol: "SIMULATOR",
     };
+
+    durableCommandQueue.updateStatus(commandId, "CANCELLED", {
+      result: {
+        success: false,
+        message: `Comando cancelado: ${reason}`,
+        executedAt: new Date().toISOString(),
+      },
+    });
+
     return contract;
   }
 
   private async executeCommandInternal(contract: CommandExecutionContract): Promise<CommandExecutionContract> {
     contract.executionStatus = "EXECUTING";
+    durableCommandQueue.updateStatus(contract.commandId, "DISPATCHED");
 
     try {
       if (!this.edgeDispatcher) {
         throw new Error("No hay un despachador Industrial Edge registrado para ejecutar comandos físicos.");
       }
+
+      // Mark acknowledged before write
+      durableCommandQueue.updateStatus(contract.commandId, "ACKNOWLEDGED");
 
       const dispatchRes = await this.edgeDispatcher.dispatchWrite(contract);
 
@@ -229,6 +319,19 @@ export class CommandService {
         protocol: dispatchRes.protocol || "SIMULATOR",
       };
 
+      durableCommandQueue.updateStatus(
+        contract.commandId,
+        dispatchRes.success ? "EXECUTED" : "FAILED",
+        {
+          result: {
+            success: dispatchRes.success,
+            message: dispatchRes.message,
+            executedAt: new Date().toISOString(),
+            protocol: String(dispatchRes.protocol || "SIMULATOR"),
+          },
+        }
+      );
+
       await this.logAudit(contract, dispatchRes.success ? "EXECUTED_SUCCESS" : "EXECUTION_ERROR");
       return contract;
     } catch (err: any) {
@@ -240,6 +343,14 @@ export class CommandService {
         source: "EDGE",
         protocol: "SIMULATOR",
       };
+
+      durableCommandQueue.updateStatus(contract.commandId, "FAILED", {
+        result: {
+          success: false,
+          message: `Fallo en capa Edge al despachar comando a bus OT: ${err.message}`,
+          executedAt: new Date().toISOString(),
+        },
+      });
 
       await this.logAudit(contract, "EXECUTION_EXCEPTION");
       return contract;
@@ -389,6 +500,18 @@ export class CommandService {
     return Array.from(this.commandHistory.values()).filter(
       (c) => c.executionStatus === "PENDING_CONFIRMATION"
     );
+  }
+
+  public getDurableQueue(): typeof durableCommandQueue {
+    return durableCommandQueue;
+  }
+
+  public listDurableCommands(filter?: {
+    tenantId?: string;
+    status?: IndustrialCommandStatus;
+    limit?: number;
+  }): DurableCommandRecord[] {
+    return durableCommandQueue.listCommands(filter);
   }
 }
 

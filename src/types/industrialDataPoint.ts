@@ -170,6 +170,9 @@ export interface IndustrialDataPoint {
   readonly samplingInterval?: number;
   readonly securityClearanceLevel?: number;
   readonly sourceTimestamp?: string;
+  readonly edgeIngestionTimestamp?: string;
+  readonly origin?: string;
+  readonly traceId?: string;
 }
 
 export const CANONICAL_SCHEMA_VERSION = "4.0.0";

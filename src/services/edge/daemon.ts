@@ -23,6 +23,7 @@ import { edgeLogger } from "../logger/IndustrialLogger";
 import { prometheusMetrics } from "../monitoring/PrometheusMetrics";
 import { edgeRuntimeSupervisor } from "./supervisor/EdgeRuntimeSupervisor";
 import { localTimeSeriesDatabase } from "./history/LocalTimeSeriesDatabase";
+import { edgeHistorian } from "./history/EdgeHistorian";
 import {
   getRuntimeProfile,
   assertValidProductionEnvironment,
@@ -160,13 +161,13 @@ export class BioAzucarEdgeDaemon {
     await industrialEdge.start();
     console.log("[DAEMON] Industrial Edge Engine and field connectors initialized.");
 
-    // 2. Route all incoming OT data points into Store & Forward queue
+    // 2. Route all incoming OT data points into Unified Edge Historian (Quality Gate -> SQLite WAL -> RAM Cache -> Store & Forward)
     this.unsubscribeEdge = industrialEdge.subscribeAll((pointsMap) => {
       const points = Array.from(pointsMap.values());
       if (points.length > 0) {
         this.safAccounting.generated += points.length;
-        diskStoreAndForward.enqueueBatch(points);
-        this.safAccounting.persisted += points.length;
+        const ingestResult = edgeHistorian.ingest(points);
+        this.safAccounting.persisted += ingestResult.accepted;
       }
     });
 

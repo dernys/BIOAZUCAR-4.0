@@ -258,6 +258,10 @@ export class DiskStoreAndForwardEngine {
     return this.memQueue.getState();
   }
 
+  public getBufferState() {
+    return this.memQueue.getState();
+  }
+
   public clear(): void {
     this.memQueue.clear();
     if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
@@ -568,6 +572,15 @@ export class DiskStoreAndForwardEngine {
         // Handle storage quota gracefully
       }
     }, 500);
+  }
+
+  public clearForTesting(): void {
+    this.memQueue.clear();
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      try {
+        this.sqliteEngine.exec("DELETE FROM saf_queue;");
+      } catch {}
+    }
   }
 
   public isCompressionEnabled(): boolean {

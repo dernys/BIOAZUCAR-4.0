@@ -56,6 +56,34 @@ export class IndustrialTsdbEngine {
   }
 
   /**
+   * Queries records from the in-memory cache with tenant isolation.
+   */
+  public queryRecords(tenantId: string, tag?: string, limitCount: number = 50): HistorianRecord[] {
+    if (tag) {
+      const seriesKey = `${tenantId}::${tag}`;
+      const series = this.seriesData.get(seriesKey) || [];
+      return series.slice(-limitCount);
+    }
+
+    const results: HistorianRecord[] = [];
+    const prefix = `${tenantId}::`;
+    for (const [key, series] of this.seriesData.entries()) {
+      if (key.startsWith(prefix)) {
+        results.push(...series);
+      }
+    }
+    results.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    return results.slice(-limitCount);
+  }
+
+  /**
+   * Clears the in-memory cache ring buffers (simulating cold reboot or cache eviction).
+   */
+  public clear(): void {
+    this.seriesData.clear();
+  }
+
+  /**
    * Largest-Triangle-Three-Buckets (LTTB) Downsampling Algorithm.
    * Reduces arbitrary size timeseries to target points while preserving visual extrema.
    */
@@ -203,6 +231,10 @@ export class IndustrialTsdbEngine {
     }
 
     return results;
+  }
+
+  public clearMemoryCache(): void {
+    this.seriesData.clear();
   }
 }
 

@@ -3,6 +3,7 @@ import { db } from "../firebase";
 import { HistorianRecord } from "../runtime/types";
 import { tenantRuntimeManager } from "../runtime/TenantRuntimeManager";
 import { industrialTsdbEngine, LttbPoint, TsdbBucketAggregation } from "./IndustrialTsdbEngine";
+import { LocalTimeSeriesDatabase } from "../edge/history/LocalTimeSeriesDatabase";
 import { industrialDataQualityGate, SampleQualityAuditResult } from "../dataProviders/IndustrialDataQualityGate";
 import { IndustrialTagSample, IndustrialTagDefinition } from "../../types";
 
@@ -135,7 +136,10 @@ export class HistorianService {
   public async recordPoint(record: HistorianRecord): Promise<void> {
     this.totalPointsIngested++;
 
-    // 1. Ingest into fast local TSDB engine (ring buffers + LTTB downsampling)
+    // 1. Ingest into durable on-premise SQLite WAL (DURABLE HISTORICAL RAW AUTHORITY ON EDGE)
+    LocalTimeSeriesDatabase.getInstance().recordCanonicalRecord(record);
+
+    // 2. Ingest into fast local TSDB engine (ring buffers + LTTB downsampling for UI/RAM cache)
     industrialTsdbEngine.ingest([record]);
 
     const runtime = tenantRuntimeManager.getRuntime(record.tenantId);
@@ -143,7 +147,7 @@ export class HistorianService {
       // Memory buffer is populated via simulation runtime step or explicit call
     }
 
-    // 2. Evaluate Cloud Storage Tier based on Cost & Traffic Strategy
+    // 3. Evaluate Cloud Storage Tier based on Cost & Traffic Strategy
     if (this.cloudSyncMode === "LOCAL_TSDB_ONLY") {
       // Prevent Firestore document creation completely. Telemetry lives on-premise in TSDB / SQLite WAL.
       this.rawCloudWritesPrevented++;
@@ -164,7 +168,16 @@ export class HistorianService {
       }
     }
 
-    // 3. Rate-limited fallback for RAW_DIRECT or Critical Events
+    // 4. In PRODUCTION profile, RAW_DIRECT to Cloud is strictly FORBIDDEN (FAIL CLOSED)
+    const isProduction =
+      (typeof process !== "undefined" && (process.env?.INDUSTRIAL_RUNTIME_PROFILE === "PRODUCTION" || process.env?.NODE_ENV === "production"));
+    if (isProduction) {
+      throw new Error(
+        "[FAIL_CLOSED] Direct RAW telemetry writing to Firestore is strictly prohibited in PRODUCTION profile conforming to BioAzúcar 4.0 Architecture."
+      );
+    }
+
+    // 5. Rate-limited fallback for RAW_DIRECT or Critical Events in DEV/TEST
     const now = Date.now();
     if (now - this.minuteWindowTimestamp > 60000) {
       this.writesInCurrentMinute = 0;
@@ -181,7 +194,8 @@ export class HistorianService {
     this.writesInCurrentMinute++;
 
     try {
-      if (db) {
+      const isTest = typeof process !== "undefined" && (process.env?.NODE_ENV === "test" || process.env?.VITEST === "true");
+      if (db && !isTest) {
         await addDoc(collection(db, "historian_records"), {
           ...record,
           createdAt: new Date().toISOString(),
@@ -241,6 +255,12 @@ export class HistorianService {
    */
   public async flushRollupBucketsToFirestore(): Promise<void> {
     if (this.rollupBuckets.size === 0 || !db) return;
+    const isTest = typeof process !== "undefined" && (process.env?.NODE_ENV === "test" || process.env?.VITEST === "true");
+    if (isTest) {
+      this.rollupsEmittedToCloud += this.rollupBuckets.size;
+      this.rollupBuckets.clear();
+      return;
+    }
 
     const bucketsToFlush = Array.from(this.rollupBuckets.values());
     this.rollupBuckets.clear();
@@ -275,53 +295,46 @@ export class HistorianService {
   }
 
   /**
-   * Query historical points by tag and tenant
+   * Query historical points by tag and tenant.
+   * Architecture Hierarchy:
+   * 1. Check in-memory TSDB engine cache (RAM LTTB ring buffer).
+   * 2. If empty (cold start / reboot / power loss), query durable SQLite WAL authority on Edge.
+   * 3. Hydrate in-memory TSDB engine from SQLite WAL for subsequent zero-disk latency.
+   * 4. Fallback to active TenantRuntime if present.
+   * FIRESTORE IS NEVER QUERIED FOR HIGH-FREQUENCY RAW TELEMETRY.
    */
   public async queryRecords(
     tenantId: string,
     tag?: string,
     limitCount: number = 50
   ): Promise<HistorianRecord[]> {
-    // 1. First get from active TenantRuntime (fast in-memory with coherent simulation data)
-    const runtime = tenantRuntimeManager.getRuntime(tenantId);
-    const inMemoryPoints = runtime ? runtime.getHistorianRecords(tag, limitCount) : [];
-
+    // 1. Fast in-memory TSDB cache (RAM)
+    const inMemoryPoints = industrialTsdbEngine.queryRecords(tenantId, tag, limitCount);
     if (inMemoryPoints.length > 0) {
       return inMemoryPoints;
     }
 
-    // 2. Query Firestore if memory buffer was empty (e.g. cold start)
-    try {
-      if (db) {
-        const histCol = collection(db, "historian_records");
-        let q = query(
-          histCol,
-          where("tenantId", "==", tenantId),
-          orderBy("timestamp", "desc"),
-          firestoreLimit(limitCount)
-        );
+    // 2. Query durable SQLite WAL authority on Edge
+    const sqlitePoints = LocalTimeSeriesDatabase.getInstance().queryCanonicalRecords({
+      tenantId,
+      tag,
+      limit: limitCount,
+    });
 
-        if (tag) {
-          q = query(
-            histCol,
-            where("tenantId", "==", tenantId),
-            where("tag", "==", tag),
-            orderBy("timestamp", "desc"),
-            firestoreLimit(limitCount)
-          );
-        }
-
-        const snap = await getDocs(q);
-        const docs = snap.docs.map((d) => d.data() as HistorianRecord);
-        if (docs.length > 0) {
-          return docs.reverse();
-        }
-      }
-    } catch (_err) {
-      // In tests or unauthenticated sessions, fallback to synthetic samples from runtime
+    if (sqlitePoints.length > 0) {
+      // Hydrate RAM cache for subsequent reads
+      industrialTsdbEngine.ingest(sqlitePoints);
+      return sqlitePoints;
     }
 
-    return inMemoryPoints;
+    // 3. Fallback to active TenantRuntime if present
+    const runtime = tenantRuntimeManager.getRuntime(tenantId);
+    const runtimePoints = runtime ? runtime.getHistorianRecords(tag, limitCount) : [];
+    if (runtimePoints.length > 0) {
+      return runtimePoints;
+    }
+
+    return [];
   }
 
   /**

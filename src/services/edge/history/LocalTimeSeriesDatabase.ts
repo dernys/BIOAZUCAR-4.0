@@ -13,6 +13,7 @@
 
 import { IndustrialDataPoint } from "../../../types";
 import { SqliteWalEngine } from "../storage/SqliteWalEngine";
+import { HistorianRecord } from "../../runtime/types";
 
 export type TsdbAggregation = "AVG" | "MIN" | "MAX" | "P95" | "LAST" | "COUNT";
 
@@ -55,6 +56,7 @@ export class LocalTimeSeriesDatabase {
   private tagSeries = new Map<string, StoredSample[]>();
   private maxPointsPerTag: number = 200000;
   private retentionMs: number = 30 * 24 * 60 * 60 * 1000; // 30 days default
+  private currentDbPath: string = "./data/edge-tsdb.sqlite";
   private sqliteEngine: SqliteWalEngine | null = null;
   private insertStmt: any = null;
   private queryStmt: any = null;
@@ -66,24 +68,68 @@ export class LocalTimeSeriesDatabase {
   private initSqlite(customPath?: string): void {
     const envPath = typeof process !== "undefined" ? process.env?.BIOAZUCAR_TSDB_SQLITE_PATH : undefined;
     const dbPath = customPath || envPath || "./data/edge-tsdb.sqlite";
+    this.currentDbPath = dbPath;
 
     try {
       this.sqliteEngine = new SqliteWalEngine({ dbPath });
       if (this.sqliteEngine.isAvailable()) {
         this.sqliteEngine.exec(`
           CREATE TABLE IF NOT EXISTS tsdb_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id TEXT NOT NULL DEFAULT 'GLOBAL',
             tag TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
+            source_timestamp INTEGER NOT NULL DEFAULT 0,
+            ingestion_timestamp INTEGER NOT NULL DEFAULT 0,
             value REAL NOT NULL,
             quality TEXT NOT NULL,
-            is_simulated INTEGER NOT NULL
+            unit TEXT NOT NULL DEFAULT '',
+            is_simulated INTEGER NOT NULL DEFAULT 0,
+            origin TEXT NOT NULL DEFAULT 'LIVE_OT',
+            provenance TEXT NOT NULL DEFAULT 'OBSERVED_OT',
+            sequence INTEGER NOT NULL DEFAULT 0,
+            trace_id TEXT NOT NULL DEFAULT ''
           );
+          CREATE INDEX IF NOT EXISTS idx_tsdb_tenant_tag_ts ON tsdb_samples(tenant_id, tag, timestamp);
           CREATE INDEX IF NOT EXISTS idx_tsdb_tag_ts ON tsdb_samples(tag, timestamp);
+          CREATE INDEX IF NOT EXISTS idx_tsdb_ts ON tsdb_samples(timestamp);
         `);
 
+        // Migration of missing columns for existing SQLite tables
+        try {
+          const pragma = this.sqliteEngine.prepare("PRAGMA table_info(tsdb_samples);").all() as any[];
+          const existingCols = new Set(pragma.map((p) => p.name));
+          if (!existingCols.has("tenant_id")) {
+            this.sqliteEngine.exec("ALTER TABLE tsdb_samples ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'GLOBAL';");
+          }
+          if (!existingCols.has("source_timestamp")) {
+            this.sqliteEngine.exec("ALTER TABLE tsdb_samples ADD COLUMN source_timestamp INTEGER NOT NULL DEFAULT 0;");
+          }
+          if (!existingCols.has("ingestion_timestamp")) {
+            this.sqliteEngine.exec("ALTER TABLE tsdb_samples ADD COLUMN ingestion_timestamp INTEGER NOT NULL DEFAULT 0;");
+          }
+          if (!existingCols.has("unit")) {
+            this.sqliteEngine.exec("ALTER TABLE tsdb_samples ADD COLUMN unit TEXT NOT NULL DEFAULT '';");
+          }
+          if (!existingCols.has("origin")) {
+            this.sqliteEngine.exec("ALTER TABLE tsdb_samples ADD COLUMN origin TEXT NOT NULL DEFAULT 'LIVE_OT';");
+          }
+          if (!existingCols.has("provenance")) {
+            this.sqliteEngine.exec("ALTER TABLE tsdb_samples ADD COLUMN provenance TEXT NOT NULL DEFAULT 'OBSERVED_OT';");
+          }
+          if (!existingCols.has("sequence")) {
+            this.sqliteEngine.exec("ALTER TABLE tsdb_samples ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0;");
+          }
+          if (!existingCols.has("trace_id")) {
+            this.sqliteEngine.exec("ALTER TABLE tsdb_samples ADD COLUMN trace_id TEXT NOT NULL DEFAULT '';");
+          }
+        } catch {
+          // Ignored if fresh
+        }
+
         this.insertStmt = this.sqliteEngine.prepare(`
-          INSERT INTO tsdb_samples (tag, timestamp, value, quality, is_simulated)
-          VALUES (?, ?, ?, ?, ?);
+          INSERT INTO tsdb_samples (tenant_id, tag, timestamp, source_timestamp, ingestion_timestamp, value, quality, unit, is_simulated, origin, provenance, sequence, trace_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         `);
 
         this.queryStmt = this.sqliteEngine.prepare(`
@@ -129,6 +175,9 @@ export class LocalTimeSeriesDatabase {
   public simulateSuddenPowerLoss(): void {
     if (this.sqliteEngine) {
       this.sqliteEngine.simulateSuddenPowerLoss();
+      // Reboot after power loss simulation to restore IPC service
+      this.initSqlite(this.currentDbPath);
+      this.sqliteEngine.recoverFromCrash();
     }
     this.tagSeries.clear();
   }
@@ -205,14 +254,35 @@ export class LocalTimeSeriesDatabase {
 
     if (isNaN(numVal)) return;
 
-    const ts = point.deviceTimestamp ? new Date(point.deviceTimestamp).getTime() : Date.now();
+    const eventTs = point.deviceTimestamp ? new Date(point.deviceTimestamp).getTime() : Date.now();
+    const ingestTs = point.edgeIngestionTimestamp ? new Date(point.edgeIngestionTimestamp).getTime() : Date.now();
     const quality = point.quality || "GOOD";
     const isSimulated = point.isSimulated ? 1 : 0;
+    const tenantId = point.tenantId || "GLOBAL";
+    const unit = point.engineeringUnit || "";
+    const origin = point.origin || (point.isSimulated ? "SIMULATED" : "LIVE_OT");
+    const provenance = point.provenance || (point.isSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT");
+    const sequence = point.sequence || Date.now();
+    const traceId = point.traceId || "";
 
-    // 1. Transactional write to SQLite WAL if available
+    // 1. Transactional write to SQLite WAL if available (Authority on Edge)
     if (this.sqliteEngine && this.sqliteEngine.isAvailable() && this.insertStmt) {
       try {
-        this.insertStmt.run(point.tag, ts, numVal, quality, isSimulated);
+        this.insertStmt.run(
+          tenantId,
+          point.tag,
+          eventTs,
+          eventTs,
+          ingestTs,
+          numVal,
+          quality,
+          unit,
+          isSimulated,
+          origin,
+          provenance,
+          sequence,
+          traceId
+        );
       } catch {
         // Continue to RAM buffer if disk write fails
       }
@@ -226,18 +296,18 @@ export class LocalTimeSeriesDatabase {
     }
 
     const sample: StoredSample = {
-      timestamp: ts,
+      timestamp: eventTs,
       value: numVal,
       quality,
       isSimulated: Boolean(isSimulated),
     };
 
     // Insert maintaining ascending order by timestamp
-    if (series.length === 0 || series[series.length - 1].timestamp <= ts) {
+    if (series.length === 0 || series[series.length - 1].timestamp <= eventTs) {
       series.push(sample);
     } else {
       let idx = series.length - 1;
-      while (idx >= 0 && series[idx].timestamp > ts) {
+      while (idx >= 0 && series[idx].timestamp > eventTs) {
         idx--;
       }
       series.splice(idx + 1, 0, sample);
@@ -250,26 +320,141 @@ export class LocalTimeSeriesDatabase {
   }
 
   /**
+   * Records a canonical HistorianRecord directly into SQLite WAL authority and RAM cache.
+   */
+  public recordCanonicalRecord(record: HistorianRecord): void {
+    const numVal =
+      typeof record.value === "number"
+        ? record.value
+        : parseFloat(String(record.value));
+
+    if (isNaN(numVal)) return;
+
+    const eventTs = record.sourceTimestamp
+      ? new Date(record.sourceTimestamp).getTime()
+      : new Date(record.timestamp).getTime();
+    const ingestTs = record.ingestionTimestamp
+      ? new Date(record.ingestionTimestamp).getTime()
+      : Date.now();
+    const quality = record.quality || "GOOD";
+    const isSimulated = record.isSimulated ? 1 : 0;
+    const tenantId = record.tenantId || "GLOBAL";
+    const unit = record.unit || "";
+    const origin = record.originMark || (record.isSimulated ? "SIMULATION" : "LIVE_OT");
+    const provenance = record.provenance || (record.isSimulated ? "SIMULATED_PROCESS_MODEL" : "OBSERVED_OT");
+    const sequence = record.sequence || Date.now();
+    const traceId = (record as any).traceId || "";
+
+    // 1. Transactional write to SQLite WAL (Authority on Edge)
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable() && this.insertStmt) {
+      try {
+        this.insertStmt.run(
+          tenantId,
+          record.tag,
+          eventTs,
+          eventTs,
+          ingestTs,
+          numVal,
+          quality,
+          unit,
+          isSimulated,
+          origin,
+          provenance,
+          sequence,
+          traceId
+        );
+      } catch {
+        // Fallback to in-memory
+      }
+    }
+
+    // 2. Update RAM cache
+    let series = this.tagSeries.get(record.tag);
+    if (!series) {
+      series = [];
+      this.tagSeries.set(record.tag, series);
+    }
+    const sample: StoredSample = {
+      timestamp: eventTs,
+      value: numVal,
+      quality,
+      isSimulated: Boolean(isSimulated),
+    };
+    if (series.length === 0 || series[series.length - 1].timestamp <= eventTs) {
+      series.push(sample);
+    } else {
+      let idx = series.length - 1;
+      while (idx >= 0 && series[idx].timestamp > eventTs) {
+        idx--;
+      }
+      series.splice(idx + 1, 0, sample);
+    }
+    if (series.length > this.maxPointsPerTag) {
+      series.splice(0, series.length - this.maxPointsPerTag);
+    }
+  }
+
+  /**
    * Batch insertion of data points wrapped in a single SQLite WAL transaction.
    */
-  public recordBatch(points: IndustrialDataPoint[]): void {
+  public recordBatch(points: (IndustrialDataPoint | HistorianRecord)[]): void {
     if (this.sqliteEngine && this.sqliteEngine.isAvailable() && this.insertStmt) {
       try {
         this.sqliteEngine.transaction(() => {
-          for (const point of points) {
-            const numVal =
-              typeof point.engValue === "number"
-                ? point.engValue
-                : typeof point.value === "number"
-                ? point.value
-                : parseFloat(String(point.value));
+          for (const item of points) {
+            const isDataPoint = "engValue" in item || "deviceTimestamp" in item;
+            const numVal = isDataPoint
+              ? typeof (item as IndustrialDataPoint).engValue === "number"
+                ? (item as IndustrialDataPoint).engValue!
+                : typeof item.value === "number"
+                ? item.value
+                : parseFloat(String(item.value))
+              : typeof item.value === "number"
+              ? item.value
+              : parseFloat(String(item.value));
+
             if (isNaN(numVal)) continue;
 
-            const ts = point.deviceTimestamp ? new Date(point.deviceTimestamp).getTime() : Date.now();
-            const quality = point.quality || "GOOD";
-            const isSimulated = point.isSimulated ? 1 : 0;
+            const eventTs = isDataPoint
+              ? (item as IndustrialDataPoint).deviceTimestamp
+                ? new Date((item as IndustrialDataPoint).deviceTimestamp!).getTime()
+                : Date.now()
+              : (item as HistorianRecord).sourceTimestamp
+              ? new Date((item as HistorianRecord).sourceTimestamp!).getTime()
+              : new Date((item as HistorianRecord).timestamp).getTime();
 
-            this.insertStmt.run(point.tag, ts, numVal, quality, isSimulated);
+            const ingestTs = isDataPoint
+              ? (item as IndustrialDataPoint).edgeIngestionTimestamp
+                ? new Date((item as IndustrialDataPoint).edgeIngestionTimestamp!).getTime()
+                : Date.now()
+              : (item as HistorianRecord).ingestionTimestamp
+              ? new Date((item as HistorianRecord).ingestionTimestamp!).getTime()
+              : Date.now();
+
+            const quality = item.quality || "GOOD";
+            const isSimulated = item.isSimulated ? 1 : 0;
+            const tenantId = item.tenantId || "GLOBAL";
+            const unit = isDataPoint ? (item as IndustrialDataPoint).engineeringUnit || "" : (item as HistorianRecord).unit || "";
+            const origin = isDataPoint ? (item as IndustrialDataPoint).origin || (item.isSimulated ? "SIMULATED" : "LIVE_OT") : (item as HistorianRecord).originMark || "LIVE_OT";
+            const provenance = item.provenance || "OBSERVED_OT";
+            const sequence = item.sequence || Date.now();
+            const traceId = (item as any).traceId || "";
+
+            this.insertStmt.run(
+              tenantId,
+              item.tag,
+              eventTs,
+              eventTs,
+              ingestTs,
+              numVal,
+              quality,
+              unit,
+              isSimulated,
+              origin,
+              provenance,
+              sequence,
+              traceId
+            );
           }
         });
       } catch {
@@ -278,23 +463,34 @@ export class LocalTimeSeriesDatabase {
     }
 
     for (const p of points) {
-      // Update memory cache
-      const numVal =
-        typeof p.engValue === "number"
-          ? p.engValue
+      const isDataPoint = "engValue" in p || "deviceTimestamp" in p;
+      const numVal = isDataPoint
+        ? typeof (p as IndustrialDataPoint).engValue === "number"
+          ? (p as IndustrialDataPoint).engValue!
           : typeof p.value === "number"
           ? p.value
-          : parseFloat(String(p.value));
+          : parseFloat(String(p.value))
+        : typeof p.value === "number"
+        ? p.value
+        : parseFloat(String(p.value));
+
       if (isNaN(numVal)) continue;
 
-      const ts = p.deviceTimestamp ? new Date(p.deviceTimestamp).getTime() : Date.now();
+      const eventTs = isDataPoint
+        ? (p as IndustrialDataPoint).deviceTimestamp
+          ? new Date((p as IndustrialDataPoint).deviceTimestamp!).getTime()
+          : Date.now()
+        : (p as HistorianRecord).sourceTimestamp
+        ? new Date((p as HistorianRecord).sourceTimestamp!).getTime()
+        : new Date((p as HistorianRecord).timestamp).getTime();
+
       let series = this.tagSeries.get(p.tag);
       if (!series) {
         series = [];
         this.tagSeries.set(p.tag, series);
       }
       series.push({
-        timestamp: ts,
+        timestamp: eventTs,
         value: numVal,
         quality: p.quality || "GOOD",
         isSimulated: Boolean(p.isSimulated),
@@ -303,6 +499,103 @@ export class LocalTimeSeriesDatabase {
         series.splice(0, series.length - this.maxPointsPerTag);
       }
     }
+  }
+
+  /**
+   * Queries raw historical samples directly with optional tenant isolation.
+   */
+  public queryRaw(
+    tag: string,
+    startTime: number,
+    endTime: number,
+    options: TsdbQueryOptions & { tenantId?: string } = {}
+  ): { timestamp: number; value: number; quality: string; isSimulated: boolean }[] {
+    const tenantId = options.tenantId || "GLOBAL";
+    const canonical = this.queryCanonicalRecords({
+      tenantId,
+      tag,
+      fromEventTimeMs: startTime,
+      toEventTimeMs: endTime,
+      limit: 10000,
+    });
+    if (canonical.length > 0) {
+      return canonical.map((r) => ({
+        timestamp: new Date(r.timestamp).getTime(),
+        value: typeof r.value === "number" ? r.value : parseFloat(String(r.value)) || 0,
+        quality: String(r.quality),
+        isSimulated: Boolean(r.isSimulated),
+      }));
+    }
+    const series = this.tagSeries.get(tag) || [];
+    return series
+      .filter((s) => s.timestamp >= startTime && s.timestamp <= endTime)
+      .map((s) => ({
+        timestamp: s.timestamp,
+        value: s.value,
+        quality: s.quality,
+        isSimulated: s.isSimulated,
+      }));
+  }
+
+  /**
+   * Queries historical records directly from the durable SQLite WAL authority with strict tenant isolation.
+   */
+  public queryCanonicalRecords(params: {
+    tenantId: string;
+    tag?: string;
+    fromEventTimeMs?: number;
+    toEventTimeMs?: number;
+    limit?: number;
+  }): HistorianRecord[] {
+    const limit = params.limit || 100;
+    if (this.sqliteEngine && this.sqliteEngine.isAvailable()) {
+      try {
+        let sql = `
+          SELECT tenant_id, tag, timestamp, source_timestamp, ingestion_timestamp, value, quality, unit, is_simulated, origin, provenance, sequence, trace_id
+          FROM tsdb_samples
+          WHERE tenant_id = ?
+        `;
+        const sqlArgs: any[] = [params.tenantId];
+
+        if (params.tag) {
+          sql += ` AND tag = ?`;
+          sqlArgs.push(params.tag);
+        }
+        if (typeof params.fromEventTimeMs === "number") {
+          sql += ` AND timestamp >= ?`;
+          sqlArgs.push(params.fromEventTimeMs);
+        }
+        if (typeof params.toEventTimeMs === "number") {
+          sql += ` AND timestamp <= ?`;
+          sqlArgs.push(params.toEventTimeMs);
+        }
+        sql += ` ORDER BY timestamp ASC LIMIT ?;`;
+        sqlArgs.push(limit);
+
+        const rows = this.sqliteEngine.prepare(sql).all(...sqlArgs) as any[];
+        if (rows && rows.length > 0) {
+          return rows.map((r) => ({
+            tenantId: String(r.tenant_id),
+            tag: String(r.tag),
+            timestamp: new Date(Number(r.timestamp)).toISOString(),
+            sourceTimestamp: r.source_timestamp ? new Date(Number(r.source_timestamp)).toISOString() : undefined,
+            ingestionTimestamp: r.ingestion_timestamp ? new Date(Number(r.ingestion_timestamp)).toISOString() : undefined,
+            value: Number(r.value),
+            quality: (r.quality || "GOOD") as any,
+            unit: String(r.unit || ""),
+            isSimulated: Boolean(r.is_simulated),
+            originMark: (r.origin || "LIVE_OT") as any,
+            source: (r.origin || "LIVE_OT") as any,
+            provenance: ((r.provenance as any) || "OBSERVED_OT") as any,
+            scenario: "NORMAL" as any,
+            sequence: Number(r.sequence || 0),
+          }));
+        }
+      } catch {
+        // Fallback to empty
+      }
+    }
+    return [];
   }
 
   /**

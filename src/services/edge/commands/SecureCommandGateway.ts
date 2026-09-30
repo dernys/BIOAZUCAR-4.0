@@ -17,6 +17,7 @@ import { industrialDriverManager } from "../drivers/IndustrialDriverManager";
 import { IndustrialDataPoint } from "../../../types";
 import { logAuditEventToDb } from "../../dbService";
 import { AuditChainService } from "../../security/AuditChainService";
+import { getRuntimeProfile, FatalRuntimeConfigError } from "../config/runtimeProfile";
 
 export type CommandGatewayResultStatus =
   | "EXECUTED"
@@ -94,6 +95,30 @@ export class SecureCommandGateway {
 
   // Shared secret for HMAC-SHA256 signature verification (configured in edge runtime)
   private hmacSecretKey: string = process.env.EDGE_HMAC_SECRET || "bioazucar-ot-edge-signing-key-v4";
+
+  public getEffectiveHmacSecret(): string {
+    const profile = getRuntimeProfile();
+    const secret = process.env.EDGE_HMAC_SECRET;
+    const insecureDefaults = [
+      "bioazucar-ot-edge-signing-key-v4",
+      "default-secret",
+      "secret",
+      "password",
+      "test-secret",
+    ];
+
+    if (profile === "PRODUCTION") {
+      if (!secret || insecureDefaults.includes(secret.trim().toLowerCase())) {
+        throw new FatalRuntimeConfigError(
+          "Insecure or missing EDGE_HMAC_SECRET in PRODUCTION environment. Secure Command Gateway halted (FAIL CLOSED).",
+          "FAIL_CLOSED_INSECURE_SECRET"
+        );
+      }
+      return secret;
+    }
+
+    return secret || this.hmacSecretKey;
+  }
 
   // Anti-replay cache: nonce -> expiration timestamp (ms)
   private nonceCache = new Map<string, number>();
@@ -224,8 +249,9 @@ export class SecureCommandGateway {
     timestamp: string,
     nonce: string
   ): string {
+    const secret = this.getEffectiveHmacSecret();
     const canonicalPayload = `${commandId}:${tag}:${String(value)}:${timestamp}:${nonce}`;
-    return crypto.createHmac("sha256", this.hmacSecretKey).update(canonicalPayload).digest("hex");
+    return crypto.createHmac("sha256", secret).update(canonicalPayload).digest("hex");
   }
 
   /**
@@ -260,6 +286,43 @@ export class SecureCommandGateway {
    */
   public async executeSecureWrite(request: SecureWriteCommandRequest): Promise<CommandExecutionResult> {
     const executedAt = new Date().toISOString();
+    const profile = getRuntimeProfile();
+
+    // ------------------------------------------------------------------------
+    // STEP 0: Multi-Tenant Isolation & Profile Invariants
+    // ------------------------------------------------------------------------
+    if (request.tenantId && request.requester.tenantId && request.tenantId !== request.requester.tenantId) {
+      return this.rejectCommand(
+        request,
+        "REJECTED_UNAUTHORIZED_ROLE",
+        `Violación de aislamiento multi-tenant: Usuario del tenant '${request.requester.tenantId}' intentó consignar comando en tenant '${request.tenantId}'.`
+      );
+    }
+
+    // In PRODUCTION, signature, nonce and timestamp are strictly mandatory (FAIL CLOSED)
+    if (profile === "PRODUCTION") {
+      if (!request.signature || request.signature.trim() === "") {
+        return this.rejectCommand(
+          request,
+          "REJECTED_INVALID_SIGNATURE",
+          "Firma criptográfica HMAC-SHA256 obligatoria en perfil PRODUCTION (FAIL CLOSED)."
+        );
+      }
+      if (!request.nonce || request.nonce.trim() === "") {
+        return this.rejectCommand(
+          request,
+          "REJECTED_REPLAY_ATTACK",
+          "Nonce criptográfico obligatorio en perfil PRODUCTION (FAIL CLOSED)."
+        );
+      }
+      if (!request.timestamp || request.timestamp.trim() === "") {
+        return this.rejectCommand(
+          request,
+          "REJECTED_STALE_TIMESTAMP",
+          "Marca de tiempo ISO-8601 obligatoria en perfil PRODUCTION (FAIL CLOSED)."
+        );
+      }
+    }
 
     // ------------------------------------------------------------------------
     // STEP 1: Operational Reason Validation

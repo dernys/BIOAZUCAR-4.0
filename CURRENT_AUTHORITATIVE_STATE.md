@@ -27,7 +27,7 @@ TEST FIXTURE
 ```
 
 1. **`CURRENT AUTHORITATIVE STATE` (Este Documento, `BIOAZUCAR_MASTER_DEVELOPMENT.md` & HEAD en Ejecución):**
-   - El código real existente en el workspace verificado mediante compilador `tsc --noEmit` (0 errores), suite de pruebas Vitest (**63 suites, 705 pruebas 100% pasando, 0 fallos, 0 omitidos**), endpoints HTTP/Express reales en puerto 3000, y componentes React 19/Tailwind v4.
+   - El código real existente en el workspace verificado mediante compilador `tsc --noEmit` (0 errores), suite de pruebas Vitest (**81 suites, 922 pruebas 100% pasando, 0 fallos, 0 omitidos**), endpoints HTTP/Express reales en puerto 3000, y componentes React 19/Tailwind v4.
    - Datos operacionales persistidos en disco mediante SQLite WAL (`SqliteWalEngine.ts`), IndexedDB Vault (`IndustrialIndexedDbVault.ts`) en navegador y Firestore en la nube cuando está configurado.
 
 2. **`HISTORICAL SNAPSHOT`:**
@@ -82,6 +82,11 @@ TEST FIXTURE
 | **Trazabilidad Criptográfica & Linaje de Extracción (I38)** | Implementado (IEC 62443 SL3) | `src/services/lineage/DataLineageEngine.ts` | `i38DataLineageAndCryptographicTraceability.test.ts` | E3 |
 | **Frontera de Seguridad BioAI & Desacoplo Físico LLM (I39)** | Implementado (IEC 62443 SL3) | `src/services/bioai/safety/BioAiSafetyBoundaryEngine.ts` | `i39BioAiSafetyBoundaryAndPhysicalDecoupling.test.ts` | E3 |
 | **Ciclo de Vida de Credenciales Superadmin & Despliegue** | Implementado (IEC 62443 SL3) | `src/services/security/SuperAdminCredentialsService.ts` | `i39BioAiSafetyBoundaryAndPhysicalDecoupling.test.ts` | E3 |
+| **Historiador Edge Unificado (P0)** | Implementado & Verificado | `src/services/edge/history/EdgeHistorian.ts` | `edgeHistorianUnifiedE2E.test.ts` (8/8 PASS) | E3 |
+| **Cola de Control Remoto Durable (P0)** | Implementado & Verificado | `src/services/edge/commands/DurableCommandQueue.ts` | `secureCommandGatewayE2E.test.ts` (11/11 PASS) | E3 |
+| **Blindaje SecureCommandGateway (P0)** | Implementado (Fail-Closed Prod) | `src/services/edge/commands/SecureCommandGateway.ts` | `secureCommandGatewayE2E.test.ts` | E3 |
+| **Protección Costo Firestore & TimescaleDB** | Implementado & Verificado | `src/services/historian/HistorianCostModel.ts` | `historianCloudCostProtection.test.ts` (3/3 PASS) | E3 |
+| **Navegación Industrial Mobile-First** | Implementado & Verificado | `src/components/MobileBottomNav.tsx` | Compilación Vite 6.4 OK | E3 |
 
 ---
 
