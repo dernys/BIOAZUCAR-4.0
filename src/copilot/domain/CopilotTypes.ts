@@ -300,6 +300,16 @@ export interface ActionConfirmationRequest {
   operationalImpact: string;
   requiredPermission: string;
   payload: Record<string, any>;
+  perfectionSuggestion?: {
+    originalValue?: string | number;
+    recommendedValue?: string | number;
+    rationale: string;
+    efficiencyGain?: string;
+    riskMitigation?: string;
+    thermodynamicBasis?: string;
+    confidenceScore?: number;
+  };
+  atomicPermissionRequired?: string;
 }
 
 export interface CopilotResponse {

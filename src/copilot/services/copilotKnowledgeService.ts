@@ -5,6 +5,10 @@ import { BIOAZUCAR_PROCEDURES } from "../data/bioAzucarProcedures";
 import { BioAzucarKnowledgeGraph, KNOWLEDGE_GRAPH_NODES, KNOWLEDGE_GRAPH_EDGES } from "../data/bioAzucarKnowledgeGraph";
 import { KnowledgeRetrievalService } from "./knowledgeRetrievalService";
 import {
+  BIOAZUCAR_INDUSTRIAL_KNOWLEDGE_BASE,
+  IndustrialOperationDomain,
+} from "../data/bioAzucarIndustrialKnowledge";
+import {
   IndustrialGlossaryEntry,
   ModuleDocumentation,
   OperationalProcedure,
@@ -392,6 +396,44 @@ export class CopilotKnowledgeService {
 
   public getById(id: string): KnowledgeItem | undefined {
     return BIOAZUCAR_KNOWLEDGE_BASE.find((k) => k.id === id);
+  }
+
+  // --- INDUSTRIAL CANONICAL DOMAIN ENCYCLOPEDIA ---
+  public getAllIndustrialDomains(): IndustrialOperationDomain[] {
+    return BIOAZUCAR_INDUSTRIAL_KNOWLEDGE_BASE;
+  }
+
+  public getIndustrialDomainById(id: string): IndustrialOperationDomain | undefined {
+    return BIOAZUCAR_INDUSTRIAL_KNOWLEDGE_BASE.find((d) => d.id === id);
+  }
+
+  public searchIndustrialDomains(query: string, limit = 3): IndustrialOperationDomain[] {
+    const clean = query.toLowerCase().trim();
+    if (!clean) return BIOAZUCAR_INDUSTRIAL_KNOWLEDGE_BASE.slice(0, limit);
+
+    const tokens = clean.split(/\s+/).filter((t) => t.length > 2);
+    const scored = BIOAZUCAR_INDUSTRIAL_KNOWLEDGE_BASE.map((domain) => {
+      let score = 0;
+      const nameLower = domain.name.toLowerCase();
+      const summaryLower = domain.summary.toLowerCase();
+      const descLower = domain.detailedProcessDescription.toLowerCase();
+
+      if (nameLower.includes(clean)) score += 60;
+      tokens.forEach((t) => {
+        if (nameLower.includes(t)) score += 20;
+        if (summaryLower.includes(t)) score += 10;
+        if (descLower.includes(t)) score += 5;
+        if (domain.applicableStandards.some((s) => s.toLowerCase().includes(t))) score += 8;
+      });
+
+      return { domain, score };
+    });
+
+    return scored
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((s) => s.domain);
   }
 
   // --- GLOSSARY DELEGATES ---

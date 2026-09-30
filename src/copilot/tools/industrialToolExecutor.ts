@@ -24,6 +24,7 @@ import { commandService } from "../../services/edge/CommandService";
 import { industrialEdge } from "../../services/edge/BioAzucarIndustrialEdge";
 import { bioAiEngineService } from "../../services/bioai/BioAiEngineService";
 import { globalSystemAwarenessService } from "../../services/bioai/GlobalSystemAwarenessService";
+import { actionAdvisoryService } from "../services/ActionAdvisoryService";
 
 export interface ToolExecutionInput {
   toolName: string;
@@ -507,22 +508,23 @@ export class IndustrialToolExecutor {
             return { success: false, error: `Alarma no encontrada con ID '${alarmId}'.` };
           }
 
+          const advisory = actionAdvisoryService.evaluateAction(
+            "request_acknowledge_alarm",
+            { alarmId: targetAlarm.id, tag: targetAlarm.tag, equipment: targetAlarm.equipmentName },
+            context.roles,
+            context.permissions,
+            liveTelemetry,
+            alarmsList,
+            equipmentList,
+            activeTenant,
+            context.securityLevel,
+            context.isSuperAdmin
+          );
+
           result = {
             success: true,
             requiredConfirmation: true,
-            confirmationDetails: {
-              actionId: `conf-ack-${targetAlarm.id}`,
-              actionType: "ACKNOWLEDGE_ALARM",
-              level: 2,
-              targetEntity: targetAlarm.equipmentName,
-              title: `Reconocer Alarma ISA-18.2: ${targetAlarm.equipmentName}`,
-              description: `Estás a punto de confirmar el reconocimiento formal de la alarma '${targetAlarm.message}'. Se registrará tu usuario en la secuencia de eventos (SOE).`,
-              currentValue: `${targetAlarm.currentValue || targetAlarm.value} ${targetAlarm.unit}`,
-              proposedValue: "RECONOCIDA",
-              operationalImpact: "Informa a sala de control que el operador está enterado de la condición anormal.",
-              requiredPermission: "ACKNOWLEDGE_ALARM",
-              payload: { alarmId: targetAlarm.id },
-            },
+            confirmationDetails: advisory.confirmationDetails,
           };
           break;
         }
@@ -1169,48 +1171,48 @@ export class IndustrialToolExecutor {
         case "request_setpoint_change": {
           const tag = String(args.tag || "Milling.TCH_Setpoint");
           const targetValue = Number(args.newValue ?? args.value ?? 460);
-          const currentVal = tag.includes("TCH") ? liveTelemetry.tch : liveTelemetry.boilerPressureHP;
+
+          const advisory = actionAdvisoryService.evaluateAction(
+            "request_setpoint_change",
+            { tag, value: targetValue, newValue: targetValue },
+            context.roles,
+            context.permissions,
+            liveTelemetry,
+            alarmsList,
+            equipmentList,
+            activeTenant,
+            context.securityLevel,
+            context.isSuperAdmin
+          );
 
           result = {
             success: true,
             requiredConfirmation: true,
-            confirmationDetails: {
-              actionId: `conf-sp-${Date.now()}`,
-              actionType: "MODIFY_SETPOINT",
-              level: 3,
-              targetEntity: tag,
-              title: `Modificación Crítica de Setpoint: ${tag}`,
-              description: `Se modificará el setpoint en el controlador PID industrial. Esta acción altera directamente las condiciones de operación continua.`,
-              currentValue: currentVal,
-              proposedValue: targetValue,
-              unit: tag.includes("TCH") ? "TCH" : "bar",
-              operationalImpact: `El lazo de control ajustará actuadores hidráulicos/válvulas modulantes para converger al nuevo valor de ${targetValue}.`,
-              requiredPermission: "MODIFY_SETPOINTS",
-              payload: { tag, value: targetValue },
-            },
+            confirmationDetails: advisory.confirmationDetails,
           };
           break;
         }
 
         case "request_dispatch_change": {
           const exportMW = Number(args.exportMW ?? args.value ?? 22.0);
+
+          const advisory = actionAdvisoryService.evaluateAction(
+            "request_dispatch_change",
+            { exportMW, value: exportMW },
+            context.roles,
+            context.permissions,
+            liveTelemetry,
+            alarmsList,
+            equipmentList,
+            activeTenant,
+            context.securityLevel,
+            context.isSuperAdmin
+          );
+
           result = {
             success: true,
             requiredConfirmation: true,
-            confirmationDetails: {
-              actionId: `conf-dispatch-${Date.now()}`,
-              actionType: "CHANGE_DISPATCH_MW",
-              level: 3,
-              targetEntity: "Despacho Eléctrico Subestación",
-              title: `Ajuste de Consigna de Despacho PPA: ${exportMW} MW`,
-              description: `Modificación de la potencia activa inyectada a la red de alta tensión del Sistema Eléctrico Nacional.`,
-              currentValue: `${liveTelemetry.powerExportGridMW} MW`,
-              proposedValue: `${exportMW} MW`,
-              unit: "MW",
-              operationalImpact: `Afecta el cumplimiento del contrato PPA y el balance de vapor en turbogeneradores.`,
-              requiredPermission: "CHANGE_DISPATCH_MW",
-              payload: { exportMW },
-            },
+            confirmationDetails: advisory.confirmationDetails,
           };
           break;
         }
