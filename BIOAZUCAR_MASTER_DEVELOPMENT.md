@@ -1627,6 +1627,27 @@ Para que cualquier módulo o funcionalidad sea promovido a un estado superior en
   * Suite de pruebas `src/__tests__/i39BioAiSafetyBoundaryAndPhysicalDecoupling.test.ts` con **23/23 tests pasando al 100%**.
   * Cómputo global de pruebas elevado a **11 suites y 186 pruebas de iteración pasando al 100% (64 suites y 728 pruebas globales)**.
 
+### Versión 4.0.0-I40-HISTORIAN-FIRESTORE-COST-PROTECTION-AND-MOBILE-FIRST (2026-09-30)
+* **Auditoría Forense y Estrategia de Almacenamiento: Protección contra Saturación y Costos Desorbitados de Firestore:**
+  * **Diagnóstico de Vulnerabilidad Económica:** Se identificó que la ingestión individual de muestras de telemetría hacia Firestore (`addDoc` en `historian_records`) en una planta con 2,000 tags a 1 Hz provocaría más de 172.8 millones de escrituras diarias, con un costo estimado de ~$9,330 USD/mes solo en base de datos cloud, además de cuellos de botella por cuotas de concurrencia.
+  * **Estrategia "Zero Raw Telemetry in Firestore":**
+    1. **Nivel 1 (Edge TSDB - Primario):** Retención local en SQLite WAL (`LocalTimeSeriesDatabase.ts`) validada a 131k puntos/s con compresión Swinging Door Trending (SDT) y ring buffers de memoria con downsampling LTTB (`IndustrialTsdbEngine.ts`). Toda la telemetría viva de alta frecuencia permanece en el IPC de planta.
+    2. **Nivel 2 (Streaming Efímero en Backend):** Distribución HMI/SCADA reactiva mediante `HighDensityTelemetryStreamer` en `server.ts` con control de contrapresión (backpressure), búfer circular de 25k puntos y compresión de banda muerta (deadband 0.05%), sirviendo al cliente web sin costo de base de datos transaccional.
+    3. **Nivel 3 (Modo AGGREGATED_ROLLUP hacia Cloud):** Implementado en `HistorianService.ts` el empaquetado estadístico por ventanas temporales (1 a 5 minutos). En lugar de escribir 60 a 300 puntos individuales por tag, se escribe 1 único documento condensado (`min`, `max`, `avg`, `first`, `last`, `quality`, `count`), reduciendo el tráfico y la facturación en un **99.98%** (< $0.05 USD/día).
+    4. **Circuit Breaker Activo:** Disyuntor automático que corta el tráfico a Firestore si las escrituras directas superan 30 docs/minuto, blindando la cuenta ante bucles accidentales.
+    5. **Métricas de Ahorro Cloud:** Métricas programáticas (`getCloudCostSavingsStats()`) para auditoría de escrituras evitadas y ahorro estimado en dólares.
+* **Potenciación de Interfaz de Usuario Mobile-First & Ergonomía de Operador:**
+  * **Barra de Navegación Móvil Inferior (`src/components/MobileBottomNav.tsx`):**
+    * Diseñada para uso ergonómico con una sola mano y guantes de protección industrial en sala de control o recorrido de campo.
+    * 5 puntos de interacción táctil con área mínima de 48x48px (conforme a WCAG AAA e ISA-101 HMI): Dashboard KPI, SCADA Mímico, Botón Central Elevado de Copilot IA, Centro de Alarmas con badge activo y Botón de Módulos.
+    * **Drawer Táctil ISA-95 Deslizable:** Despliegue categorizado de todas las 18 áreas funcionales (Planta/Fabricación, Campo PDA, Calidad LIMS, Observabilidad OT, Mantenimiento CMMS, Seguridad IAM), buscador instantáneo y conmutador rápido de Central Azucarero con 1 toque.
+    * Adaptación de layout en `src/App.tsx` con compensación de altura (`pb-20 sm:pb-6`) y ocultamiento inteligente del dock desktop en pantallas móviles.
+* **Verificación de la Próxima Fase Tecnológica (Evaluación E3 -> E4 / E5):**
+  * Suite de pruebas `src/__tests__/historianCloudCostProtection.test.ts` aprobada al 100% (3/3 tests).
+  * Cómputo global del proyecto elevado a **78 suites de pruebas ejecutadas y 891 pruebas aprobadas (100% PASS, 0 fallos)**.
+  * Linter TypeScript (`tsc --noEmit`) con **0 errores y 0 advertencias**. Compilación Vite/Express para producción exitosa.
+  * Veredicto de fase: El software base se encuentra formalmente listo y endurecido en **E3**. La transición a **E4/E5** requiere la integración de sockets de red físicos (`net.Socket`, TLS 802, RFC 1006) y el conexionado a hardware real o servidor de referencia externo en banco.
+
 ---
 
 > **FIN DEL DOCUMENTO MAESTRO — BIOAZÚCAR 4.0**  

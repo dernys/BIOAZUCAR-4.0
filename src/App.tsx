@@ -32,6 +32,7 @@ import { ProductionDeploymentModal } from "./components/deployment/ProductionDep
 import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { OfflineIndicator } from "./components/pwa/OfflineIndicator";
+import { MobileBottomNav } from "./components/MobileBottomNav";
 import {
   TelemetryData,
   UserRole,
@@ -726,7 +727,7 @@ export default function App() {
 
       {/* 3. Main Operational Viewport */}
       <main className={`flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 space-y-6 transition-all duration-200 ${
-        isFooterPinned ? "pb-12 sm:pb-14" : ""
+        isFooterPinned ? "pb-24 sm:pb-14" : "pb-20 sm:pb-6"
       }`}>
         <ErrorBoundary
           fallbackTitle={`Excepción Controlada en Módulo [${activeTab.toUpperCase()}]`}
@@ -887,13 +888,30 @@ export default function App() {
         </ErrorBoundary>
       </main>
 
-      {/* 4. Industrial Footer & SCADA Status Bar — Executive Single-Line Responsive Dock */}
+      {/* 4. Mobile-First Ergonomic Bottom Navigation Bar (Smartphones & Handheld Tablets) */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        activeAlarmsCount={activeAlarmsCount}
+        onOpenCopilot={() => setIsCopilotOpen(true)}
+        currentUser={currentUser}
+        currentRole={currentRole}
+        activeTenant={activeTenant}
+        tenants={tenants}
+        onSelectTenant={handleSelectTenant}
+        plantStatus={activeAlarmsCount > 0 ? "ALERTA_PROCESO" : "OPERACION_NORMAL"}
+        theme={theme}
+        onOpenDbModal={() => setIsDbModalOpen(true)}
+        dbLatencyMs={dbLatencyMs}
+      />
+
+      {/* 5. Industrial Footer & SCADA Status Bar — Executive Single-Line Responsive Dock (Desktop & Tablet) */}
       <footer
         className={`fixed bottom-0 left-0 right-0 z-40 border-t h-8 sm:h-9 px-2.5 sm:px-4 text-[11px] font-mono transition-all duration-300 backdrop-blur-md ${
           theme === "light"
             ? "bg-white/95 border-slate-300 text-slate-800 shadow-[0_-2px_12px_rgba(0,0,0,0.08)]"
             : "bg-slate-950/95 border-slate-800/80 text-slate-300 shadow-[0_-2px_12px_rgba(0,0,0,0.3)]"
-        } flex items-center justify-between gap-2 sm:gap-4 flex-nowrap whitespace-nowrap overflow-hidden select-none`}
+        } hidden sm:flex items-center justify-between gap-2 sm:gap-4 flex-nowrap whitespace-nowrap overflow-hidden select-none`}
       >
         {/* Left Side: Firestore Live Latency & Active Tenant */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
