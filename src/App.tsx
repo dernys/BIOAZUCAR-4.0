@@ -33,6 +33,7 @@ import { AgriculturalPdaView } from "./components/AgriculturalPdaView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { OfflineIndicator } from "./components/pwa/OfflineIndicator";
 import { MobileBottomNav } from "./components/MobileBottomNav";
+import { FullscreenModuleLayout, ModuleFullscreenButton } from "./components/fullscreen";
 import {
   TelemetryData,
   UserRole,
@@ -734,157 +735,184 @@ export default function App() {
           theme={theme}
           onReset={() => setActiveTab("dashboard")}
         >
-        {activeTab === "dashboard" && (
-          <DashboardOverview
-            telemetry={telemetry}
-            currentRole={currentRole}
-            onNavigateToTab={setActiveTab}
-          />
-        )}
-
-        {activeTab === "scada" && (
-          <ProcessFlowSCADA
-            telemetry={telemetry}
-            equipmentList={equipmentList}
-            currentRole={currentRole}
-          />
-        )}
-
-        {activeTab === "agricultural_pda" && (
-          <ErrorBoundary fallbackTitle="Error en el Módulo Agronómico (PDA)" theme={theme}>
-            <AgriculturalPdaView
-              theme={theme}
-              currentTenantName={activeTenant.name}
-              nominalMillTch={telemetry.tch}
-              currentRole={currentRole}
-              currentUser={currentUser}
-            />
-          </ErrorBoundary>
-        )}
-
-        {activeTab === "energy_dispatch" && (
-          <EnergyDispatch
-            telemetry={telemetry}
-            currentRole={currentRole}
-            onDispatchUpdate={handleDispatchUpdate}
-          />
-        )}
-
-        {activeTab === "uns_hub" && (
-          <UNSHub
-            telemetry={telemetry}
-            currentRole={currentRole}
-            onUpdateSetpoint={handleUpdateSetpoint}
-          />
-        )}
-
-        {activeTab === "digital_twin" && (
-          <DigitalTwin3D
-            telemetry={telemetry}
-            equipmentList={equipmentList}
+          <FullscreenModuleLayout
+            moduleId={activeTab}
+            moduleName={
+              activeTab === "dashboard" ? "Dashboard KPI & OEE" :
+              activeTab === "scada" ? "Sinóptico SCADA & Mímico Industrial" :
+              activeTab === "agricultural_pda" ? "Plan Agrícola & PDA de Campo" :
+              activeTab === "energy_dispatch" ? "Energía, Calderas & Cogeneración PPA" :
+              activeTab === "uns_hub" ? "UNS & IIoT Observabilidad OT" :
+              activeTab === "digital_twin" ? "Gemelo Digital 3D" :
+              activeTab === "batches" ? "LIMS & Trazabilidad de Caña" :
+              activeTab === "equipment" ? "CBM & CMMS Mantenimiento" :
+              activeTab === "historian" ? "Historiador de Tendencias Industriales" :
+              activeTab === "alarms" ? "Centro de Alarmas ISA-18.2" :
+              activeTab === "sat_fat_acceptance" ? "Aceptación SAT/FAT & Comisionamiento" :
+              activeTab === "commissioning_coverage" ? "Cobertura de Comisionamiento & Linaje" :
+              activeTab === "ai_center" ? "BioAI Control Center & Centro IA" :
+              activeTab === "enterprises" ? "Administrador de Empresas & Multi-Tenant" :
+              activeTab === "users_roles" ? "Gestión de Usuarios, Roles & IAM" :
+              activeTab === "system_config" ? "Verificación de Configuración del Sistema" :
+              activeTab === "presentation" ? "Presentación Ejecutiva Industrial" :
+              activeTab.toUpperCase()
+            }
+            badge={activeTenant?.code}
             theme={theme}
-          />
-        )}
+            hideHeaderInNormalView={true}
+          >
+            {activeTab === "dashboard" && (
+              <DashboardOverview
+                telemetry={telemetry}
+                currentRole={currentRole}
+                onNavigateToTab={setActiveTab}
+              />
+            )}
 
-        {activeTab === "batches" && (
-          <BatchTraceability
-            batches={batches}
-            onAddBatch={handleAddBatch}
-            currentRole={currentRole}
-          />
-        )}
+            {activeTab === "scada" && (
+              <ProcessFlowSCADA
+                telemetry={telemetry}
+                equipmentList={equipmentList}
+                currentRole={currentRole}
+              />
+            )}
 
-        {activeTab === "equipment" && (
-          <EquipmentMaintenance
-            equipmentList={equipmentList}
-            workOrders={workOrders}
-            onAddWorkOrder={handleAddWorkOrder}
-            onUpdateWorkOrder={handleUpdateWorkOrder}
-            currentRole={currentRole}
-          />
-        )}
+            {activeTab === "agricultural_pda" && (
+              <ErrorBoundary fallbackTitle="Error en el Módulo Agronómico (PDA)" theme={theme}>
+                <AgriculturalPdaView
+                  theme={theme}
+                  currentTenantName={activeTenant.name}
+                  nominalMillTch={telemetry.tch}
+                  currentRole={currentRole}
+                  currentUser={currentUser}
+                />
+              </ErrorBoundary>
+            )}
 
-        {activeTab === "historian" && (
-          <HistorianTrends
-            telemetry={telemetry}
-            currentRole={currentRole}
-          />
-        )}
+            {activeTab === "energy_dispatch" && (
+              <EnergyDispatch
+                telemetry={telemetry}
+                currentRole={currentRole}
+                onDispatchUpdate={handleDispatchUpdate}
+              />
+            )}
 
-        {activeTab === "alarms" && (
-          <AlarmCenter
-            alarms={alarms}
-            onAcknowledgeAlarm={handleAcknowledgeAlarm}
-            onClearAlarm={handleClearAlarm}
-            onShelveAlarm={handleShelveAlarm}
-            onUnshelveAlarm={handleUnshelveAlarm}
-            currentRole={currentRole}
-          />
-        )}
+            {activeTab === "uns_hub" && (
+              <UNSHub
+                telemetry={telemetry}
+                currentRole={currentRole}
+                onUpdateSetpoint={handleUpdateSetpoint}
+              />
+            )}
 
-        {activeTab === "sat_fat_acceptance" && (
-          <UnifiedAcceptancePanel
-            onOpenFullModal={() => setIsFatSatModalOpen(true)}
-          />
-        )}
+            {activeTab === "digital_twin" && (
+              <DigitalTwin3D
+                telemetry={telemetry}
+                equipmentList={equipmentList}
+                theme={theme}
+              />
+            )}
 
-        {activeTab === "commissioning_coverage" && (
-          <IndustrialCommissioningCoverageView activeTenantId={activeTenant.id} />
-        )}
+            {activeTab === "batches" && (
+              <BatchTraceability
+                batches={batches}
+                onAddBatch={handleAddBatch}
+                currentRole={currentRole}
+              />
+            )}
 
-        {activeTab === "ai_center" && (
-          <AICenter
-            telemetry={telemetry}
-            currentRole={currentRole}
-            activeTenant={activeTenant}
-            equipmentList={equipmentList}
-            alarms={alarms}
-            onNavigateToTab={setActiveTab}
-            onOpenCopilot={() => setIsCopilotOpen(true)}
-          />
-        )}
+            {activeTab === "equipment" && (
+              <EquipmentMaintenance
+                equipmentList={equipmentList}
+                workOrders={workOrders}
+                onAddWorkOrder={handleAddWorkOrder}
+                onUpdateWorkOrder={handleUpdateWorkOrder}
+                currentRole={currentRole}
+              />
+            )}
 
-        {activeTab === "enterprises" && (
-          <EnterprisesManager
-            tenants={tenants}
-            activeTenant={activeTenant}
-            onSelectTenant={handleSelectTenant}
-            currentUser={currentUser}
-            onOpenCreateWizard={() => setIsCreateWizardOpen(true)}
-            theme={theme}
-          />
-        )}
+            {activeTab === "historian" && (
+              <HistorianTrends
+                telemetry={telemetry}
+                currentRole={currentRole}
+              />
+            )}
 
-        {activeTab === "users_roles" && (
-          <UsersAndRolesManager
-            users={usersList}
-            roles={rolesList}
-            tenants={tenants}
-            currentUser={currentUser}
-            activeTenant={activeTenant}
-            onSwitchUser={handleUserLoginSuccess}
-          />
-        )}
+            {activeTab === "alarms" && (
+              <AlarmCenter
+                alarms={alarms}
+                onAcknowledgeAlarm={handleAcknowledgeAlarm}
+                onClearAlarm={handleClearAlarm}
+                onShelveAlarm={handleShelveAlarm}
+                onUnshelveAlarm={handleUnshelveAlarm}
+                currentRole={currentRole}
+              />
+            )}
 
-        {activeTab === "system_config" && (
-          <SystemConfigVerification
-            currentRole={currentRole}
-            currentUser={currentUser}
-            activeTenant={activeTenant}
-            onNavigateToTab={setActiveTab}
-          />
-        )}
+            {activeTab === "sat_fat_acceptance" && (
+              <UnifiedAcceptancePanel
+                onOpenFullModal={() => setIsFatSatModalOpen(true)}
+              />
+            )}
 
-        {activeTab === "presentation" && (
-          <ExecutivePresentation
-            activeTenant={activeTenant}
-            telemetry={telemetry}
-            equipmentList={equipmentList}
-            alarms={alarms}
-            onNavigateToTab={setActiveTab}
-            onOpenCopilot={() => setIsCopilotOpen(true)}
-          />
-        )}
+            {activeTab === "commissioning_coverage" && (
+              <IndustrialCommissioningCoverageView activeTenantId={activeTenant.id} />
+            )}
+
+            {activeTab === "ai_center" && (
+              <AICenter
+                telemetry={telemetry}
+                currentRole={currentRole}
+                activeTenant={activeTenant}
+                equipmentList={equipmentList}
+                alarms={alarms}
+                onNavigateToTab={setActiveTab}
+                onOpenCopilot={() => setIsCopilotOpen(true)}
+              />
+            )}
+
+            {activeTab === "enterprises" && (
+              <EnterprisesManager
+                tenants={tenants}
+                activeTenant={activeTenant}
+                onSelectTenant={handleSelectTenant}
+                currentUser={currentUser}
+                onOpenCreateWizard={() => setIsCreateWizardOpen(true)}
+                theme={theme}
+              />
+            )}
+
+            {activeTab === "users_roles" && (
+              <UsersAndRolesManager
+                users={usersList}
+                roles={rolesList}
+                tenants={tenants}
+                currentUser={currentUser}
+                activeTenant={activeTenant}
+                onSwitchUser={handleUserLoginSuccess}
+              />
+            )}
+
+            {activeTab === "system_config" && (
+              <SystemConfigVerification
+                currentRole={currentRole}
+                currentUser={currentUser}
+                activeTenant={activeTenant}
+                onNavigateToTab={setActiveTab}
+              />
+            )}
+
+            {activeTab === "presentation" && (
+              <ExecutivePresentation
+                activeTenant={activeTenant}
+                telemetry={telemetry}
+                equipmentList={equipmentList}
+                alarms={alarms}
+                onNavigateToTab={setActiveTab}
+                onOpenCopilot={() => setIsCopilotOpen(true)}
+              />
+            )}
+          </FullscreenModuleLayout>
         </ErrorBoundary>
       </main>
 

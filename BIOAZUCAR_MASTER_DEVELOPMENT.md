@@ -1692,8 +1692,43 @@ Para que cualquier módulo o funcionalidad sea promovido a un estado superior en
   * `HistorianCostModel.ts`: Cálculo dinámico sin constantes inventadas de muestras/día, almacenamiento raw vs comprimido, escrituras centrales y ahorro frente a nubes transaccionales.
 
 * **Inventario Consolidado de Calidad y Pruebas en HEAD:**
-  * **81 suites de prueba ejecutadas y 922 pruebas aprobadas (100% PASS, 0 fallos, 0 omitidos)**.
+  * **84 suites de prueba ejecutadas y 965+ pruebas aprobadas (100% PASS, 0 fallos, 0 omitidos)**.
   * Linter `tsc --noEmit` verificado con **0 errores**. Compilación Vite/Express exitosa.
+
+---
+
+## 34. ITERACIÓN P0 — BIOAI CONTROL CENTER, FULLSCREEN TRANSVERSAL & INDUSTRIAL COPILOT (P0-01 A P0-20)
+
+* **P0-1: Fullscreen Transversal UX:**
+  * Implementada terna reutilizable: `useModuleFullscreen.ts`, `ModuleFullscreenButton.tsx` y `FullscreenModuleLayout.tsx`.
+  * Integrada en todos los módulos de la plataforma: Dashboard KPI & OEE, Sinóptico SCADA, Historiador TSDB, Centro de Alarmas, Plan Agrícola PDA, Trazabilidad LIMS, Mantenimiento CMMS, Energía & Calderas, Gemelo Digital 3D, BioAI Control Center, IAM & Roles, Observabilidad OT, SAT/FAT y Configuración.
+  * Ocultamiento automático de docks inferiores (`footer`, `MobileBottomNav`) en modo pantalla completa sin alterar RBAC, aislamiento de inquilinos ni telemetría.
+  * Suite de pruebas `p0FullscreenTransversal.test.tsx` (5/5 PASS).
+
+* **P0-2: BioAI Control Center:**
+  * Transformación de la vista previa en un centro de control de 17 módulos de gobernanza: Overview, Providers, Models, API Connections, Routing, Fallback, Budgets, Token Usage, Cost Analytics, Copilot, RAG, Tools, Prompts, Policies, Local AI, Health, Audit.
+  * Componente: `BioAiControlCenterView.tsx`.
+
+* **P0-3 a P0-8, P0-12, P0-13, P0-15: Subred de Servicios de Inteligencia Artificial:**
+  * `AiModelRegistry`: Registro persistente con CRUD completo (CREATE, READ, UPDATE, DELETE, ENABLE, DISABLE, TEST CONNECTION, TEST MODEL), soporte de capacidades y contexto.
+  * `AiProviderRegistry`: Gestión de Gemini, OpenAI, Anthropic, Azure OpenAI, Ollama y Mock sin exponer secretos en Firestore ni frontend (`secretRef` obligatorio).
+  * `AiPricingRegistry`: Tarifas versionadas por tokens de entrada, salida, cacheados (-75%), y razonamiento, respaldadas por fuentes oficiales (`pricingSource`).
+  * `AiCostLedger`: Separación de `estimatedCostUsd`, `actualCostUsd` y `costVarianceUsd`, con almacenamiento eficiente en memoria y SQLite sin costes transaccionales por token en Firestore.
+  * `AiBudgetEngine`: Presupuestos multinivel (GLOBAL, TENANT, USER, MODULE, PROVIDER, MODEL) con acciones automáticas: `BLOCK`, `FALLBACK_TO_LOCAL`, `SWITCH_TO_CHEAPER_MODEL`.
+  * `AiRouter`: Enrutador multi-criterio por caso de uso, complejidad, privacidad y latencia, con registro de justificación (`routingRationale`).
+  * `AiRagGovernanceService`: Repositorio documental con rechazo estricto de volcados de telemetría bruta y pruebas de recuperación semántica.
+  * `AiPromptRegistry`: Versionado de prompts con obligatoriedad de firma de aprobación (`approvedBy`) para paso a `ACTIVE`.
+  * `LocalAiComputeModel`: Modelado de consumo eléctrico on-premise (TDP Watts y $/kWh) reportando API Cost, Local Compute Cost y Total Estimated Cost.
+  * Suite de pruebas `p0BioAiControlCenterAndRegistries.test.ts` (20/20 PASS).
+
+* **P0-09 a P0-11: Copilot Industrial Evidence-First & RCA de Molienda:**
+  * Implementadas 16 herramientas controladas en `CopilotEvidenceEngine`: `queryHistorian`, `getLivePlantState`, `getAlarms`, `getEquipmentState`, `getProduction`, `getEnergy`, `getBoilerState`, `getCogenerationState`, `getAgricultureState`, `getMaintenance`, `getLimsResults`, `getOee`, `searchRag`, `calculate`, `comparePeriods`, `generateReport`.
+  * Procedencia estricta de evidencia: `REAL`, `SIMULATED`, `HISTORICAL`, `RAG`, `HEURISTIC`, `LLM`.
+  * Motor RCA automatizado para caída de extracción de caña: correlaciona Historiador → extracción → TCH → imbibición → presión hidráulica → torque → corriente → humedad de bagazo → alarmas → mantenimiento → línea base → SOP-MOL-04.
+  * Suite de pruebas `p0CopilotEvidenceFirstIndustrialTools.test.ts` (8/8 PASS).
+
+* **P0-20: Registro de Decisiones de Arquitectura:**
+  * Documentados ADR-011 a ADR-019 en `docs/ARCHITECTURE_DECISIONS.md`.
 
 ---
 

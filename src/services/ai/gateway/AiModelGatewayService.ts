@@ -1,8 +1,7 @@
 /**
  * ============================================================================
- * BIOAZÚCAR 4.0 — UNIFIED INDUSTRIAL AI MODEL GATEWAY
- * Estándar: IEC 62443-3-3 SL3 / ISA-95 L3/L4 Industrial Architecture
- * Módulo: [P0-08] AI MODEL GATEWAY MULTI-PROVEEDOR & OBSERVABILIDAD
+ * BIOAZÚCAR 4.0 — UNIFIED INDUSTRIAL AI MODEL GATEWAY (IEC 62443 SL3 / ISA-95)
+ * [P0-02/08] BIOAI CONTROL CENTER ENGINE, MULTI-PROVIDER ROUTING & OBSERVABILITY
  * ============================================================================
  */
 
@@ -22,6 +21,17 @@ import { AnthropicAdapter } from "./adapters/AnthropicAdapter.js";
 import { AzureOpenAiAdapter } from "./adapters/AzureOpenAiAdapter.js";
 import { OllamaAdapter } from "./adapters/OllamaAdapter.js";
 import { MockAiAdapter } from "./adapters/MockAiAdapter.js";
+
+// Subsystems
+import { aiPricingRegistry } from "../pricing/AiPricingRegistry.js";
+import { aiCostLedger } from "../ledger/AiCostLedger.js";
+import { aiBudgetEngine } from "../budget/AiBudgetEngine.js";
+import { aiRouter, AiUseCase } from "../router/AiRouter.js";
+import { aiProviderRegistry } from "../providers/AiProviderRegistry.js";
+import { aiModelRegistry } from "../models/AiModelRegistry.js";
+import { aiPromptRegistry } from "../prompts/AiPromptRegistry.js";
+import { aiRagGovernanceService } from "../rag/AiRagGovernanceService.js";
+import { localAiComputeModel } from "../local/LocalAiComputeModel.js";
 
 export class AiModelGatewayService {
   private static instance: AiModelGatewayService | null = null;
@@ -147,6 +157,35 @@ export class AiModelGatewayService {
     });
   }
 
+  // Subsystem accessors
+  public getPricingRegistry() {
+    return aiPricingRegistry;
+  }
+  public getCostLedger() {
+    return aiCostLedger;
+  }
+  public getBudgetEngine() {
+    return aiBudgetEngine;
+  }
+  public getRouter() {
+    return aiRouter;
+  }
+  public getProviderRegistry() {
+    return aiProviderRegistry;
+  }
+  public getModelRegistry() {
+    return aiModelRegistry;
+  }
+  public getPromptRegistry() {
+    return aiPromptRegistry;
+  }
+  public getRagGovernance() {
+    return aiRagGovernanceService;
+  }
+  public getLocalComputeModel() {
+    return localAiComputeModel;
+  }
+
   public getActiveProvider(): AiProviderType {
     return this.primaryProvider;
   }
@@ -210,8 +249,25 @@ export class AiModelGatewayService {
     const traceId = request.traceId || `ai-trace-${randomUUID()}`;
     const tenantId = request.tenantId || request.context?.tenantId || "default-tenant";
     const userId = request.userId || request.context?.userId || "anonymous";
+    const module = request.context?.currentModule || "general";
+    const useCase: AiUseCase =
+      (request.context as any)?.useCase ||
+      (request.prompt.toLowerCase().includes("causa") || request.prompt.toLowerCase().includes("rca")
+        ? "RCA"
+        : request.prompt.toLowerCase().includes("resumen")
+        ? "OPERATIONAL_SUMMARY"
+        : "SIMPLE_QUERY");
 
     this.stats.totalRequests++;
+
+    // 1. Evaluate Router & Budget
+    const routeDecision = aiRouter.resolveRoute({
+      useCase,
+      tenantId,
+      userId,
+      module,
+      preferredProvider: request.preferredProvider,
+    });
 
     const providerSequence: AiProviderType[] = [];
     if (request.preferredProvider && this.adapters.has(request.preferredProvider)) {
@@ -248,6 +304,33 @@ export class AiModelGatewayService {
           fallbackReason: isFallback && lastError ? lastError.message : undefined,
         };
 
+        // Detailed Cost & Token Accounting via AiPricingRegistry & AiCostLedger
+        aiCostLedger.recordRequest({
+          traceId,
+          tenantId,
+          userId,
+          module,
+          useCase,
+          provider,
+          model: config.model,
+          promptTokens: response.usage.promptTokens,
+          completionTokens: response.usage.completionTokens,
+          latencyMs: response.latencyMs,
+          isFallback,
+          fallbackReason: response.fallbackReason,
+          status: isFallback ? "FALLBACK" : "SUCCESS",
+        });
+
+        // Record spend into Budget Engine
+        aiBudgetEngine.recordSpend({
+          tenantId,
+          userId,
+          module,
+          provider,
+          model: config.model,
+          costUsd: response.usage.estimatedCostUsd,
+        });
+
         this.recordSuccessTelemetry({
           traceId,
           tenantId,
@@ -280,6 +363,21 @@ export class AiModelGatewayService {
     }
 
     this.stats.failedRequests++;
+    aiCostLedger.recordRequest({
+      traceId,
+      tenantId,
+      userId,
+      module,
+      useCase,
+      provider: this.primaryProvider,
+      model: this.configs.get(this.primaryProvider)?.model || "unknown",
+      promptTokens: 0,
+      completionTokens: 0,
+      latencyMs: 0,
+      isFallback: true,
+      status: "FAILED",
+    });
+
     throw new Error(
       `AI Gateway exhausted all available providers. Last error: ${lastError?.message || "Unknown"}`
     );

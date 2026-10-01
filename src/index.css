@@ -955,3 +955,13 @@ html.light body,
     linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
 }
+
+/* ==========================================================================
+   P0-01 CROSS-MODULE FULLSCREEN TRANSVERSAL (UX & INDUSTRIAL VIEWPORT)
+   ========================================================================== */
+body.bioazucar-module-fullscreen-active footer,
+body.bioazucar-module-fullscreen-active nav[aria-label="Navegación Móvil de Planta"],
+body.bioazucar-module-fullscreen-active .mobile-bottom-nav-dock {
+  display: none !important;
+}
+

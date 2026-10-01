@@ -40,6 +40,15 @@ import {
 } from "./src/server/firebaseAdmin";
 import { getMetrics, getMetricsContentType, trackHttpRequest } from "./src/services/metrics";
 import { AiModelGatewayService } from "./src/services/ai/gateway/AiModelGatewayService";
+import { aiModelRegistry } from "./src/services/ai/models/AiModelRegistry";
+import { aiProviderRegistry } from "./src/services/ai/providers/AiProviderRegistry";
+import { aiPricingRegistry } from "./src/services/ai/pricing/AiPricingRegistry";
+import { aiCostLedger } from "./src/services/ai/ledger/AiCostLedger";
+import { aiBudgetEngine } from "./src/services/ai/budget/AiBudgetEngine";
+import { aiRouter } from "./src/services/ai/router/AiRouter";
+import { aiRagGovernanceService } from "./src/services/ai/rag/AiRagGovernanceService";
+import { aiPromptRegistry } from "./src/services/ai/prompts/AiPromptRegistry";
+import { copilotEvidenceEngine } from "./src/copilot/services/CopilotEvidenceEngine";
 import { IndustrialDiscoveryEngine } from "./src/services/discovery/IndustrialDiscoveryEngine";
 import { IndustrialTagRegistryService } from "./src/services/tags/IndustrialTagRegistryService";
 import { SemanticIndustrialModel } from "./src/services/semantic/SemanticIndustrialModel";
@@ -2901,6 +2910,89 @@ app.get("/api/ai/gateway/records", requireAuth, (req, res) => {
 app.get("/api/ai/gateway/metrics", (_req, res) => {
   res.setHeader("Content-Type", "text/plain; version=0.0.4");
   res.send(AiModelGatewayService.getInstance().exportPrometheusMetrics());
+});
+
+// ============================================================================
+// BioAI Control Center Endpoints (P0-02 to P0-08, P0-12, P0-13, P0-15)
+// ============================================================================
+app.get("/api/ai/control-center/models", (_req, res) => {
+  res.json({ models: aiModelRegistry.getAll() });
+});
+
+app.post("/api/ai/control-center/models/:id/test", async (req, res) => {
+  try {
+    const result = await aiModelRegistry.testModel(req.params.id, req.body?.prompt);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get("/api/ai/control-center/providers", (_req, res) => {
+  res.json({ providers: aiProviderRegistry.getAll() });
+});
+
+app.post("/api/ai/control-center/providers/:provider/test", async (req, res) => {
+  try {
+    const result = await aiProviderRegistry.testConnection(req.params.provider as any);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get("/api/ai/control-center/pricing", (_req, res) => {
+  res.json({ tiers: aiPricingRegistry.getAllTiers() });
+});
+
+app.get("/api/ai/control-center/budgets", (_req, res) => {
+  res.json({ budgets: aiBudgetEngine.getAll() });
+});
+
+app.post("/api/ai/control-center/budgets/:id/reset", requireAuth, (req, res) => {
+  aiBudgetEngine.resetSpend(req.params.id);
+  res.json({ success: true, budget: aiBudgetEngine.getById(req.params.id) });
+});
+
+app.post("/api/ai/control-center/router/resolve", (req, res) => {
+  const decision = aiRouter.resolveRoute(req.body);
+  res.json(decision);
+});
+
+app.get("/api/ai/control-center/ledger", (_req, res) => {
+  res.json({
+    summary: aiCostLedger.getSummary(),
+    recentEntries: aiCostLedger.getEntries(50),
+  });
+});
+
+app.get("/api/ai/control-center/rag/documents", (_req, res) => {
+  res.json({ documents: aiRagGovernanceService.getAllDocuments() });
+});
+
+app.post("/api/ai/control-center/rag/test", (req, res) => {
+  const result = aiRagGovernanceService.testRetrieval(req.body?.query || "", req.body?.topK || 3);
+  res.json(result);
+});
+
+app.get("/api/ai/control-center/prompts", (_req, res) => {
+  res.json({ prompts: aiPromptRegistry.getAll() });
+});
+
+app.post("/api/ai/control-center/copilot/rca-extraction", async (req, res) => {
+  try {
+    const result = await copilotEvidenceEngine.executeExtractionDropRca({
+      tenantId: req.body?.tenantId || "TENANT_PORTUGUESA",
+      tenantName: req.body?.tenantName || "Central Portuguesa",
+      currentRole: req.body?.currentRole || "operador",
+      telemetry: req.body?.telemetry || ({} as any),
+      alarms: req.body?.alarms || [],
+      equipmentList: req.body?.equipmentList || [],
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
 });
 
 // ============================================================================

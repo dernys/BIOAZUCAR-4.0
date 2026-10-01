@@ -18,6 +18,7 @@ import { AgriculturalPlanVsRealService } from "../../services/agriculture/Agricu
 import { AgriculturalReconciliationService } from "../../services/agriculture/AgriculturalReconciliationService";
 import { INITIAL_AGRICULTURAL_CAMPAIGN } from "../../data/mockAgriculturalData";
 import { globalSystemAwarenessService } from "../../services/bioai/GlobalSystemAwarenessService";
+import { copilotEvidenceEngine } from "./CopilotEvidenceEngine";
 
 export class CopilotService {
   private static instance: CopilotService;
@@ -1933,6 +1934,96 @@ ${guidance.explanation}
         };
 
         responseText = `He preparado el ajuste de consigna sugerido por BioAI. Como implica modificación de parámetros de proceso, requiere tu confirmación antes de transmitir la orden al bus industrial. ¿Deseas aplicar el cambio?`;
+        break;
+      }
+
+      // ======================================================================
+      // 21. ROOT_CAUSE_ANALYSIS (P0-10 & P0-11 Grounded Multi-Source Evidence)
+      // ======================================================================
+      case "ROOT_CAUSE_ANALYSIS": {
+        toolsExecuted.push(
+          "queryHistorian",
+          "getLivePlantState",
+          "getAlarms",
+          "getEquipmentState",
+          "getMaintenance",
+          "searchRag"
+        );
+
+        const rcaEvidence = await copilotEvidenceEngine.executeExtractionDropRca({
+          tenantId: activeTenant.id,
+          tenantName: activeTenant.name,
+          currentRole: (context.roles && context.roles[0]) ? (context.roles[0] as any) : "operador",
+          telemetry: liveTelemetry,
+          alarms: alarmsList,
+          equipmentList: equipmentList,
+        });
+
+        responseText = `### 🔍 Análisis de Causa Raíz (RCA) — Extracción de Sacarosa
+**${rcaEvidence.evidenceBadge}**
+
+${rcaEvidence.answerText}
+
+---
+**Desglose de Evidencia por Procedencia**:
+- **Histórico (TSDB)**: ${rcaEvidence.provenanceSummary.HISTORICAL} variables
+- **Tiempo Real (SCADA)**: ${rcaEvidence.provenanceSummary.REAL || rcaEvidence.provenanceSummary.SIMULATED} tags
+- **RAG / Procedimientos**: ${rcaEvidence.provenanceSummary.RAG} documentos (SOP-MOL-04)
+- **Heurística / Balances**: ${rcaEvidence.provenanceSummary.HEURISTIC} modelos
+- **Certeza Diagnóstica**: **${rcaEvidence.confidencePercent}%**
+- **Modelo Inferencia**: \`${rcaEvidence.modelUsed}\` (Tokens: ${rcaEvidence.tokensUsed.total}, Coste: $${rcaEvidence.estimatedCostUsd.toFixed(6)} USD)
+
+*Limitaciones*: ${rcaEvidence.operationalLimitations.join("; ")}.`;
+
+        widgets.push(
+          {
+            type: "KPI",
+            kpiId: "kpi-milling-extraction",
+            name: "Extracción Sacarosa Tándem",
+            value: `${liveTelemetry.millingExtraction}%`,
+            unit: "%",
+            target: 96.0,
+            trend: liveTelemetry.millingExtraction >= 95.5 ? "UP" : "DOWN",
+            quality: "GOOD",
+            source: "OPC_UA",
+            formula: "(PolJugoExtraido / PolCana) * 100",
+            category: "PRODUCCION",
+            inputTagsCount: 4,
+            canViewLineage: true,
+          },
+          {
+            type: "KPI",
+            kpiId: "kpi-bagasse-moisture",
+            name: "Humedad Bagazo Final",
+            value: `${liveTelemetry.bagasseMoisture}%`,
+            unit: "%",
+            target: 49.0,
+            trend: liveTelemetry.bagasseMoisture <= 50.0 ? "UP" : "DOWN",
+            quality: "GOOD",
+            source: "OPC_UA",
+            formula: "LabCoreSampler.BagasseMoisture",
+            category: "CALIDAD",
+            inputTagsCount: 2,
+            canViewLineage: true,
+          }
+        );
+
+        actions.push(
+          {
+            id: "act-nav-scada-milling",
+            type: "NAVIGATE",
+            label: "Ver Presión Hidráulica en SCADA",
+            payload: { targetRoute: "scada" },
+            level: 1,
+          },
+          {
+            id: "act-nav-historian-extraction",
+            type: "NAVIGATE",
+            label: "Auditar Tendencia Historiador",
+            payload: { targetRoute: "historian" },
+            level: 1,
+          }
+        );
         break;
       }
 

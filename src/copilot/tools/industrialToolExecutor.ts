@@ -6,6 +6,7 @@ import {
   UserRole,
   DataQuality,
   IndustrialDataPoint,
+  ProtocolType,
 } from "../../types";
 import { dataProviderRegistry } from "../../services/dataProviders/DataProviderRegistry";
 import { kpiEngine, CANONICAL_KPI_DEFINITIONS } from "../../services/kpiEngine";
@@ -25,6 +26,7 @@ import { industrialEdge } from "../../services/edge/BioAzucarIndustrialEdge";
 import { bioAiEngineService } from "../../services/bioai/BioAiEngineService";
 import { globalSystemAwarenessService } from "../../services/bioai/GlobalSystemAwarenessService";
 import { actionAdvisoryService } from "../services/ActionAdvisoryService";
+import { copilotEvidenceEngine } from "../services/CopilotEvidenceEngine";
 
 export interface ToolExecutionInput {
   toolName: string;
@@ -88,6 +90,55 @@ export class IndustrialToolExecutor {
       let result: ToolExecutionResult = { success: true };
 
       switch (toolName) {
+        // ====================================================================
+        // P0-09 INDUSTRIAL TOOLS & EVIDENCE DISPATCH
+        // ====================================================================
+        case "queryHistorian":
+        case "getLivePlantState":
+        case "getAlarms":
+        case "getEquipmentState":
+        case "getProduction":
+        case "getEnergy":
+        case "getBoilerState":
+        case "getCogenerationState":
+        case "getAgricultureState":
+        case "getMaintenance":
+        case "getLimsResults":
+        case "getOee":
+        case "searchRag":
+        case "calculate":
+        case "comparePeriods":
+        case "generateReport": {
+          const userRole = (context.roles && context.roles[0]) ? context.roles[0] : "operador";
+          const engineRes = await copilotEvidenceEngine.executeTool(toolName, args, {
+            tenantId: activeTenant.id,
+            tenantName: activeTenant.name,
+            currentRole: userRole,
+            telemetry: liveTelemetry,
+            alarms: alarmsList,
+            equipmentList: equipmentList,
+          });
+          result = {
+            success: engineRes.success,
+            data: engineRes.data,
+            error: engineRes.error,
+            sources: engineRes.sources.map((s) => ({
+              id: s.id,
+              name: s.name,
+              tag: s.id,
+              value: s.value,
+              unit: s.unit || "",
+              source: s.provenance as any,
+              protocol: (s.provenance === "SIMULATED" ? "SIMULATOR" : "OPC-UA") as ProtocolType,
+              quality: (s.quality === "GOOD" ? "GOOD" : s.provenance === "SIMULATED" ? "SIMULATED" : "GOOD") as DataQuality,
+              deviceTimestamp: s.timestamp,
+              ingestionTimestamp: s.timestamp,
+              isSimulated: s.provenance === "SIMULATED",
+            })),
+          };
+          break;
+        }
+
         // ====================================================================
         // DATA TOOLS
         // ====================================================================

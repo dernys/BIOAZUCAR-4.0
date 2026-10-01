@@ -1397,6 +1397,11 @@ export class CopilotIntentClassifier {
       /\bpor que cayo la produccion\b/,
       /\bpor que cayo el rendimiento\b/,
       /\bpor que bajo el rendimiento\b/,
+      /\bpor que bajo la extraccion\b/,
+      /\bpor que cayo la extraccion\b/,
+      /\bpor que disminuyo la extraccion\b/,
+      /\bpor que bajo la extraccion de cana\b/,
+      /\bcausa caida de extraccion\b/,
     ];
     for (const pattern of rcaProductionPatterns) {
       if (pattern.test(clean)) {

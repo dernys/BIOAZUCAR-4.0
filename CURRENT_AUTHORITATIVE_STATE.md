@@ -87,6 +87,21 @@ TEST FIXTURE
 | **Blindaje SecureCommandGateway (P0)** | Implementado (Fail-Closed Prod) | `src/services/edge/commands/SecureCommandGateway.ts` | `secureCommandGatewayE2E.test.ts` | E3 |
 | **Protección Costo Firestore & TimescaleDB** | Implementado & Verificado | `src/services/historian/HistorianCostModel.ts` | `historianCloudCostProtection.test.ts` (3/3 PASS) | E3 |
 | **Navegación Industrial Mobile-First** | Implementado & Verificado | `src/components/MobileBottomNav.tsx` | Compilación Vite 6.4 OK | E3 |
+| **P0-1: Fullscreen Transversal UX** | Implementado (17 módulos) | `src/components/fullscreen/` | `p0FullscreenTransversal.test.tsx` (5/5 PASS) | E3 |
+| **P0-2: BioAI Control Center** | Implementado (17 submódulos) | `src/components/bioai/BioAiControlCenterView.tsx` | Compilación Vite 6.4 OK | E3 |
+| **P0-3: Registro Persistente de Modelos** | Implementado (CRUD + Test) | `src/services/ai/models/AiModelRegistry.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-4: Registro de Proveedores & Secretos**| Implementado (secretRef) | `src/services/ai/providers/AiProviderRegistry.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-5: Registro de Precios Reales** | Implementado (Verificado) | `src/services/ai/pricing/AiPricingRegistry.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-6: Cost Ledger (Est. vs Real)** | Implementado (Token Ledger)| `src/services/ai/ledger/AiCostLedger.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-7: Motor de Presupuestos & Cuotas** | Implementado (Acciones) | `src/services/ai/budget/AiBudgetEngine.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-8: Enrutador Inteligente Multi-Criterio**| Implementado (Rationale) | `src/services/ai/router/AiRouter.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-9: Herramientas Copilot Controladas** | Implementado (16 herramientas)| `src/copilot/services/CopilotEvidenceEngine.ts` | `p0CopilotEvidenceFirstIndustrialTools.test.ts` (8/8 PASS) | E3 |
+| **P0-10: Procedencia de Evidencia (P0-10)** | Implementado (6 procedencias)| `src/copilot/services/CopilotEvidenceEngine.ts` | `p0CopilotEvidenceFirstIndustrialTools.test.ts` | E3 |
+| **P0-11: RCA Extracción Tándem Molienda** | Implementado (10 pasos) | `src/copilot/services/CopilotEvidenceEngine.ts` | `p0CopilotEvidenceFirstIndustrialTools.test.ts` | E3 |
+| **P0-12: Gobernanza RAG & Filtro Telemetría**| Implementado (SOP-MOL-04) | `src/services/ai/rag/AiRagGovernanceService.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-13: Registro de Prompts & Versionado** | Implementado (Aprobación) | `src/services/ai/prompts/AiPromptRegistry.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-15: Cómputo Eléctrico Local Ollama** | Implementado (TDP & $/kWh) | `src/services/ai/local/LocalAiComputeModel.ts` | `p0BioAiControlCenterAndRegistries.test.ts` | E3 |
+| **P0-20: ADR-011 a ADR-019 Documentados** | Implementado | `docs/ARCHITECTURE_DECISIONS.md` | Verificado | E3 |
 
 ---
 
