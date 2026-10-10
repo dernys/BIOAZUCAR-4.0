@@ -9,6 +9,9 @@ import { TelemetryData, AlarmEvent, EquipmentItem, TenantEnterprise, UserRole } 
 import { aiRagGovernanceService } from "../../services/ai/rag/AiRagGovernanceService";
 import { aiPricingRegistry } from "../../services/ai/pricing/AiPricingRegistry";
 import { dataProviderRegistry } from "../../services/dataProviders/DataProviderRegistry";
+import { twinStateEngine } from "../../services/digitaltwin/engine/TwinStateEngine";
+import { assetGraphEngine } from "../../services/digitaltwin/engine/AssetGraphEngine";
+import { whatIfScenarioEngine } from "../../services/digitaltwin/engine/WhatIfScenarioEngine";
 
 export type EvidenceProvenance =
   | "REAL"
@@ -479,6 +482,121 @@ export class CopilotEvidenceEngine {
                 timestamp: now,
                 quality: "GOOD",
                 value: "Reporte estructurado generado",
+              },
+            ],
+          };
+        }
+
+        // ====================================================================
+        // DIGITAL TWIN QUERIES & TOPOLOGY
+        // ====================================================================
+        case "queryDigitalTwin": {
+          const targetId = String(args.equipmentId || args.assetId || "eq-caldera-1");
+          twinStateEngine.updateTelemetry(context.telemetry, context.alarms, context.equipmentList);
+          const twin = twinStateEngine.getGlobalTwinState();
+          const eqState = twin.equipmentStates[targetId] || twin.equipmentStates["eq-caldera-1"];
+          const asset = assetGraphEngine.getAsset(targetId) || assetGraphEngine.getAsset("eq-caldera-1");
+          const provenance: EvidenceProvenance = twin.mode === "PRODUCTION" ? "REAL" : "SIMULATED";
+
+          return {
+            success: true,
+            toolName,
+            data: {
+              mode: twin.mode,
+              assetId: targetId,
+              assetName: asset?.name || targetId,
+              currentState: eqState?.currentState || "RUNNING",
+              stateDurationSec: eqState?.stateDurationSec || 0,
+              stateConfidence: eqState?.stateConfidence || 0.98,
+              operationalReason: eqState?.operationalReason || "Normal",
+              criticalAlarmActive: eqState?.criticalAlarmActive || false,
+              kpis: Object.fromEntries(twin.kpis.entries()),
+              activeAlarmsCount: twin.activeAlarms.length,
+            },
+            provenance,
+            sources: [
+              {
+                id: `twin-state-${targetId}`,
+                name: `Digital Twin State: ${asset?.name || targetId}`,
+                provenance,
+                timestamp: now,
+                quality: "GOOD",
+                value: `Estado: ${eqState?.currentState || "RUNNING"} (${twin.mode})`,
+                notes: eqState?.operationalReason,
+              },
+            ],
+          };
+        }
+
+        case "queryTwinAssetGraph": {
+          const targetId = String(args.equipmentId || args.assetId || "eq-caldera-1");
+          const asset = assetGraphEngine.getAsset(targetId);
+          const upstream = assetGraphEngine.getUpstreamEquipment(targetId);
+          const downstream = assetGraphEngine.getDownstreamEquipment(targetId);
+          const flows = assetGraphEngine.getEquipmentFlows(targetId);
+          const sensors = assetGraphEngine.getEquipmentSensors(targetId);
+
+          return {
+            success: true,
+            toolName,
+            data: {
+              targetId,
+              targetName: asset?.name || targetId,
+              upstreamEquipment: upstream.map((u) => ({ id: u.id, name: u.name })),
+              downstreamEquipment: downstream.map((d) => ({ id: d.id, name: d.name })),
+              incomingFlows: flows.incoming.map((f) => ({ id: f.id, type: f.flowType, rate: f.currentRate, unit: f.rateUnit })),
+              outgoingFlows: flows.outgoing.map((f) => ({ id: f.id, type: f.flowType, rate: f.currentRate, unit: f.rateUnit })),
+              sensorsCount: sensors.length,
+            },
+            provenance: "HEURISTIC",
+            sources: [
+              {
+                id: `twin-graph-${targetId}`,
+                name: `Grafo ISA-95 Topología: ${asset?.name || targetId}`,
+                provenance: "HEURISTIC",
+                timestamp: now,
+                quality: "GOOD",
+                value: `${upstream.length} aguas arriba / ${downstream.length} aguas abajo`,
+              },
+            ],
+          };
+        }
+
+        case "simulateTwinScenario": {
+          const scenarioName = String(args.scenario || "Incrementar Molienda");
+          const tchOverride = Number(args.tch) || (context.telemetry.tch * 1.15);
+          const scenarioDef = {
+            id: `scen-custom-${Date.now()}`,
+            name: scenarioName,
+            description: "Simulación solicitada vía Copilot",
+            overrides: [
+              { parameterKey: "TCH" as const, baselineValue: context.telemetry.tch, targetValue: tchOverride, unit: "TCH" },
+            ],
+            createdAt: now,
+            createdBy: "Copilot Assistant",
+          };
+
+          const runResult = whatIfScenarioEngine.runScenario(scenarioDef, {
+            tch: context.telemetry.tch,
+            bagasseMoisturePercent: context.telemetry.bagasseMoisture,
+            boilerOperatingPressureBar: context.telemetry.boilerPressureHP,
+            gridExportDemandMW: context.telemetry.powerExportGridMW,
+          });
+
+          return {
+            success: true,
+            toolName,
+            data: runResult,
+            provenance: "SIMULATED",
+            sources: [
+              {
+                id: `twin-whatif-${scenarioDef.id}`,
+                name: `What-If Prescriptivo: ${scenarioName}`,
+                provenance: "SIMULATED",
+                timestamp: now,
+                quality: "GOOD",
+                value: runResult.operationalSummary,
+                notes: "WHAT-IF simulation — No representa datos físicos reales",
               },
             ],
           };

@@ -2028,6 +2028,84 @@ ${rcaEvidence.answerText}
       }
 
       // ======================================================================
+      // 22. DIGITAL_TWIN (ISA-95 Computational Plant Model Queries)
+      // ======================================================================
+      case "DIGITAL_TWIN": {
+        const targetTool = resolvedClassification.recommendedTool || "queryDigitalTwin";
+        const targetEq = resolvedClassification.targetEquipment || "eq-caldera-1";
+        toolsExecuted.push(targetTool);
+
+        const toolRes = await copilotEvidenceEngine.executeTool(
+          targetTool,
+          { equipmentId: targetEq, assetId: targetEq },
+          {
+            tenantId: activeTenant.id,
+            tenantName: activeTenant.name,
+            currentRole: (context.roles && context.roles[0]) ? (context.roles[0] as any) : "operador",
+            telemetry: liveTelemetry,
+            alarms: alarmsList,
+            equipmentList: equipmentList,
+          }
+        );
+
+        if (targetTool === "queryTwinAssetGraph") {
+          const graphData = toolRes.data;
+          responseText = `### 🌐 Gemelo Digital — Grafo Topológico ISA-95 (${graphData?.targetName || targetEq})
+**Evidence: Digital Twin / ISA-95 Topology / Process Flow**
+
+- **Activo Evaluado**: \`${graphData?.targetName || targetEq}\`
+- **Equipos Aguas Arriba**: ${graphData?.upstreamEquipment?.map((u: any) => u.name).join(", ") || "Entrada de Proceso Primario"}
+- **Equipos Aguas Abajo**: ${graphData?.downstreamEquipment?.map((d: any) => d.name).join(", ") || "Etapa Final"}
+- **Flujos de Entrada**: ${graphData?.incomingFlows?.length || 0} tuberías/conductores vinculados
+- **Flujos de Salida**: ${graphData?.outgoingFlows?.length || 0} conducciones activas
+- **Sensores Monitoreados**: ${graphData?.sensorsCount || 0} instrumentos de campo
+
+*Trazabilidad*: La topología está sincronizada con el modelo semántico ISA-95 del central azucarero.`;
+        } else {
+          const twinData = toolRes.data;
+          responseText = `### 🏭 Estado en Gemelo Digital — ${twinData?.assetName || targetEq}
+**Evidence: Digital Twin / ${toolRes.provenance} / Live Process Model**
+
+- **Modo Operacional**: \`${twinData?.mode || "SIMULATION"}\`
+- **Estado Actual**: **${twinData?.currentState || "RUNNING"}** (${twinData?.stateSource || "SIMULATION_MODEL"})
+- **Certeza Diagnóstica**: **${((twinData?.stateConfidence || 0.98) * 100).toFixed(0)}%**
+- **Diagnóstico Operativo**: ${twinData?.operationalReason || "Parámetros dentro de la envolvente segura ASME / Hugot"}
+- **Alarmas Activas en Activo**: ${twinData?.activeAlarmsCount || 0} ${twinData?.criticalAlarmActive ? "⚠️ (Alarma Crítica Activa)" : "✅ (Sin anomalías críticas)"}
+
+*Variables Clave del Gemelo*:
+- Presión Caldera: **${liveTelemetry.boilerPressureHP} bar**
+- Vapor HP: **${liveTelemetry.steamFlowHP} t/h**
+- Generación Bruta: **${liveTelemetry.powerGeneratedMW} MW**
+- Molienda Actual: **${liveTelemetry.tch} TCH**`;
+        }
+
+        widgets.push({
+          type: "KPI",
+          kpiId: "kpi-twin-boiler-press",
+          name: "Presión Vapor HP (Caldera)",
+          value: `${liveTelemetry.boilerPressureHP} bar`,
+          unit: "bar",
+          target: 65.0,
+          trend: liveTelemetry.boilerPressureHP >= 64.0 ? "UP" : "DOWN",
+          quality: "GOOD",
+          source: toolRes.provenance === "REAL" ? "OPC_UA" : "SIMULATION",
+          formula: "Boiler1.Steam_Pressure_HP",
+          category: "VAPOR",
+          inputTagsCount: 1,
+          canViewLineage: true,
+        });
+
+        actions.push({
+          id: "act-nav-digital-twin",
+          type: "NAVIGATE",
+          label: "Abrir Gemelo Digital 3D / Diagrama",
+          payload: { targetRoute: "digital_twin" },
+          level: 1,
+        });
+        break;
+      }
+
+      // ======================================================================
       // 16. UNKNOWN (Do not guess! Return concise clarification prompt)
       // EXACT requirement from section 10:
       // "Puedo ayudarte con producción, KPIs, alarmas, equipos, energía, estadísticas o navegación. ¿Qué quieres consultar?"

@@ -134,8 +134,15 @@ export default function App() {
 
   // Theme state: "dark" (default for industrial SCADA) or "light" (clean daylight mode)
   const [theme, setTheme] = useState<"dark" | "light">(() => {
-    const saved = localStorage.getItem("bioazucar_theme");
-    return saved === "light" ? "light" : "dark";
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const saved = window.localStorage.getItem("bioazucar_theme");
+        return saved === "light" ? "light" : "dark";
+      }
+    } catch (_e) {
+      // In sandboxed iframes or SSR, localStorage may throw SecurityError
+    }
+    return "dark";
   });
 
   const handleToggleTheme = () => {
@@ -143,15 +150,21 @@ export default function App() {
   };
 
   useEffect(() => {
-    localStorage.setItem("bioazucar_theme", theme);
-    if (theme === "light") {
-      document.documentElement.classList.add("light");
-      document.documentElement.classList.remove("dark");
-    } else {
-      document.documentElement.classList.add("dark");
-      document.documentElement.classList.remove("light");
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem("bioazucar_theme", theme);
+      }
+    } catch (_e) {}
+    if (typeof document !== "undefined") {
+      if (theme === "light") {
+        document.documentElement.classList.add("light");
+        document.documentElement.classList.remove("dark");
+      } else {
+        document.documentElement.classList.add("dark");
+        document.documentElement.classList.remove("light");
+      }
+      document.documentElement.setAttribute("data-theme", theme);
     }
-    document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
   // Industrial Footer is permanently docked at bottom across all views
@@ -743,7 +756,7 @@ export default function App() {
               activeTab === "agricultural_pda" ? "Plan Agrícola & PDA de Campo" :
               activeTab === "energy_dispatch" ? "Energía, Calderas & Cogeneración PPA" :
               activeTab === "uns_hub" ? "UNS & IIoT Observabilidad OT" :
-              activeTab === "digital_twin" ? "Gemelo Digital 3D" :
+              activeTab === "digital_twin" ? "Gemelo Digital Industrial (ISA-95 • ISO 23247)" :
               activeTab === "batches" ? "LIMS & Trazabilidad de Caña" :
               activeTab === "equipment" ? "CBM & CMMS Mantenimiento" :
               activeTab === "historian" ? "Historiador de Tendencias Industriales" :

@@ -161,6 +161,34 @@ export const COPILOT_TOOL_POLICIES: Record<string, ToolSecurityPolicy> = {
     description: "Genera reporte consolidado de guardia",
     auditRequired: false,
   },
+  // Digital Twin Native Queries
+  queryDigitalTwin: {
+    toolName: "queryDigitalTwin",
+    level: 1,
+    requiredPermissions: ["VIEW_TELEMETRY"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Consulta estado computacional del Gemelo Digital para activos, balances y variables",
+    auditRequired: false,
+  },
+  queryTwinAssetGraph: {
+    toolName: "queryTwinAssetGraph",
+    level: 1,
+    requiredPermissions: ["VIEW_EQUIPMENT"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Consulta relaciones topológicas, equipos aguas arriba/abajo y linaje en el grafo industrial",
+    auditRequired: false,
+  },
+  simulateTwinScenario: {
+    toolName: "simulateTwinScenario",
+    level: 1,
+    requiredPermissions: ["VIEW_KPIS"],
+    minimumClearanceLevel: 1,
+    allowedRoles: ["superadmin", "administrador", "supervisor", "operador", "mantenimiento", "observador"],
+    description: "Ejecuta simulación determinista What-If sobre el modelo físico del gemelo",
+    auditRequired: false,
+  },
   // --------------------------------------------------------------------------
   // DATA TOOLS (LEVEL 1 - READ)
   // --------------------------------------------------------------------------

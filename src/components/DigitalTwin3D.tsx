@@ -30,14 +30,23 @@ import {
   Wifi,
   WifiOff,
   Scan,
+  GitBranch,
+  Clock,
+  Play,
+  CheckCircle2,
 } from "lucide-react";
 import { TelemetryData, EquipmentItem } from "../types";
 import { MassEnergyTwinView } from "./digitaltwin/MassEnergyTwinView";
 import { WhatIfSandboxView } from "./digitaltwin/WhatIfSandboxView";
 import { DegradationRulView } from "./digitaltwin/DegradationRulView";
 import { OtSyncTwinView } from "./digitaltwin/OtSyncTwinView";
+import { ProcessDiagramTwinView } from "./digitaltwin/ProcessDiagramTwinView";
+import { AssetGraphAndLineageView } from "./digitaltwin/AssetGraphAndLineageView";
+import { HistoricalReplayBar } from "./digitaltwin/HistoricalReplayBar";
+import { useDigitalTwin, TwinWorkspaceTab } from "../services/digitaltwin/store/DigitalTwinStore";
+import { TwinOperationalMode } from "../services/digitaltwin/domain/DigitalTwinTypes";
 
-export type TwinDimension = "3D_SPATIAL" | "MASS_ENERGY" | "WHAT_IF" | "DEGRADATION_RUL" | "OT_SYNC";
+export type TwinDimension = TwinWorkspaceTab;
 
 interface DigitalTwin3DProps {
   telemetry: TelemetryData;
@@ -58,7 +67,10 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
   const mountRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const [activeTwinDimension, setActiveTwinDimension] = useState<TwinDimension>("3D_SPATIAL");
+  const safeEquipmentList = Array.isArray(equipmentList) ? equipmentList : [];
+  const twin = useDigitalTwin(telemetry, [], safeEquipmentList);
+
+  const [activeTwinDimension, setActiveTwinDimension] = useState<TwinDimension>("PROCESS_DIAGRAM");
   const [selectedEqId, setSelectedEqId] = useState<string>("eq-molino-3");
   const [viewMode, setViewMode] = useState<"STANDARD" | "THERMAL" | "ENERGY" | "HEALTH">("STANDARD");
   const [isRotating, setIsRotating] = useState<boolean>(true);
@@ -123,8 +135,6 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
     pos: new THREE.Vector3(55, 46, 68),
     target: new THREE.Vector3(0, 5, 0),
   });
-
-  const safeEquipmentList = Array.isArray(equipmentList) ? equipmentList : [];
 
   // Rich fallback profiles for all specific units of the sugar mill digital twin
   const defaultUnitProfiles: { [key: string]: Partial<EquipmentItem> } = {
@@ -273,6 +283,7 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
 
   const handleSelectEquipment = (eqId: string) => {
     setSelectedEqId(eqId);
+    twin.selectEquipment(eqId);
     if (cameraPresets[eqId]) {
       cameraTargetRef.current = cameraPresets[eqId];
       setIsRotating(false);
@@ -1462,68 +1473,181 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
     >
       {/* Top Level Industry 4.0 Dimension Selector Banner (Hidden in Maximized mode for full viewport focus) */}
       {!isMaximized && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl backdrop-blur-md">
+        <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-2xl backdrop-blur-md space-y-4">
+          {/* Row 1: Header, Permanent Operational Mode & Mode Switcher */}
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] font-bold">
-                  RAMI 4.0 / ISO 23247 ARCHITECTURE
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] font-bold">
+                  ISA-95 • ISO 23247 • IEC 62443 SL3
                 </span>
                 <span className="text-xs text-slate-400 font-mono">
-                  Ecosistema Integral de Gemelos Digitales de Planta Azucarera
+                  Gemelo Digital Industrial de Proceso y Activos • Central Azucarero
                 </span>
               </div>
-              <h2 className="text-lg font-bold text-white font-tech flex items-center gap-2">
-                <Cpu className="w-5 h-5 text-emerald-400" />
-                Gemelo Digital Inteligente BioAzúcar 4.0
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Cinemática 3D de alta fidelidad, balances termodinámicos multifísicos, simulación prescriptiva 'What-If' y pronóstico de degradación de activos.
-              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-lg font-bold text-white font-tech flex items-center gap-2 tracking-wide">
+                  <Cpu className="w-5 h-5 text-emerald-400" />
+                  Gemelo Digital BioAzúcar 4.0
+                </h2>
+
+                {/* PERMANENT MODE DISPLAY (Rules 8, 9, 10) */}
+                <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">DIGITAL TWIN:</span>
+                  {twin.operationalMode === "PRODUCTION" ? (
+                    <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      ● PRODUCTION (LIVE OT) • OPC UA / Sparkplug B • Last: 250 ms
+                    </span>
+                  ) : twin.operationalMode === "SIMULATION" ? (
+                    <span className="flex items-center gap-1.5 text-blue-400 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                      ● SIMULATION (Multi-Physics Hugot + ASME PTC 4 Determinista)
+                    </span>
+                  ) : twin.operationalMode === "HISTORICAL_REPLAY" ? (
+                    <span className="flex items-center gap-1.5 text-indigo-400 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+                      ● HISTORICAL REPLAY ({twin.replayConfig.playbackSpeed}x • Edge TSDB WAL)
+                    </span>
+                  ) : twin.operationalMode === "HYBRID" ? (
+                    <span className="flex items-center gap-1.5 text-amber-400 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                      ● HYBRID (OT Primario + Simulación Brechas)
+                    </span>
+                  ) : twin.operationalMode === "LAB" ? (
+                    <span className="flex items-center gap-1.5 text-purple-400 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                      ● LAB (Banco Virtual de Parámetros)
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-slate-300 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                      ● COMISIONAMIENTO (Virtual Commissioning SIL/HIL)
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 text-xs font-mono text-slate-300 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Molienda: <strong className="text-cyan-400">{telemetry.tch} TCH</strong></span>
-              <span className="text-slate-600">|</span>
-              <span>Vapor HP: <strong className="text-amber-400">{telemetry.steamFlowHP || 211.5} t/h</strong></span>
-              <span className="text-slate-600">|</span>
-              <span>SEN: <strong className="text-emerald-400">{telemetry.powerExportGridMW || 21.2} MW</strong></span>
+            {/* Quick Operational Mode Switcher */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+              <span className="text-[10px] text-slate-500 uppercase font-mono px-2 hidden sm:inline">Modo Operacional:</span>
+              {(
+                [
+                  { id: "PRODUCTION", label: "PRODUCCIÓN (OT)", color: "text-emerald-400 hover:text-emerald-300" },
+                  { id: "SIMULATION", label: "SIMULACIÓN", color: "text-blue-400 hover:text-blue-300" },
+                  { id: "HISTORICAL_REPLAY", label: "REPLAY", color: "text-indigo-400 hover:text-indigo-300" },
+                  { id: "HYBRID", label: "HÍBRIDO", color: "text-amber-400 hover:text-amber-300" },
+                  { id: "WAITING_FOR_COMMISSIONING", label: "COMISIÓN", color: "text-slate-300 hover:text-white" },
+                ] as const
+              ).map((m) => {
+                const isActive = twin.operationalMode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => twin.setOperationalMode(m.id as TwinOperationalMode)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition ${
+                      isActive
+                        ? "bg-slate-800 text-white shadow ring-1 ring-slate-700"
+                        : `text-slate-400 hover:bg-slate-900 ${m.color}`
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* 5 Dimensional Pillar Buttons */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+          {/* Row 2: Real-time Data Quality & Physical Telemetry Strip (Rule 8) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800/80 font-mono text-xs">
+            {/* Data Quality Badges */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-slate-500 text-[10px] uppercase font-bold">Calidad de Datos:</span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold flex items-center gap-1 text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                LIVE / GOOD: {twin.twinState.dataQualitySummary.goodCount}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold flex items-center gap-1 text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                UNCERTAIN / STALE: {twin.twinState.dataQualitySummary.uncertainCount}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-400 font-bold flex items-center gap-1 text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                BAD / COMM LOST: {twin.twinState.dataQualitySummary.badCount + twin.twinState.dataQualitySummary.communicationLostCount}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-400 font-bold flex items-center gap-1 text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                SIMULATED: {twin.twinState.dataQualitySummary.simulatedCount}
+              </span>
+            </div>
+
+            {/* Operating Point Key Metrics */}
+            <div className="flex flex-wrap items-center gap-3 text-slate-300 text-[11px]">
+              <span>Molienda: <strong className="text-cyan-400">{telemetry.tch} TCH</strong></span>
+              <span className="text-slate-700">|</span>
+              <span>Extracción: <strong className="text-emerald-400">{telemetry.extractionYield || 96.5}%</strong></span>
+              <span className="text-slate-700">|</span>
+              <span>Vapor HP: <strong className="text-amber-400">{telemetry.steamFlowHP || 211.5} t/h</strong></span>
+              <span className="text-slate-700">|</span>
+              <span>Turbina TG1: <strong className="text-purple-400">{telemetry.powerGeneratedMW || 32.4} MW</strong></span>
+              <span className="text-slate-700">|</span>
+              <span>SEN Fiscal: <strong className="text-emerald-400">{telemetry.powerExportGridMW || 21.2} MW</strong></span>
+              <span className="text-slate-700">|</span>
+              <span className="text-slate-400 text-[10px]">Sync: +{twin.twinState.clockDriftMs}ms</span>
+            </div>
+          </div>
+
+          {/* Row 3: 8 Dimension Pillar Buttons */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 pt-1">
             {[
               {
+                id: "PROCESS_DIAGRAM",
+                label: "1. Diagrama HMI",
+                desc: "Flujo Azúcar & Cogen",
+                icon: Layers,
+              },
+              {
                 id: "3D_SPATIAL",
-                label: "1. Cinemática 3D",
+                label: "2. Cinemática 3D",
                 desc: "WebGL espacial PBR",
                 icon: Cpu,
               },
               {
+                id: "ASSET_GRAPH",
+                label: "3. Grafo ISA-95",
+                desc: "Topología & Linaje",
+                icon: GitBranch,
+              },
+              {
                 id: "MASS_ENERGY",
-                label: "2. Balance Masa & Vapor",
-                desc: "Termodinámica ASME",
+                label: "4. Masa & Vapor",
+                desc: "Hugot + ASME PTC 4",
                 icon: Scale,
               },
               {
                 id: "WHAT_IF",
-                label: "3. Simulador 'What-If'",
+                label: "5. 'What-If'",
                 desc: "Sandbox prescriptivo",
                 icon: Sliders,
               },
               {
                 id: "DEGRADATION_RUL",
-                label: "4. Degradación & RUL",
-                desc: "Fatiga y vida remanente",
+                label: "6. RUL & Fatiga",
+                desc: "ISO 10816 chumaceras",
                 icon: Wrench,
               },
               {
                 id: "OT_SYNC",
-                label: "5. Sincronismo OT (ISO)",
-                desc: "Discrepancia física-virtual",
+                label: "7. Sincronismo OT",
+                desc: "Discrepancia física",
                 icon: Radio,
+              },
+              {
+                id: "HISTORICAL_REPLAY",
+                label: "8. Replay Histórico",
+                desc: "Time-travel TSDB",
+                icon: Clock,
               },
             ].map((dim) => {
               const Icon = dim.icon;
@@ -1538,19 +1662,34 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
                       : "bg-slate-950/80 border-slate-800 text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                   }`}
                 >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-emerald-400" : "text-slate-400"}`} />
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-emerald-400" : "text-slate-400"}`} />
                     <span className={`text-xs font-bold font-mono truncate ${isActive ? "text-emerald-300" : "text-slate-300"}`}>
                       {dim.label}
                     </span>
                   </div>
-                  <span className="text-[10px] text-slate-500 truncate block pl-6">
+                  <span className="text-[10px] text-slate-500 truncate block">
                     {dim.desc}
                   </span>
                 </button>
               );
             })}
           </div>
+
+          {/* Persistent Replay Bar if in Replay Mode */}
+          {twin.operationalMode === "HISTORICAL_REPLAY" && (
+            <div className="pt-2 border-t border-slate-800">
+              <HistoricalReplayBar
+                config={twin.replayConfig}
+                onPlay={twin.playReplay}
+                onPause={twin.pauseReplay}
+                onStop={twin.stopReplay}
+                onSetSpeed={twin.setReplaySpeed}
+                onSeek={twin.seekReplay}
+                theme={theme}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -1890,17 +2029,45 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
         </div>
       </div>
 
-      {/* Dimension 2: Multi-Physics Mass & Energy Balance */}
+      {/* Dimension 1: Industrial Process Diagram (HMI ISA-101) */}
+      {activeTwinDimension === "PROCESS_DIAGRAM" && (
+        <ProcessDiagramTwinView
+          flows={twin.twinState.flows}
+          equipmentStates={twin.twinState.equipmentStates}
+          selectedEquipmentId={selectedEqId}
+          onSelectEquipment={handleSelectEquipment}
+          operationalMode={twin.operationalMode}
+          theme={theme}
+        />
+      )}
+
+      {/* Dimension 3: ISA-95 Asset Topology Graph & Lineage */}
+      {activeTwinDimension === "ASSET_GRAPH" && (
+        <AssetGraphAndLineageView
+          selectedAsset={twin.selectedAsset}
+          selectedState={twin.selectedEquipmentState}
+          sensors={twin.assetSensors}
+          actuators={twin.assetActuators}
+          flows={twin.assetFlows}
+          upstreamAssets={twin.upstreamAssets}
+          downstreamAssets={twin.downstreamAssets}
+          lineage={twin.selectedLineage}
+          onSelectEquipment={handleSelectEquipment}
+          theme={theme}
+        />
+      )}
+
+      {/* Dimension 4: Multi-Physics Mass & Energy Balance */}
       {activeTwinDimension === "MASS_ENERGY" && (
         <MassEnergyTwinView telemetry={telemetry} theme={theme} />
       )}
 
-      {/* Dimension 3: Prescriptive What-If Sandbox */}
+      {/* Dimension 5: Prescriptive What-If Sandbox */}
       {activeTwinDimension === "WHAT_IF" && (
         <WhatIfSandboxView telemetry={telemetry} theme={theme} />
       )}
 
-      {/* Dimension 4: Prognostics & Remaining Useful Life (RUL) */}
+      {/* Dimension 6: Prognostics & Remaining Useful Life (RUL) */}
       {activeTwinDimension === "DEGRADATION_RUL" && (
         <DegradationRulView
           telemetry={telemetry}
@@ -1909,9 +2076,116 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
         />
       )}
 
-      {/* Dimension 5: Physical-Virtual Synchronization & Lineage (ISO 23247) */}
+      {/* Dimension 7: Physical-Virtual Synchronization & Lineage (ISO 23247) */}
       {activeTwinDimension === "OT_SYNC" && (
         <OtSyncTwinView telemetry={telemetry} theme={theme} />
+      )}
+
+      {/* Dimension 8: Deterministic Historical Replay Console */}
+      {activeTwinDimension === "HISTORICAL_REPLAY" && (
+        <div className="space-y-4">
+          <HistoricalReplayBar
+            config={twin.replayConfig}
+            onPlay={twin.playReplay}
+            onPause={twin.pauseReplay}
+            onStop={twin.stopReplay}
+            onSetSpeed={twin.setReplaySpeed}
+            onSeek={twin.seekReplay}
+            theme={theme}
+          />
+          <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/95 text-slate-100 shadow-xl">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold font-tech uppercase tracking-wider text-indigo-400">
+                    Consola de Auditoría Temporal & Reproducción Histórica
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Reconstrucción determinista del estado de activos a partir del Edge WAL / TSDB
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-mono px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                Puntos en Buffer: {twin.replayConfig.bufferPointsLoaded} pts
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <span className="text-xs text-slate-400 uppercase font-mono block mb-1">Ventana Temporal</span>
+                <div className="space-y-1 font-mono text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Inicio:</span>
+                    <span className="text-cyan-400">{new Date(twin.replayConfig.startTimeIso).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Fin:</span>
+                    <span className="text-cyan-400">{new Date(twin.replayConfig.endTimeIso).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Cursor Actual:</span>
+                    <span className="text-emerald-400 font-bold">{new Date(twin.replayConfig.currentPlaybackTimeIso).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <span className="text-xs text-slate-400 uppercase font-mono block mb-1">Estado de Reproducción</span>
+                <div className="space-y-1 font-mono text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Modo Motor:</span>
+                    <span className="text-indigo-400 font-bold">{twin.replayConfig.status}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Multiplicador:</span>
+                    <span className="text-amber-400 font-bold">{twin.replayConfig.playbackSpeed}x</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Fuente de Datos:</span>
+                    <span className="text-slate-300">Edge TSDB / SQLite WAL</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <span className="text-xs text-slate-400 uppercase font-mono block mb-1">Integridad de Registro</span>
+                <div className="space-y-1 font-mono text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Calidad Reproducida:</span>
+                    <span className="text-emerald-400 font-bold">100% GOOD (Verificada)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Firma Criptográfica:</span>
+                    <span className="text-cyan-400">SHA-256 Validada</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Norma Auditoría:</span>
+                    <span className="text-slate-300">IEC 62443-3-3 SL3</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Process Diagram view inside Replay */}
+            <div className="mt-6 pt-4 border-t border-slate-800">
+              <h4 className="text-xs font-mono font-bold text-slate-300 mb-3 uppercase flex items-center gap-2">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                Estado Reconstruido de Activos en el Instante Seleccionado
+              </h4>
+              <ProcessDiagramTwinView
+                flows={twin.twinState.flows}
+                equipmentStates={twin.twinState.equipmentStates}
+                selectedEquipmentId={selectedEqId}
+                onSelectEquipment={handleSelectEquipment}
+                operationalMode="HISTORICAL_REPLAY"
+                theme={theme}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

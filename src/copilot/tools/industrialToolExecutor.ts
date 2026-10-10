@@ -108,7 +108,10 @@ export class IndustrialToolExecutor {
         case "searchRag":
         case "calculate":
         case "comparePeriods":
-        case "generateReport": {
+        case "generateReport":
+        case "queryDigitalTwin":
+        case "queryTwinAssetGraph":
+        case "simulateTwinScenario": {
           const userRole = (context.roles && context.roles[0]) ? context.roles[0] : "operador";
           const engineRes = await copilotEvidenceEngine.executeTool(toolName, args, {
             tenantId: activeTenant.id,

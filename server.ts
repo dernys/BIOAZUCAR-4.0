@@ -93,7 +93,30 @@ if (typeof (globalThis as any).__dirname !== "undefined") {
 }
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const portArgIdx = process.argv.indexOf("--port");
+const argPort = portArgIdx !== -1 && process.argv[portArgIdx + 1] ? parseInt(process.argv[portArgIdx + 1], 10) : null;
+const hostArgIdx = process.argv.indexOf("--host");
+const argHost = hostArgIdx !== -1 && process.argv[hostArgIdx + 1] ? process.argv[hostArgIdx + 1] : "0.0.0.0";
+
+// IEC 62443 / Architecture: In Cloud Run / AI Studio containers, Nginx reverse proxy binds to ingress port 8080
+// and forwards all web traffic to port 3000. Binding the application to 8080 causes an immediate EADDRINUSE fatal crash.
+// The Node/Express server must bind to port 3000 unless explicitly instructed via CLI --port.
+function resolveServerPort(): number {
+  if (argPort && !isNaN(argPort)) {
+    return argPort;
+  }
+  if (process.env.APP_PORT) {
+    const p = parseInt(process.env.APP_PORT, 10);
+    if (!isNaN(p)) return p;
+  }
+  const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : null;
+  if (envPort && envPort !== 8080 && !isNaN(envPort)) {
+    return envPort;
+  }
+  return 3000;
+}
+
+const PORT = resolveServerPort();
 
 // Apply IEC 62443 / OWASP Security Headers
 app.use(securityHeadersMiddleware);
@@ -110,6 +133,18 @@ app.use((req, res, next) => {
     trackHttpRequest(req.method, route, res.statusCode, durationSeconds);
   });
   next();
+});
+
+// Root health check endpoint for container probes and supervisor (Public status check)
+app.get("/health", (_req, res) => {
+  const adminStatus = getAdminSdkStatus();
+  res.status(200).json({
+    status: "HEALTHY",
+    service: "BioAzúcar 4.0 Industrial Server",
+    timestamp: new Date().toISOString(),
+    adminSdkStatus: adminStatus,
+    runtimeProfile: process.env.INDUSTRIAL_RUNTIME_PROFILE || "DEVELOPMENT",
+  });
 });
 
 // Initialize Google GenAI client lazily or when key exists
@@ -4240,6 +4275,7 @@ if (typeof customElements !== 'undefined' && !customElements.get('vite-error-ove
     app.use(async (req, res, next) => {
       if (req.method !== "GET" && req.method !== "HEAD") return next();
       if (
+        req.path === "/health" ||
         req.path.startsWith("/api/") ||
         req.path.startsWith("/@") ||
         req.path.startsWith("/src/") ||
@@ -4249,7 +4285,13 @@ if (typeof customElements !== 'undefined' && !customElements.get('vite-error-ove
       }
 
       const accept = req.headers.accept || "";
-      if (req.path === "/" || req.path === "/index.html" || accept.includes("text/html")) {
+      const isHtmlRoute =
+        req.path === "/" ||
+        req.path === "/index.html" ||
+        accept.includes("text/html") ||
+        (!req.path.includes(".") && !req.path.startsWith("/api/"));
+
+      if (isHtmlRoute) {
         try {
           const rawHtml = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf-8");
           const html = await vite.transformIndexHtml(req.originalUrl || "/", rawHtml);
@@ -4265,13 +4307,16 @@ if (typeof customElements !== 'undefined' && !customElements.get('vite-error-ove
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
+    app.get("*", (req, res, next) => {
+      if (req.path === "/health" || req.path.startsWith("/api/")) {
+        return next();
+      }
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`[BioAzúcar 4.0] Industrial Server online at http://0.0.0.0:${PORT}`);
+  httpServer.listen(PORT, argHost, () => {
+    console.log(`[BioAzúcar 4.0] Industrial Server online at http://${argHost}:${PORT}`);
   });
 
   // Non-blocking privileged initial bootstrap (SEC-6)

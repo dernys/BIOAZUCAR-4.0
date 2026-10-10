@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import {
   LayoutDashboard,
   Boxes,
+  Cpu,
   Layers,
   Sparkles,
   Wrench,
@@ -103,11 +104,11 @@ export const Navigation: React.FC<NavigationProps> = ({
     },
     {
       id: "digital_twin",
-      label: "Gemelo Digital 3D",
-      icon: Boxes,
-      desc: "Three.js WebGL",
+      label: "Gemelo Digital Industrial",
+      icon: Cpu,
+      desc: "HMI • 3D • What-If • Replay",
       category: "PLANT_OPERATIONS",
-      tag: "3D",
+      tag: "Twin",
     },
     {
       id: "agricultural_pda",

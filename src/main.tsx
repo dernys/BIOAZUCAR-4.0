@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
 
 // Industrial PWA ServiceWorker Registration (Air-gapped mill operation)
@@ -26,6 +27,8 @@ if (import.meta.env.PROD && typeof navigator !== 'undefined' && 'serviceWorker' 
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary fallbackTitle="Error al iniciar BioAzúcar 4.0">
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

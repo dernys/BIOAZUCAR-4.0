@@ -84,3 +84,26 @@
 - **Contexto:** En salas de control de ingenios y tablets industriales, los operadores necesitan maximizar el área gráfica útil sin perder navegación básica ni alterar RBAC o variables de proceso.
 - **Decisión:** Implementar la terna reutilizable `useModuleFullscreen`, `ModuleFullscreenButton` y `FullscreenModuleLayout`. En modo pantalla completa, se utiliza la API Fullscreen con fallback visual seguro en CSS viewport, ocultando docks inferiores y footers mientras se preserva una barra flotante con botón de salida (Esc) y navegación mínima.
 - **Consecuencias:** Experiencia transversal homogénea en los 17 módulos de la suite BioAzúcar 4.0 sin duplicación de código ni riesgo sobre la seguridad industrial.
+
+---
+
+## ADR-020: Arquitectura del Gemelo Digital Industrial Real de BioAzúcar 4.0 (ISA-95 & ISO 23247)
+
+- **Estado:** ACEPTADO & IMPLEMENTADO
+- **Contexto:** El Gemelo Digital no debe ser una animación aislada ni una maqueta 3D desvinculada de la planta. Debe constituir una representación computacional viva y multi-dimensional del proceso fabril azucarero y del ciclo energético de cogeneración.
+- **Decisión:** 
+  1. Implementar un Modelo Semántico canónico de activos industriales (`Plant`, `Area`, `ProcessUnit`, `Equipment`, `Sensor`, `Actuator`, `IndustrialTag`, `IndustrialDataPoint`, `ProcessFlowConnection`) alineado con ISA-95 e ISO 23247.
+  2. Implementar un motor de simulación multifísico determinista (`TwinProcessSimulator`) basado en formulación de Hugot y balance térmico ASME PTC 4, con **cero uso de números aleatorios (`Math.random()`)**.
+  3. Taxonomía estricta de calidad de datos (`GOOD`, `UNCERTAIN`, `BAD`, `STALE`, `COMMUNICATION_LOST`, `SIMULATED`) con diferenciación visual permanente entre datos reales de campo OT y simulación.
+  4. Modos operacionales explícitos: `PRODUCTION` (LIVE OT), `SIMULATION`, `HISTORICAL_REPLAY`, `HYBRID`, `LAB`, `WAITING_FOR_COMMISSIONING`.
+  5. HMI Industrial integral en 8 dimensiones: 
+     - Dimensión 1: Diagrama de Proceso (HMI ISA-101) con balance integral de masa sacarosa y ciclo térmico.
+     - Dimensión 2: Cinemática Espacial 3D (WebGL PBR interactivo a 60 FPS).
+     - Dimensión 3: Grafo Topológico ISA-95 y trazabilidad de procedencia de señales OT.
+     - Dimensión 4: Balances Térmicos y ASME PTC 4 (vapor sobrecalentado, PCI bagazo, eficiencias).
+     - Dimensión 5: Simulador 'What-If' prescriptivo (comparación de Baseline vs Escenario y predicción de alarmas).
+     - Dimensión 6: Pronóstico de Degradación y Vida Remanente (RUL según severidad vibratoria ISO 10816).
+     - Dimensión 7: Sincronismo Físico-Virtual OT (análisis de discrepancia y telemetría de campo).
+     - Dimensión 8: Consola de Replay Histórico Determinista (reproducción con velocidades 1x a 100x y time scrubber).
+- **Consecuencias:** Integración total con la plataforma BioAzúcar 4.0, garantizando integridad física, auditoría de datos según IEC 62443 SL3 y soporte para comisionamiento virtual y optimización de despacho PPA.
+

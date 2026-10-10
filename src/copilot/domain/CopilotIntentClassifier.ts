@@ -1419,14 +1419,52 @@ export class CopilotIntentClassifier {
       /\bpor que subio el consumo de energia\b/,
       /\bpor que subio el consumo de vapor\b/,
       /\bpor que aumento el consumo de vapor\b/,
+      /\bpor que bajo la generacion\b/,
+      /\bpor que disminuyo la generacion\b/,
+      /\bcausa caida de generacion\b/,
     ];
     for (const pattern of rcaEnergyPatterns) {
       if (pattern.test(clean)) {
         return {
           intent: "ROOT_CAUSE_ANALYSIS",
           confidence: 0.99,
-          reason: "Análisis Causal (RCA) de sobreconsumo energético o de vapor en fábrica",
+          reason: "Análisis Causal (RCA) de sobreconsumo energético, vapor o caída en generación",
           recommendedTool: "get_root_cause_analysis",
+        };
+      }
+    }
+
+    // Digital Twin Direct Queries
+    const twinPatterns = [
+      /\bcomo esta la caldera\b/,
+      /\bestado de la caldera\b/,
+      /\bcomo estan los molinos\b/,
+      /\bcomo esta el molino\b/,
+      /\bque equipos estan afectados\b/,
+      /\bequipos afectados\b/,
+      /\bgemelo digital\b/,
+      /\bdigital twin\b/,
+      /\bsimular escenario\b/,
+      /\bwhat if\b/,
+      /\brelaciones del equipo\b/,
+    ];
+    for (const pattern of twinPatterns) {
+      if (pattern.test(clean)) {
+        let recommendedTool = "queryDigitalTwin";
+        let targetEq = "eq-caldera-1";
+        if (clean.includes("afectados") || clean.includes("relaciones")) {
+          recommendedTool = "queryTwinAssetGraph";
+        } else if (clean.includes("simular") || clean.includes("what if")) {
+          recommendedTool = "simulateTwinScenario";
+        }
+        if (clean.includes("molino")) targetEq = "eq-molino-3";
+
+        return {
+          intent: "DIGITAL_TWIN",
+          confidence: 0.98,
+          reason: "Consulta directa al Gemelo Digital Industrial",
+          recommendedTool,
+          targetEquipment: targetEq,
         };
       }
     }

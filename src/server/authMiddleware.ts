@@ -80,15 +80,31 @@ export function resetRateLimits(): void {
 /**
  * Server-Side Security Headers (IEC 62443 / OWASP ASVS compliant)
  */
-export function securityHeadersMiddleware(_req: Request, res: Response, next: NextFunction) {
+export function securityHeadersMiddleware(req: Request, res: Response, next: NextFunction) {
   res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+
+  // IEC 62443 / OWASP ASVS: In embedded iframe contexts (e.g. AI Studio preview at ai.studio or *.google.com),
+  // W3C CSP 'frame-ancestors' governs embedding security. Sending 'X-Frame-Options: SAMEORIGIN'
+  // causes modern browsers to hard-block cross-origin iframes.
+  // We keep X-Frame-Options: SAMEORIGIN for non-framed/direct requests, and defer to CSP frame-ancestors when framed.
+  const isFramedOrProxied = Boolean(
+    req?.headers &&
+      (req.headers["sec-fetch-dest"] === "iframe" ||
+        req.headers["x-forwarded-host"] ||
+        req.headers["x-forwarded-for"] ||
+        req.headers["x-real-ip"])
+  );
+
+  if (!isFramedOrProxied) {
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  }
+
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https: wss: ws:; frame-ancestors 'self' https://ai.studio https://*.google.com https://*.run.app;"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https: wss: ws:; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'self' https://ai.studio https://*.google.com https://*.run.app https://localhost.corp.google.com:26001;"
   );
   // Note: Alignment marker with IEC 62443 security design principles
   res.setHeader("X-Industrial-Security", "IEC-62443-SL3");

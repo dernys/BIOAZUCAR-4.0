@@ -65,6 +65,7 @@ export type CopilotIntent =
   | "GLOBAL_OVERVIEW"
   | "PROACTIVE_SUGGESTIONS"
   | "SYSTEM_GUIDANCE"
+  | "DIGITAL_TWIN"
   | "APPLY_SUGGESTION";
 
 export type IntegrationSubIntent =
