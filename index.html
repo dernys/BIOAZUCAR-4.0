@@ -23,6 +23,21 @@
           event.stopImmediatePropagation();
         }
       }, true);
+
+      // Prevent third-party browser extension content scripts from bubbling errors into industrial HMI
+      window.addEventListener('error', function(event) {
+        var filename = (event && event.filename) || '';
+        var msg = (event && event.message) || '';
+        if (
+          filename.includes('chrome-extension://') ||
+          filename.includes('moz-extension://') ||
+          filename.includes('contentscript.js') ||
+          msg.includes('ObjectMultiplex') ||
+          msg.includes('MaxListenersExceededWarning')
+        ) {
+          event.preventDefault();
+        }
+      }, true);
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

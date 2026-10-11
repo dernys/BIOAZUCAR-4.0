@@ -407,7 +407,12 @@ export class SecurityAdminBackendService {
       if (!snapshot.empty) {
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as RbacRoleDefinition;
-          this.rolesMap.set(docSnap.id, { ...data, id: docSnap.id });
+          const fallbackPerms = ROLE_ATOMIC_PERMISSIONS[data.role] || [];
+          this.rolesMap.set(docSnap.id, {
+            ...data,
+            id: docSnap.id,
+            permissions: data.permissions && data.permissions.length > 0 ? data.permissions : fallbackPerms,
+          });
         });
       }
     } catch (_err) {
@@ -476,11 +481,12 @@ export class SecurityAdminBackendService {
     if (!sourceRole) {
       throw new Error(`Rol de origen ${roleId} no encontrado.`);
     }
-
+    const sourcePermissions = sourceRole.permissions || ROLE_ATOMIC_PERMISSIONS[sourceRole.role] || [];
     const duplicatedData: Omit<RbacRoleDefinition, "id"> = {
       ...sourceRole,
       title: newTitle || `${sourceRole.title} (Copia)`,
       description: `Clonado a partir de ${sourceRole.title}. ${sourceRole.description}`,
+      permissions: [...sourcePermissions],
       isSystem: false,
       tenantId: actor.isSuperAdmin ? sourceRole.tenantId : actor.tenantId,
     };

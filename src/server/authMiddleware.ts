@@ -104,7 +104,7 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https: wss: ws:; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'self' https://ai.studio https://*.google.com https://*.run.app https://localhost.corp.google.com:26001;"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://*.google.com https://*.run.app blob: data:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://*.google.com https://*.run.app blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.gstatic.com https://*.google.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.gstatic.com https://*.google.com; font-src 'self' https://fonts.gstatic.com https://*.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https: wss: ws: blob:; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://ai.studio https://*.google.com https://*.run.app https://*.firebaseapp.com; frame-ancestors 'self' https://ai.studio https://*.google.com https://*.run.app https://localhost.corp.google.com:26001;"
   );
   // Note: Alignment marker with IEC 62443 security design principles
   res.setHeader("X-Industrial-Security", "IEC-62443-SL3");

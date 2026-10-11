@@ -75,11 +75,18 @@ export function getAdminSdkDiagnostics(): AdminSdkDiagnostics {
   };
 }
 
+let testingOverrideStatus: AdminSdkStatus | null = null;
+
 /**
  * Verifies live connectivity with Firestore using privileged Admin SDK credentials.
  * Updates currentAdminSdkStatus atomically.
  */
 export async function verifyAdminSdkAvailability(): Promise<AdminSdkStatus> {
+  if (testingOverrideStatus !== null) {
+    currentAdminSdkStatus = testingOverrideStatus;
+    return testingOverrideStatus;
+  }
+
   if (checkInProgress) {
     return checkInProgress;
   }
@@ -117,11 +124,15 @@ export async function verifyAdminSdkAvailability(): Promise<AdminSdkStatus> {
 /**
  * Manual override for testing purposes only
  */
-export function setAdminSdkStatusForTesting(status: AdminSdkStatus, error: string | null = null): void {
-  currentAdminSdkStatus = status;
+export function setAdminSdkStatusForTesting(status: AdminSdkStatus | null, error: string | null = null): void {
+  testingOverrideStatus = status;
+  if (status !== null) {
+    currentAdminSdkStatus = status;
+  }
   lastCheckError = error;
   lastCheckedAt = new Date().toISOString();
 }
+
 
 /**
  * Assert that the Admin SDK is ready before executing a privileged server-authoritative operation.

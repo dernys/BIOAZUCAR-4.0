@@ -23,6 +23,14 @@ if (import.meta.env.PROD && typeof navigator !== 'undefined' && 'serviceWorker' 
   } catch (pwaErr) {
     console.warn('[PWA] Service Worker initialization bypassed:', pwaErr);
   }
+} else if (import.meta.env.DEV && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  // In development mode, unregister any stale production service workers
+  // to ensure Workbox router doesn't intercept live dev-server requests or assets.
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  }).catch(() => {});
 }
 
 createRoot(document.getElementById('root')!).render(
