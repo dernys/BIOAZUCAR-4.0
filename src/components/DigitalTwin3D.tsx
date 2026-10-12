@@ -35,7 +35,7 @@ import {
   Play,
   CheckCircle2,
 } from "lucide-react";
-import { TelemetryData, EquipmentItem } from "../types";
+import { TelemetryData, EquipmentItem, AlarmEvent } from "../types";
 import { MassEnergyTwinView } from "./digitaltwin/MassEnergyTwinView";
 import { WhatIfSandboxView } from "./digitaltwin/WhatIfSandboxView";
 import { DegradationRulView } from "./digitaltwin/DegradationRulView";
@@ -48,11 +48,15 @@ import { TwinOperationalMode } from "../services/digitaltwin/domain/DigitalTwinT
 
 export type TwinDimension = TwinWorkspaceTab;
 
-interface DigitalTwin3DProps {
+export interface DigitalTwin3DProps {
   telemetry: TelemetryData;
-  equipmentList: EquipmentItem[];
+  equipmentList?: EquipmentItem[];
+  alarms?: AlarmEvent[];
   theme?: "dark" | "light";
 }
+
+const EMPTY_ALARMS: AlarmEvent[] = [];
+const EMPTY_EQUIPMENT: EquipmentItem[] = [];
 
 interface EquipmentCameraTarget {
   pos: THREE.Vector3;
@@ -61,14 +65,16 @@ interface EquipmentCameraTarget {
 
 export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
   telemetry,
-  equipmentList = [],
+  equipmentList = EMPTY_EQUIPMENT,
+  alarms = EMPTY_ALARMS,
   theme = "dark",
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const safeEquipmentList = Array.isArray(equipmentList) ? equipmentList : [];
-  const twin = useDigitalTwin(telemetry, [], safeEquipmentList);
+  const safeEquipmentList = Array.isArray(equipmentList) ? equipmentList : EMPTY_EQUIPMENT;
+  const safeAlarms = Array.isArray(alarms) ? alarms : EMPTY_ALARMS;
+  const twin = useDigitalTwin(telemetry, safeAlarms, safeEquipmentList);
 
   const [activeTwinDimension, setActiveTwinDimension] = useState<TwinDimension>("PROCESS_DIAGRAM");
   const [selectedEqId, setSelectedEqId] = useState<string>("eq-molino-3");

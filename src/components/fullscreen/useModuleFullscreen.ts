@@ -23,6 +23,11 @@ export function useModuleFullscreen(
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState<boolean>(false);
 
+  const onFullscreenChangeRef = useRef(onFullscreenChange);
+  useEffect(() => {
+    onFullscreenChangeRef.current = onFullscreenChange;
+  }, [onFullscreenChange]);
+
   // Sync state changes with callback and document body class
   const updateFullscreenState = useCallback(
     (active: boolean, isNative: boolean) => {
@@ -33,9 +38,9 @@ export function useModuleFullscreen(
       } else {
         document.body.classList.remove("bioazucar-module-fullscreen-active");
       }
-      onFullscreenChange?.(active);
+      onFullscreenChangeRef.current?.(active);
     },
-    [onFullscreenChange]
+    []
   );
 
   const enterFullscreen = useCallback(async () => {

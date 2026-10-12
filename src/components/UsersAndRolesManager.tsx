@@ -81,9 +81,12 @@ interface UsersAndRolesManagerProps {
   initialTab?: SecurityConsoleTab;
 }
 
+const EMPTY_USERS: UserAccount[] = [];
+const EMPTY_ROLES: RbacRoleDefinition[] = [];
+
 export const UsersAndRolesManager: React.FC<UsersAndRolesManagerProps> = ({
-  users: propUsers = [],
-  roles: propRoles = [],
+  users: propUsers = EMPTY_USERS,
+  roles: propRoles = EMPTY_ROLES,
   tenants = [],
   currentUser,
   activeTenant,

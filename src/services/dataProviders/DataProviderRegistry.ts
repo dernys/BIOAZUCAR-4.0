@@ -12,6 +12,7 @@ import { ModbusDataProvider } from "./ModbusDataProvider";
 import { ErosDataProvider } from "./ErosDataProvider";
 import { RestDataProvider } from "./RestDataProvider";
 import { EdgeDataProvider } from "./EdgeDataProvider";
+import { getRuntimeProfile } from "../edge/config/runtimeProfile";
 
 export class DataProviderRegistry {
   private static instance: DataProviderRegistry;
@@ -65,6 +66,16 @@ export class DataProviderRegistry {
   public async setActiveProvider(providerId: string): Promise<boolean> {
     const nextProvider = this.providers.get(providerId);
     if (!nextProvider) return false;
+
+    // Fail-Closed: Strictly forbid activating simulation provider in PRODUCTION profile
+    if (nextProvider.source === "SIMULATION") {
+      const profile = getRuntimeProfile();
+      if (profile === "PRODUCTION") {
+        throw new Error(
+          "[INDUSTRIAL DATA INTEGRITY] Cannot activate SimulationDataProvider in PRODUCTION profile. Fail-Closed enforced."
+        );
+      }
+    }
 
     const currentProvider = this.getActiveProvider();
     if (currentProvider.id === providerId) return true;

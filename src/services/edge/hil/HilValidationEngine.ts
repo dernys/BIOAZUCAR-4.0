@@ -428,13 +428,15 @@ export class HilValidationEngine {
       }
     }
 
-    // Final memory measurement
+    // In full-suite concurrency or under high GC activity, take an immediate post-run measurement
     if (global.gc) {
       try {
         global.gc();
       } catch {}
     }
     const finalMem = process.memoryUsage();
+    // In concurrent execution across 86 test suites, heap deltas can fluctuate due to parallel workers;
+    // measure leak using heap delta bounded to the threshold
     const heapGrowthBytes = Math.max(0, finalMem.heapUsed - initialMem.heapUsed);
     const heapGrowthMb = Number((heapGrowthBytes / (1024 * 1024)).toFixed(2));
     const leakDetected = heapGrowthMb > config.memoryLeakThresholdMb;

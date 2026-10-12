@@ -31,6 +31,13 @@ if (import.meta.env.PROD && typeof navigator !== 'undefined' && 'serviceWorker' 
       registration.unregister();
     }
   }).catch(() => {});
+  if (typeof caches !== 'undefined') {
+    caches.keys().then((keys) => {
+      for (const key of keys) {
+        caches.delete(key);
+      }
+    }).catch(() => {});
+  }
 }
 
 createRoot(document.getElementById('root')!).render(

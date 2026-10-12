@@ -282,7 +282,7 @@ export class TenantRuntime {
           mill3Vibration: 0,
           simulationScenario: "NORMAL",
           isSimulated: false,
-          provenance: "OBSERVED_OT",
+          provenance: "DESCONOCIDO",
           source: `LIVE_OT (${this.otConfig.protocol}): DESCONECTADO - Sin enlace físico`,
           quality: "BAD",
         };
@@ -390,7 +390,7 @@ export class TenantRuntime {
         mill3Vibration: 0,
         simulationScenario: "NORMAL",
         isSimulated: false,
-        provenance: "OBSERVED_OT",
+        provenance: "NO_VERIFICADO",
         source: "WAITING_FOR_COMMISSIONING: Enlace OT en espera de comisionamiento físico en campo",
         quality: "BAD",
       };

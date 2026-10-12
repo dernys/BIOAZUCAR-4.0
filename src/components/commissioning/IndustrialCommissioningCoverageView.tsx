@@ -72,8 +72,8 @@ export const IndustrialCommissioningCoverageView: React.FC<Props> = ({
 
       // Default to first area if available
       const availableAreas = Object.keys(repData.areas);
-      if (availableAreas.length > 0 && !availableAreas.includes(selectedAreaId)) {
-        setSelectedAreaId(availableAreas[0]);
+      if (availableAreas.length > 0) {
+        setSelectedAreaId((prev) => (prev && availableAreas.includes(prev) ? prev : availableAreas[0]));
       }
 
       setLastRefreshed(new Date().toLocaleTimeString());
@@ -82,7 +82,7 @@ export const IndustrialCommissioningCoverageView: React.FC<Props> = ({
     } finally {
       setLoading(false);
     }
-  }, [tenantId, selectedAreaId]);
+  }, [tenantId]);
 
   // Fetch equipments for selected area
   const fetchEquipments = useCallback(async () => {
@@ -92,13 +92,13 @@ export const IndustrialCommissioningCoverageView: React.FC<Props> = ({
       if (!res.ok) throw new Error(`HTTP ${res.status} al cargar equipos`);
       const data: EquipmentCoverageReport[] = await res.json();
       setEquipments(data);
-      if (data.length > 0 && !selectedEquipmentId) {
-        setSelectedEquipmentId(data[0].equipmentId);
+      if (data.length > 0) {
+        setSelectedEquipmentId((prev) => (prev && data.some((e) => e.equipmentId === prev) ? prev : data[0].equipmentId));
       }
     } catch (err: any) {
       console.error("Error fetching equipments:", err);
     }
-  }, [tenantId, selectedAreaId, selectedEquipmentId]);
+  }, [tenantId, selectedAreaId]);
 
   // Fetch single tag detail
   const fetchTagDetail = async (tagId: string) => {

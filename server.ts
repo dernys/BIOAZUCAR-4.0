@@ -4271,6 +4271,25 @@ if (typeof customElements !== 'undefined' && !customElements.get('vite-error-ove
 `);
     });
 
+    // Handle /sw.js and /service-worker.js in dev mode to cleanly unregister stale workers and clear caches
+    app.get(["/sw.js", "/service-worker.js"], (_req, res) => {
+      res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      res.setHeader("Clear-Site-Data", '"cache"');
+      res.send(`// BioAzúcar 4.0 Dev Mode Self-Clearing Service Worker
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then(() => self.registration.unregister())
+      .then(() => self.clients.claim())
+  );
+});
+`);
+    });
+
     // Clean index.html serving using Vite transform with zero console monkey-patching
     app.use(async (req, res, next) => {
       if (req.method !== "GET" && req.method !== "HEAD") return next();
@@ -4279,7 +4298,11 @@ if (typeof customElements !== 'undefined' && !customElements.get('vite-error-ove
         req.path.startsWith("/api/") ||
         req.path.startsWith("/@") ||
         req.path.startsWith("/src/") ||
-        req.path.startsWith("/node_modules/")
+        req.path.startsWith("/node_modules/") ||
+        req.path.endsWith(".js") ||
+        req.path.endsWith(".mjs") ||
+        req.path.endsWith(".css") ||
+        req.path.endsWith(".map")
       ) {
         return next();
       }
@@ -4308,7 +4331,14 @@ if (typeof customElements !== 'undefined' && !customElements.get('vite-error-ove
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res, next) => {
-      if (req.path === "/health" || req.path.startsWith("/api/")) {
+      if (
+        req.path === "/health" ||
+        req.path.startsWith("/api/") ||
+        req.path.endsWith(".js") ||
+        req.path.endsWith(".mjs") ||
+        req.path.endsWith(".css") ||
+        req.path.endsWith(".map")
+      ) {
         return next();
       }
       res.sendFile(path.join(distPath, "index.html"));

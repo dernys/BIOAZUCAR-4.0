@@ -17,7 +17,10 @@ export type DataOrigin =
   | "CALCULATED"
   | "DEFAULT"
   | "IMPORTED"
-  | "PREDICTED";
+  | "PREDICTED"
+  | "HISTORICAL"
+  | "ESTIMATED"
+  | "UNKNOWN";
 
 export interface DataQualityAuditResult {
   isValid: boolean;
@@ -95,20 +98,56 @@ export class IndustrialDataQualityGate {
       if (point.isSimulated || point.source === "SIMULATION") {
         return "SIMULATED";
       }
-      if (point.provenance === "SIMULATED_PROCESS_MODEL") {
+      if (point.provenance === "SIMULATED_PROCESS_MODEL" || point.provenance === "SIMULADO") {
         return "SIMULATED";
       }
-      if (point.source === "LIVE_OT" || point.source === "OPC_UA" || point.source === "MODBUS") {
+      if (point.provenance === "CALCULATED" || point.provenance === "CALCULADO") {
+        return "CALCULATED";
+      }
+      if (point.provenance === "PREDICTED" || point.provenance === "PREDICHO") {
+        return "PREDICTED";
+      }
+      if (point.provenance === "ESTIMATED" || point.provenance === "ESTIMADO") {
+        return "ESTIMATED";
+      }
+      if (point.provenance === "HISTORICAL" || point.provenance === "HISTORICO") {
+        return "HISTORICAL";
+      }
+      if (point.provenance === "UNKNOWN" || point.provenance === "DESCONOCIDO" || point.provenance === "NO_VERIFICADO") {
+        return "UNKNOWN";
+      }
+      if (point.source === "LIVE_OT" || point.source === "OPC_UA" || point.source === "MODBUS" || point.source === "EROS") {
         return "REAL";
+      }
+      if (point.provenance === "PHYSICAL_OT" || point.provenance === "OBSERVED_OT" || point.provenance === "REAL") {
+        return "REAL";
+      }
+      if (!point.source && !point.provenance) {
+        return "UNKNOWN";
       }
       return "REAL";
     }
 
-    if (isSimulated || pointOrProvenance === "SIMULATED_PROCESS_MODEL") {
+    if (isSimulated || pointOrProvenance === "SIMULATED_PROCESS_MODEL" || pointOrProvenance === "SIMULADO") {
       return "SIMULATED";
     }
-    if (pointOrProvenance === "OBSERVED_OT" || pointOrProvenance === "LIVE_OT") {
+    if (pointOrProvenance === "OBSERVED_OT" || pointOrProvenance === "LIVE_OT" || pointOrProvenance === "PHYSICAL_OT" || pointOrProvenance === "REAL") {
       return "REAL";
+    }
+    if (pointOrProvenance === "CALCULATED" || pointOrProvenance === "CALCULADO") {
+      return "CALCULATED";
+    }
+    if (pointOrProvenance === "PREDICTED" || pointOrProvenance === "PREDICHO") {
+      return "PREDICTED";
+    }
+    if (pointOrProvenance === "ESTIMATED" || pointOrProvenance === "ESTIMADO") {
+      return "ESTIMATED";
+    }
+    if (pointOrProvenance === "HISTORICAL" || pointOrProvenance === "HISTORICO") {
+      return "HISTORICAL";
+    }
+    if (pointOrProvenance === "UNKNOWN" || pointOrProvenance === "DESCONOCIDO" || pointOrProvenance === "NO_VERIFICADO") {
+      return "UNKNOWN";
     }
     return isSimulated ? "SIMULATED" : "REAL";
   }

@@ -39,22 +39,24 @@ const STATUSES: { value: FieldPlotStatus; label: string; color: string }[] = [
   { value: "PLANTADO", label: "Plantado Reciente", color: "text-teal-400" },
 ];
 
+const EMPTY_VARIETIES: CaneVarietyYieldMaster[] = [];
+
 export const PlotModal: React.FC<PlotModalProps> = ({
   isOpen,
   onClose,
   onSave,
   initialPlot,
-  availableVarieties,
-  varieties,
+  availableVarieties = EMPTY_VARIETIES,
+  varieties = EMPTY_VARIETIES,
   theme = "dark",
   tenantId = "BIOAZUCAR-DEMO",
 }) => {
   const isLight = theme === "light";
-  const allVarieties = (availableVarieties && availableVarieties.length > 0)
-    ? availableVarieties
-    : (varieties && varieties.length > 0)
-      ? varieties
-      : [];
+  const allVarieties = React.useMemo(() => {
+    if (availableVarieties && availableVarieties.length > 0) return availableVarieties;
+    if (varieties && varieties.length > 0) return varieties;
+    return EMPTY_VARIETIES;
+  }, [availableVarieties, varieties]);
 
   const [code, setCode] = useState("");
   const [uebName, setUebName] = useState("UEB Central Azucarero");
@@ -70,6 +72,8 @@ export const PlotModal: React.FC<PlotModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     if (initialPlot) {
       setCode(initialPlot.code);
       setUebName(initialPlot.uebName || "UEB Central Azucarero");
@@ -96,7 +100,7 @@ export const PlotModal: React.FC<PlotModalProps> = ({
       setRatoonAgeYears(1);
     }
     setErrorMsg(null);
-  }, [initialPlot, isOpen, allVarieties]);
+  }, [initialPlot, isOpen]);
 
   if (!isOpen) return null;
 

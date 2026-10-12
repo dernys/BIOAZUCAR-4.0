@@ -83,28 +83,34 @@ export function resetRateLimits(): void {
 export function securityHeadersMiddleware(req: Request, res: Response, next: NextFunction) {
   res.setHeader("X-Content-Type-Options", "nosniff");
 
-  // IEC 62443 / OWASP ASVS: In embedded iframe contexts (e.g. AI Studio preview at ai.studio or *.google.com),
+  // In embedded iframe contexts (e.g. AI Studio preview at ai.studio or *.google.com),
   // W3C CSP 'frame-ancestors' governs embedding security. Sending 'X-Frame-Options: SAMEORIGIN'
   // causes modern browsers to hard-block cross-origin iframes.
-  // We keep X-Frame-Options: SAMEORIGIN for non-framed/direct requests, and defer to CSP frame-ancestors when framed.
-  const isFramedOrProxied = Boolean(
-    req?.headers &&
-      (req.headers["sec-fetch-dest"] === "iframe" ||
-        req.headers["x-forwarded-host"] ||
-        req.headers["x-forwarded-for"] ||
-        req.headers["x-real-ip"])
-  );
-
-  if (!isFramedOrProxied) {
-    res.setHeader("X-Frame-Options", "SAMEORIGIN");
-  }
+  // We strictly defer to CSP frame-ancestors to allow AI Studio and trusted hosts to embed the app.
 
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://*.google.com https://*.run.app blob: data:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://*.google.com https://*.run.app blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.gstatic.com https://*.google.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.gstatic.com https://*.google.com; font-src 'self' https://fonts.gstatic.com https://*.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' https: wss: ws: blob:; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://ai.studio https://*.google.com https://*.run.app https://*.firebaseapp.com; frame-ancestors 'self' https://ai.studio https://*.google.com https://*.run.app https://localhost.corp.google.com:26001;"
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://*.googleapis.com https://*.google.com https://*.run.app https://ai.studio https://*.firebaseapp.com blob: data:",
+      "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://*.googleapis.com https://*.google.com https://*.run.app https://ai.studio https://*.firebaseapp.com blob: data:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.gstatic.com https://*.google.com",
+      "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.gstatic.com https://*.google.com",
+      "font-src 'self' https://fonts.gstatic.com https://*.gstatic.com https://fonts.googleapis.com data:",
+      "img-src 'self' data: https: blob:",
+      "connect-src 'self' https: wss: ws: blob: data:",
+      "worker-src 'self' blob: data: https:",
+      "child-src 'self' blob: data: https:",
+      "frame-src 'self' https://ai.studio https://*.google.com https://*.run.app https://*.firebaseapp.com https://*.googleapis.com",
+      "frame-ancestors 'self' https://ai.studio https://*.google.com https://*.run.app https://localhost.corp.google.com:26001",
+      "manifest-src 'self' blob: data:",
+      "media-src 'self' blob: data: https:",
+      "object-src 'none'",
+      "base-uri 'self'",
+    ].join("; ")
   );
   // Note: Alignment marker with IEC 62443 security design principles
   res.setHeader("X-Industrial-Security", "IEC-62443-SL3");

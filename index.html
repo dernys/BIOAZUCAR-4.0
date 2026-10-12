@@ -38,6 +38,25 @@
           event.preventDefault();
         }
       }, true);
+
+      // Forensic ServiceWorker self-healing against corrupted or stale Workbox caches
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        var query = window.location.search || '';
+        if (query.includes('clear-sw') || query.includes('reset')) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var i = 0; i < regs.length; i++) {
+              regs[i].unregister();
+            }
+          });
+          if (typeof caches !== 'undefined') {
+            caches.keys().then(function(keys) {
+              for (var j = 0; j < keys.length; j++) {
+                caches.delete(keys[j]);
+              }
+            });
+          }
+        }
+      }
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

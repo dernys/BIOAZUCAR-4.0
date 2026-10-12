@@ -42,6 +42,7 @@ export const VarietyModal: React.FC<VarietyModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isOpen) return;
     if (initialVariety) {
       setVarietyCode(initialVariety.varietyCode);
       setName(initialVariety.name);

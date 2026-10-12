@@ -70,10 +70,13 @@ export interface UseDigitalTwinReturn {
   graphSnapshot: ReturnType<typeof assetGraphEngine.buildGraphSnapshot>;
 }
 
+const EMPTY_ALARMS: AlarmEvent[] = [];
+const EMPTY_EQUIPMENT: EquipmentItem[] = [];
+
 export function useDigitalTwin(
   telemetry?: TelemetryData,
-  alarms?: AlarmEvent[],
-  equipmentList?: EquipmentItem[]
+  alarms: AlarmEvent[] = EMPTY_ALARMS,
+  equipmentList: EquipmentItem[] = EMPTY_EQUIPMENT
 ): UseDigitalTwinReturn {
   const [twinState, setTwinState] = useState<DigitalTwinGlobalState>(() =>
     twinStateEngine.getGlobalTwinState()
@@ -84,10 +87,10 @@ export function useDigitalTwin(
     historicalReplayController.getConfig()
   );
 
-  // Sync incoming telemetry with twin state engine
+  // Sync incoming telemetry with twin state engine using stable dependencies
   useEffect(() => {
     if (telemetry) {
-      twinStateEngine.updateTelemetry(telemetry, alarms || [], equipmentList || []);
+      twinStateEngine.updateTelemetry(telemetry, alarms, equipmentList);
     }
   }, [telemetry, alarms, equipmentList]);
 

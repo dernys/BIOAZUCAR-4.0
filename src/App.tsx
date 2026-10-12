@@ -349,13 +349,26 @@ export default function App() {
           ...prev,
           tenantId: activeTenant.id,
           isSimulated: false,
-          provenance: "OBSERVED_OT",
+          provenance: "DESCONOCIDO",
           source: "LIVE_OT",
           quality: "BAD",
           simulationScenario: "NORMAL",
         }));
         return;
       }
+    }
+
+    if (runtime.getMode() === "WAITING_FOR_COMMISSIONING") {
+      setTelemetry((prev) => ({
+        ...prev,
+        tenantId: activeTenant.id,
+        isSimulated: false,
+        provenance: "NO_VERIFICADO",
+        source: "WAITING_FOR_COMMISSIONING",
+        quality: "BAD",
+        simulationScenario: "NORMAL",
+      }));
+      return;
     }
 
     if (!isSimRunning || speedMultiplier === 0) return;
@@ -822,6 +835,7 @@ export default function App() {
               <DigitalTwin3D
                 telemetry={telemetry}
                 equipmentList={equipmentList}
+                alarms={alarms}
                 theme={theme}
               />
             )}

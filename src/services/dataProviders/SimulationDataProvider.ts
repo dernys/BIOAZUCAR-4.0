@@ -15,6 +15,7 @@ import {
   TagWriteRequest,
   TagWriteResult,
 } from "./IIndustrialDataProvider";
+import { getRuntimeProfile } from "../edge/config/runtimeProfile";
 
 export class SimulationDataProvider implements IIndustrialDataProvider {
   readonly id = "provider-simulation-canonical";
@@ -96,6 +97,13 @@ export class SimulationDataProvider implements IIndustrialDataProvider {
   }
 
   async connect(): Promise<boolean> {
+    const profile = getRuntimeProfile();
+    if (profile === "PRODUCTION") {
+      throw new Error(
+        "[INDUSTRIAL DATA INTEGRITY] SimulationDataProvider.connect() is strictly prohibited under PRODUCTION profile. Fail-Closed enforced."
+      );
+    }
+
     if (this.connected) return true;
     this.connected = true;
     this.startSimulationLoop();
@@ -354,6 +362,7 @@ export class SimulationDataProvider implements IIndustrialDataProvider {
         sequence: this.sequenceCounter,
         isHistorical: false,
         isSimulated: true,
+        provenance: "SIMULADO",
         engMin,
         engMax,
         description,
@@ -416,6 +425,7 @@ export class SimulationDataProvider implements IIndustrialDataProvider {
         sequence: 0,
         isHistorical: false,
         isSimulated: true,
+        provenance: "SIMULADO",
         engMin: d.min,
         engMax: d.max,
         description: d.desc,
